@@ -1,0 +1,209 @@
+<%# References for this page:
+    - Rails Guides (layouts / rendering ERB): https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Bootstrap 5 docs (grid, spacing, buttons, tables): https://getbootstrap.com/docs/5.3/getting-started/introduction/
+    - W3Schools HTML tables basics: https://www.w3schools.com/html/html_tables.asp
+%>
+
+<div class="container py-3">
+  <style>
+    /* main header row (title + primary button) */
+    .mk-page-header{
+      margin: 12px 0 16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .mk-page-title{margin:0;font-size:1.4rem;line-height:1.1;}
+    .mk-subtitle{margin:2px 0 0;font-size:.85rem;color:#6b7280;}
+
+    /* outer card that wraps all marketplace filters */
+    .mk-filters-card{
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      padding:16px;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      margin-bottom:18px;
+    }
+
+    .mk-field-label{
+      font-size:.75rem;
+      color:#4b5563;
+      margin-bottom:3px;
+    }
+
+    /* card around the listings table */
+    .mk-table-card{
+      position:relative;
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      overflow:hidden;
+    }
+
+    /* handles horizontal scrolling for smaller screens */
+    .mk-table-wrap{
+      overflow-x:auto;
+      min-height:220px;
+    }
+
+    /* base marketplace table styling */
+    .mk-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:920px;
+      font-size:.85rem;
+    }
+
+    .mk-table thead th{
+      background:#f9fafb;
+      font-weight:600;
+      text-align:center;
+      font-size:.8rem;
+      color:#374151;
+      padding:10px 12px;
+      border-bottom:1px solid #e5e7eb;
+      white-space:nowrap;
+    }
+
+    .mk-table tbody td{
+      padding:10px 12px;
+      border-bottom:1px solid #f1f5f9;
+      font-size:.82rem;
+      vertical-align:middle;
+      text-align:center;
+    }
+
+    /* placeholder text when there are no marketplace listings yet */
+    .mk-empty-state{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      padding:16px;
+      color:#6b7280;
+      font-size:.85rem;
+    }
+  </style>
+
+  <!-- header row with page title + create listing button -->
+  <div class="mk-page-header">
+    <div>
+      <h1 class="mk-page-title">Marketplace</h1>
+      <p class="mk-subtitle mb-0">Browse listings from the community.</p>
+    </div>
+    <button type="button" class="btn btn-success">
+      Create Listing
+    </button>
+  </div>
+
+  <!-- filters card (design only for now, no wiring to data yet) -->
+  <section class="mk-filters-card">
+    <div class="row g-3 mb-2">
+      <div class="col-12">
+        <div class="mb-2">
+          <label for="mk-search" class="mk-field-label">Search</label>
+          <input id="mk-search" type="search"
+                 class="form-control"
+                 placeholder="Search product name from marketplace listings..." />
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-md-6 col-lg-3">
+        <label for="mk-location" class="mk-field-label">Location (Country)</label>
+        <select id="mk-location" class="form-select">
+          <option value="">All Countries</option>
+          <option value="IE">Ireland</option>
+          <option value="GB">United Kingdom</option>
+          <option value="FR">France</option>
+          <option value="DE">Germany</option>
+          <option value="ES">Spain</option>
+          <option value="IT">Italy</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+          <option value="AU">Australia</option>
+          <!-- add more as needed later -->
+        </select>
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-2">
+        <label for="mk-price-min" class="mk-field-label">Price Min (€)</label>
+        <input id="mk-price-min" type="number" step="0.01" min="0"
+               class="form-control" placeholder="0.00" />
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-2">
+        <label for="mk-price-max" class="mk-field-label">Price Max (€)</label>
+        <input id="mk-price-max" type="number" step="0.01" min="0"
+               class="form-control" placeholder="0.00" />
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-2">
+        <label for="mk-sort" class="mk-field-label">Sort by</label>
+        <select id="mk-sort" class="form-select">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="price-asc">Price: Low → High</option>
+          <option value="price-desc">Price: High → Low</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-3">
+        <label for="mk-condition" class="mk-field-label">Condition</label>
+        <select id="mk-condition" class="form-select">
+          <option value="">Any</option>
+          <option>Mint Sealed</option>
+          <option>Loosely Sealed</option>
+          <option>Minor Imperfections</option>
+          <option>Dented</option>
+          <option>Teared</option>
+          <option>Unsealed</option>
+          <option>Box Only</option>
+          <option>Damaged</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- little button row for clearing/applying filters (visual only for now) -->
+    <div class="d-flex justify-content-end gap-2 mt-3 flex-wrap">
+      <button type="button" class="btn btn-outline-secondary btn-sm">
+        Clear
+      </button>
+      <button type="button" class="btn btn-primary btn-sm">
+        Apply Filters
+      </button>
+    </div>
+  </section>
+
+  <!-- main listings table section (no rows yet, just the shell) -->
+  <section class="mk-table-card">
+    <div class="mk-table-wrap">
+      <table class="mk-table" aria-label="Marketplace Listings">
+        <thead>
+          <tr>
+            <th>Seller</th>
+            <th>Set</th>
+            <th>Product</th>
+            <th>Condition</th>
+            <th>Asking Price</th>
+            <th>Quantity</th>
+            <th>Date Listed</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- design only – rows will be populated later -->
+        </tbody>
+      </table>
+    </div>
+    <div class="mk-empty-state">
+      No listings data yet.
+    </div>
+  </section>
+</div>

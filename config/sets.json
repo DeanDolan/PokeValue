@@ -1,0 +1,1262 @@
+﻿{
+    "phantasmalflames":  {
+                             "slug":  "phantasmalflames",
+                             "name":  "Phantasmal Flames",
+                             "era":  "Mega Evolution",
+                             "releaseDate":  "November 13 2025",
+                             "totalValue":  null,
+                             "totalCards":  130,
+                             "cards":  96,
+                             "secretCards":  36,
+                             "logo":  "images/sets/phantasmalflameslogo.png",
+                             "boxImage":  "images/sets/phantasmalflames.png",
+                             "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                             "sealed":  [
+                                            {
+                                                "type":  "etb",
+                                                "name":  "Elite Trainer Box",
+                                                "img":  "images/sealed/phantasmalflames_etb.png"
+                                            },
+                                            {
+                                                "type":  "pc_etb",
+                                                "name":  "Pokemon Center Elite Trainer Box",
+                                                "img":  "images/sealed/phantasmalflames_pcetb.png"
+                                            },
+                                            {
+                                                "type":  "booster_box",
+                                                "name":  "Booster Box",
+                                                "img":  "images/sealed/phantasmalflames_boosterbox.png"
+                                            },
+                                            {
+                                                "type":  "booster_bundle",
+                                                "name":  "Booster Bundle",
+                                                "img":  "images/sealed/phantasmalflames_boosterbundle.png"
+                                            },
+                                            {
+                                                "type":  "ultra_premium_collection",
+                                                "name":  "Mega Charizard X ex Ultra Premium Collection",
+                                                "img":  "images/sealed/phantasmalflames_upc_megacharizard.png"
+                                            }
+                                        ]
+                         },
+    "megaevolutionbase":  {
+                              "slug":  "megaevolutionbase",
+                              "name":  "Mega Evolution Base",
+                              "era":  "Mega Evolution",
+                              "releaseDate":  "September 26 2025",
+                              "totalValue":  null,
+                              "totalCards":  310,
+                              "cards":  254,
+                              "secretCards":  56,
+                              "logo":  "images/sets/megaevolutionbaselogo.png",
+                              "boxImage":  "images/sets/megaevolutionbase.png",
+                              "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                              "sealed":  [
+                                             {
+                                                 "type":  "etb",
+                                                 "name":  "Elite Trainer Box (Lucario)",
+                                                 "img":  "images/sealed/megaevolution_etb_lucario.png"
+                                             },
+                                             {
+                                                 "type":  "etb",
+                                                 "name":  "Elite Trainer Box (Gardevoir)",
+                                                 "img":  "images/sealed/megaevolution_etb_gardevoir.png"
+                                             },
+                                             {
+                                                 "type":  "pc_etb",
+                                                 "name":  "Pokemon Center Elite Trainer Box (Lucario)",
+                                                 "img":  "images/sealed/megaevolution_pcetb_lucario.png"
+                                             },
+                                             {
+                                                 "type":  "pc_etb",
+                                                 "name":  "Pokemon Center Elite Trainer Box (Gardevoir)",
+                                                 "img":  "images/sealed/megaevolution_pcetb_gardevoir.png"
+                                             },
+                                             {
+                                                 "type":  "enhanced_booster_box",
+                                                 "name":  "Enhanced Booster Box",
+                                                 "img":  "images/sealed/megaevolution_enhancedboosterbox.png"
+                                             },
+                                             {
+                                                 "type":  "booster_box",
+                                                 "name":  "Booster Box",
+                                                 "img":  "images/sealed/megaevolution_boosterbox.png"
+                                             },
+                                             {
+                                                 "type":  "booster_bundle",
+                                                 "name":  "Booster Bundle",
+                                                 "img":  "images/sealed/megaevolution_boosterbundle.png"
+                                             }
+                                         ]
+                          },
+    "whiteflare":  {
+                       "slug":  "whiteflare",
+                       "name":  "White Flare",
+                       "era":  "Scarlet \u0026 Violet",
+                       "releaseDate":  "July 18 2025",
+                       "totalValue":  null,
+                       "totalCards":  413,
+                       "cards":  326,
+                       "secretCards":  87,
+                       "logo":  "images/sets/whiteflarelogo.png",
+                       "boxImage":  "images/sets/whiteflare.png",
+                       "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                       "sealed":  [
+                                      {
+                                          "type":  "etb",
+                                          "name":  "Elite Trainer Box",
+                                          "img":  "images/sealed/whiteflare_etb.png"
+                                      },
+                                      {
+                                          "type":  "pc_etb",
+                                          "name":  "Pokemon Center Elite Trainer Box",
+                                          "img":  "images/sealed/whiteflare_pcetb.png"
+                                      },
+                                      {
+                                          "type":  "booster_bundle",
+                                          "name":  "Booster Bundle",
+                                          "img":  "images/sealed/whiteflare_boosterbundle.png"
+                                      },
+                                      {
+                                          "type":  "booster_bundle_display",
+                                          "name":  "Booster Bundle Display",
+                                          "img":  "images/sealed/whiteflare_boosterbundledisplay.png"
+                                      }
+                                  ]
+                   },
+    "blackbolt":  {
+                      "slug":  "blackbolt",
+                      "name":  "Black Bolt",
+                      "era":  "Scarlet \u0026 Violet",
+                      "releaseDate":  "July 18 2025",
+                      "totalValue":  null,
+                      "totalCards":  412,
+                      "cards":  326,
+                      "secretCards":  86,
+                      "logo":  "images/sets/blackboltlogo.png",
+                      "boxImage":  "images/sets/blackbolt.png",
+                      "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                      "sealed":  [
+                                     {
+                                         "type":  "etb",
+                                         "name":  "Elite Trainer Box",
+                                         "img":  "images/sealed/blackbolt_etb.png"
+                                     },
+                                     {
+                                         "type":  "pc_etb",
+                                         "name":  "Pokemon Center Elite Trainer Box",
+                                         "img":  "images/sealed/blackbolt_pcetb.png"
+                                     },
+                                     {
+                                         "type":  "booster_bundle",
+                                         "name":  "Booster Bundle",
+                                         "img":  "images/sealed/blackbolt_boosterbundle.png"
+                                     },
+                                     {
+                                         "type":  "booster_bundle_display",
+                                         "name":  "Booster Bundle Display",
+                                         "img":  "images/sealed/blackbolt_boosterbundledisplay.png"
+                                     }
+                                 ]
+                  },
+    "destinedrivals":  {
+                           "slug":  "destinedrivals",
+                           "name":  "Destined Rivals",
+                           "era":  "Scarlet \u0026 Violet",
+                           "releaseDate":  "May 30 2025",
+                           "totalValue":  null,
+                           "totalCards":  409,
+                           "cards":  409,
+                           "secretCards":  0,
+                           "logo":  "images/sets/destinedrivalslogo.png",
+                           "boxImage":  "images/sets/destinedrivals.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box",
+                                              "img":  "images/sealed/destinedrivals_etb.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box",
+                                              "img":  "images/sealed/destinedrivals_pcetb.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/destinedrivals_boosterbox.png"
+                                          },
+                                          {
+                                              "type":  "booster_bundle",
+                                              "name":  "Booster Bundle",
+                                              "img":  "images/sealed/destinedrivals_boosterbundle.png"
+                                          },
+                                          {
+                                              "type":  "upc",
+                                              "name":  "Team Rocket\u0027s Moltres ex Ultra Premium Collection",
+                                              "img":  "images/sealed/destinedrivals_upc_moltres.png"
+                                          }
+                                      ]
+                       },
+    "journeytogether":  {
+                            "slug":  "journeytogether",
+                            "name":  "Journey Together",
+                            "era":  "Scarlet \u0026 Violet",
+                            "releaseDate":  "March 28 2025",
+                            "totalValue":  null,
+                            "totalCards":  333,
+                            "cards":  302,
+                            "secretCards":  31,
+                            "logo":  "images/sets/journeytogetherlogo.png",
+                            "boxImage":  "images/sets/journeytogether.png",
+                            "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                            "sealed":  [
+                                           {
+                                               "type":  "etb",
+                                               "name":  "Elite Trainer Box",
+                                               "img":  "images/sealed/journeytogether_etb.png"
+                                           },
+                                           {
+                                               "type":  "pc_etb",
+                                               "name":  "Pokemon Center Elite Trainer Box",
+                                               "img":  "images/sealed/journeytogether_pcetb.png"
+                                           },
+                                           {
+                                               "type":  "enhanced_booster_box",
+                                               "name":  "Enhanced Booster Box",
+                                               "img":  "images/sealed/journeytogether_enhancedboosterbox.png"
+                                           },
+                                           {
+                                               "type":  "booster_box",
+                                               "name":  "Booster Box",
+                                               "img":  "images/sealed/journeytogether_boosterbox.png"
+                                           },
+                                           {
+                                               "type":  "booster_bundle",
+                                               "name":  "Booster Bundle",
+                                               "img":  "images/sealed/journeytogether_boosterbundle.png"
+                                           }
+                                       ]
+                        },
+    "prismaticevolutions":  {
+                                "slug":  "prismaticevolutions",
+                                "name":  "Prismatic Evolutions",
+                                "era":  "Scarlet \u0026 Violet",
+                                "releaseDate":  "January 17 2025",
+                                "totalValue":  null,
+                                "totalCards":  447,
+                                "cards":  398,
+                                "secretCards":  49,
+                                "logo":  "images/sets/prismaticevolutionslogo.png",
+                                "boxImage":  "images/sets/prismaticevolutions.png",
+                                "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                                "sealed":  [
+                                               {
+                                                   "type":  "etb",
+                                                   "name":  "Elite Trainer Box",
+                                                   "img":  "images/sealed/prismaticevolutions_etb.png"
+                                               },
+                                               {
+                                                   "type":  "pc_etb",
+                                                   "name":  "Pokemon Center Elite Trainer Box",
+                                                   "img":  "images/sealed/prismaticevolutions_pcetb.png"
+                                               },
+                                               {
+                                                   "type":  "booster_bundle",
+                                                   "name":  "Booster Bundle",
+                                                   "img":  "images/sealed/prismaticevolutions_boosterbundle.png"
+                                               },
+                                               {
+                                                   "type":  "booster_bundle_display",
+                                                   "name":  "Booster Bundle Display",
+                                                   "img":  "images/sealed/prismaticevolutions_boosterbundledisplay.png"
+                                               },
+                                               {
+                                                   "type":  "spc",
+                                                   "name":  "Special Premium Collection",
+                                                   "img":  "images/sealed/prismaticevolutions_spc.png"
+                                               }
+                                           ]
+                            },
+    "surgingsparks":  {
+                          "slug":  "surgingsparks",
+                          "name":  "Surging Sparks",
+                          "era":  "Scarlet \u0026 Violet",
+                          "releaseDate":  "November 08 2024",
+                          "totalValue":  null,
+                          "totalCards":  417,
+                          "cards":  356,
+                          "secretCards":  61,
+                          "logo":  "images/sets/surgingsparkslogo.png",
+                          "boxImage":  "images/sets/surgingsparks.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box",
+                                             "img":  "images/sealed/surgingsparks_etb.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box",
+                                             "img":  "images/sealed/surgingsparks_pcetb.png"
+                                         },
+                                         {
+                                             "type":  "booster_box",
+                                             "name":  "Booster Box",
+                                             "img":  "images/sealed/surgingsparks_boosterbox.png"
+                                         },
+                                         {
+                                             "type":  "booster_bundle",
+                                             "name":  "Booster Bundle",
+                                             "img":  "images/sealed/surgingsparks_boosterbundle.png"
+                                         }
+                                     ]
+                      },
+    "stellarcrown":  {
+                         "slug":  "stellarcrown",
+                         "name":  "Stellar Crown",
+                         "era":  "Scarlet \u0026 Violet",
+                         "releaseDate":  "September 13 2024",
+                         "totalValue":  null,
+                         "totalCards":  300,
+                         "cards":  267,
+                         "secretCards":  33,
+                         "logo":  "images/sets/stellarcrownlogo.png",
+                         "boxImage":  "images/sets/stellarcrown.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/stellarcrown_etb.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box",
+                                            "img":  "images/sealed/stellarcrown_pcetb.png"
+                                        },
+                                        {
+                                            "type":  "booster_box",
+                                            "name":  "Booster Box",
+                                            "img":  "images/sealed/stellarcrown_boosterbox.png"
+                                        },
+                                        {
+                                            "type":  "booster_bundle",
+                                            "name":  "Booster Bundle",
+                                            "img":  "images/sealed/stellarcrown_boosterbundle.png"
+                                        }
+                                    ]
+                     },
+    "shroudedfable":  {
+                          "slug":  "shroudedfable",
+                          "name":  "Shrouded Fable",
+                          "era":  "Scarlet \u0026 Violet",
+                          "releaseDate":  "August 02 2024",
+                          "totalValue":  null,
+                          "totalCards":  154,
+                          "cards":  119,
+                          "secretCards":  35,
+                          "logo":  "images/sets/shroudedfablelogo.png",
+                          "boxImage":  "images/sets/shroudedfable.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box",
+                                             "img":  "images/sealed/shroudedfable_etb.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box",
+                                             "img":  "images/sealed/shroudedfable_pcetb.png"
+                                         },
+                                         {
+                                             "type":  "booster_bundle",
+                                             "name":  "Booster Bundle",
+                                             "img":  "images/sealed/shroudedfable_boosterbundle.png"
+                                         },
+                                         {
+                                             "type":  "booster_bundle_display",
+                                             "name":  "Booster Bundle Display",
+                                             "img":  "images/sealed/shroudedfable_boosterbundledisplay.png"
+                                         }
+                                     ]
+                      },
+    "twilightmasquerade":  {
+                               "slug":  "twilightmasquerade",
+                               "name":  "Twilight Masquerade",
+                               "era":  "Scarlet \u0026 Violet",
+                               "releaseDate":  "May 25 2024",
+                               "totalValue":  null,
+                               "totalCards":  373,
+                               "cards":  314,
+                               "secretCards":  59,
+                               "logo":  "images/sets/twilightmasqueradelogo.png",
+                               "boxImage":  "images/sets/twilightmasquerade.png",
+                               "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                               "sealed":  [
+                                              {
+                                                  "type":  "etb",
+                                                  "name":  "Elite Trainer Box",
+                                                  "img":  "images/sealed/twilightmasquerade_etb.png"
+                                              },
+                                              {
+                                                  "type":  "pc_etb",
+                                                  "name":  "Pokemon Center Elite Trainer Box",
+                                                  "img":  "images/sealed/twilightmasquerade_pcetb.png"
+                                              },
+                                              {
+                                                  "type":  "booster_box",
+                                                  "name":  "Booster Box",
+                                                  "img":  "images/sealed/twilightmasquerade_boosterbox.png"
+                                              },
+                                              {
+                                                  "type":  "booster_bundle",
+                                                  "name":  "Booster Bundle",
+                                                  "img":  "images/sealed/twilightmasquerade_boosterbundle.png"
+                                              }
+                                          ]
+                           },
+    "temporalforces":  {
+                           "slug":  "temporalforces",
+                           "name":  "Temporal Forces",
+                           "era":  "Scarlet \u0026 Violet",
+                           "releaseDate":  "March 22 2024",
+                           "totalValue":  null,
+                           "totalCards":  358,
+                           "cards":  302,
+                           "secretCards":  56,
+                           "logo":  "images/sets/temporalforceslogo.png",
+                           "boxImage":  "images/sets/temporalforces.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box (Iron Leaves)",
+                                              "img":  "images/sealed/temporalforces_etb_ironleaves.png"
+                                          },
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box (Walking Wake)",
+                                              "img":  "images/sealed/temporalforces_etb_walkingwake.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box (Iron Leaves)",
+                                              "img":  "images/sealed/temporalforces_pcetb_ironleaves.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box (Walking Wake)",
+                                              "img":  "images/sealed/temporalforces_pcetb_walkingwake.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/temporalforces_boosterbox.png"
+                                          },
+                                          {
+                                              "type":  "booster_bundle",
+                                              "name":  "Booster Bundle",
+                                              "img":  "images/sealed/temporalforces_boosterbundle.png"
+                                          }
+                                      ]
+                       },
+    "paldeanfates":  {
+                         "slug":  "paldeanfates",
+                         "name":  "Paldean Fates",
+                         "era":  "Scarlet \u0026 Violet",
+                         "releaseDate":  "January 26 2024",
+                         "totalValue":  null,
+                         "totalCards":  326,
+                         "cards":  172,
+                         "secretCards":  154,
+                         "logo":  "images/sets/paldeanfateslogo.png",
+                         "boxImage":  "images/sets/paldeanfates.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/paldeanfates_etb.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box",
+                                            "img":  "images/sealed/paldeanfates_pcetb.png"
+                                        },
+                                        {
+                                            "type":  "booster_bundle",
+                                            "name":  "Booster Bundle",
+                                            "img":  "images/sealed/paldeanfates_boosterbundle.png"
+                                        },
+                                        {
+                                            "type":  "booster_bundle_display",
+                                            "name":  "Booster Bundle Display",
+                                            "img":  "images/sealed/paldeanfates_boosterbundledisplay.png"
+                                        }
+                                    ]
+                     },
+    "paradoxrift":  {
+                        "slug":  "paradoxrift",
+                        "name":  "Paradox Rift",
+                        "era":  "Scarlet \u0026 Violet",
+                        "releaseDate":  "November 03 2023",
+                        "totalValue":  null,
+                        "totalCards":  428,
+                        "cards":  344,
+                        "secretCards":  84,
+                        "logo":  "images/sets/paradoxriftlogo.png",
+                        "boxImage":  "images/sets/paradoxrift.png",
+                        "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                        "sealed":  [
+                                       {
+                                           "type":  "etb",
+                                           "name":  "Elite Trainer Box (Roaring Moon)",
+                                           "img":  "images/sealed/paradoxrift_etb_roaringmoon.png"
+                                       },
+                                       {
+                                           "type":  "etb",
+                                           "name":  "Elite Trainer Box (Iron Valiant)",
+                                           "img":  "images/sealed/paradoxrift_etb_ironvaliant.png"
+                                       },
+                                       {
+                                           "type":  "pc_etb",
+                                           "name":  "Pokemon Center Elite Trainer Box (Roaring Moon)",
+                                           "img":  "images/sealed/paradoxrift_pcetb_roaringmoon.png"
+                                       },
+                                       {
+                                           "type":  "pc_etb",
+                                           "name":  "Pokemon Center Elite Trainer Box (Iron Valiant)",
+                                           "img":  "images/sealed/paradoxrift_pcetb_ironvaliant.png"
+                                       },
+                                       {
+                                           "type":  "booster_box",
+                                           "name":  "Booster Box",
+                                           "img":  "images/sealed/paradoxrift_boosterbox.png"
+                                       },
+                                       {
+                                           "type":  "booster_bundle",
+                                           "name":  "Booster Bundle",
+                                           "img":  "images/sealed/paradoxrift_boosterbundle.png"
+                                       }
+                                   ]
+                    },
+    "151":  {
+                "slug":  "151",
+                "name":  "151",
+                "era":  "Scarlet \u0026 Violet",
+                "releaseDate":  "September 22 2023",
+                "totalValue":  null,
+                "totalCards":  360,
+                "cards":  318,
+                "secretCards":  42,
+                "logo":  "images/sets/151logo.png",
+                "boxImage":  "images/sets/151.png",
+                "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                "sealed":  [
+                               {
+                                   "type":  "etb",
+                                   "name":  "Elite Trainer Box",
+                                   "img":  "images/sealed/151_etb.png"
+                               },
+                               {
+                                   "type":  "pc_etb",
+                                   "name":  "Pokemon Center Elite Trainer Box",
+                                   "img":  "images/sealed/151_pcetb.png"
+                               },
+                               {
+                                   "type":  "booster_bundle",
+                                   "name":  "Booster Bundle",
+                                   "img":  "images/sealed/151_boosterbundle.png"
+                               },
+                               {
+                                   "type":  "booster_bundle_display",
+                                   "name":  "Booster Bundle Display",
+                                   "img":  "images/sealed/151_boosterbundledisplay.png"
+                               },
+                               {
+                                   "type":  "upc",
+                                   "name":  "Ultra Premium Collection",
+                                   "img":  "images/sealed/151_upc.png"
+                               },
+                               {
+                                   "type":  "mini_tin",
+                                   "name":  "Mini Tin",
+                                   "img":  "images/sealed/151_minitin.png"
+                               },
+                               {
+                                   "type":  "mini_tin_display",
+                                   "name":  "Mini Tin Display",
+                                   "img":  "images/sealed/151_minitindisplay.png"
+                               }
+                           ]
+            },
+    "obsidianflames":  {
+                           "slug":  "obsidianflames",
+                           "name":  "Obsidian Flames",
+                           "era":  "Scarlet \u0026 Violet",
+                           "releaseDate":  "August 11 2023",
+                           "totalValue":  null,
+                           "totalCards":  406,
+                           "cards":  373,
+                           "secretCards":  33,
+                           "logo":  "images/sets/obsidianflameslogo.png",
+                           "boxImage":  "images/sets/obsidianflames.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box",
+                                              "img":  "images/sealed/obsidianflames_etb.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box",
+                                              "img":  "images/sealed/obsidianflames_pcetb.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/obsidianflames_boosterbox.png"
+                                          }
+                                      ]
+                       },
+    "paldeaevolved":  {
+                          "slug":  "paldeaevolved",
+                          "name":  "Paldea Evolved",
+                          "era":  "Scarlet \u0026 Violet",
+                          "releaseDate":  "June 09 2023",
+                          "totalValue":  null,
+                          "totalCards":  455,
+                          "cards":  369,
+                          "secretCards":  86,
+                          "logo":  "images/sets/paldeaevolvedlogo.png",
+                          "boxImage":  "images/sets/paldeaevolved.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box",
+                                             "img":  "images/sealed/paldeaevolved_etb.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box",
+                                             "img":  "images/sealed/paldeaevolved_pcetb.png"
+                                         },
+                                         {
+                                             "type":  "booster_box",
+                                             "name":  "Booster Box",
+                                             "img":  "images/sealed/paldeaevolved_boosterbox.png"
+                                         }
+                                     ]
+                      },
+    "scarletandvioletbase":  {
+                                 "slug":  "scarletandvioletbase",
+                                 "name":  "Scarlet \u0026 Violet Base",
+                                 "era":  "Scarlet \u0026 Violet",
+                                 "releaseDate":  "March 31 2023",
+                                 "totalValue":  null,
+                                 "totalCards":  444,
+                                 "cards":  384,
+                                 "secretCards":  60,
+                                 "logo":  "images/sets/scarletandvioletbaselogo.png",
+                                 "boxImage":  "images/sets/scarletandvioletbase.png",
+                                 "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                                 "sealed":  [
+                                                {
+                                                    "type":  "etb",
+                                                    "name":  "Elite Trainer Box (Miraidon)",
+                                                    "img":  "images/sealed/scarletandviolet_etb_miraidon.png"
+                                                },
+                                                {
+                                                    "type":  "etb",
+                                                    "name":  "Elite Trainer Box (Koraidon)",
+                                                    "img":  "images/sealed/scarletandviolet_etb_koraidon.png"
+                                                },
+                                                {
+                                                    "type":  "pc_etb",
+                                                    "name":  "Pokemon Center Elite Trainer Box (Miraidon)",
+                                                    "img":  "images/sealed/scarletandviolet_pcetb_miraidon.png"
+                                                },
+                                                {
+                                                    "type":  "pc_etb",
+                                                    "name":  "Pokemon Center Elite Trainer Box (Koraidon)",
+                                                    "img":  "images/sealed/scarletandviolet_pcetb_koraidon.png"
+                                                },
+                                                {
+                                                    "type":  "booster_box",
+                                                    "name":  "Booster Box",
+                                                    "img":  "images/sealed/scarletandvioletbase_boosterbox.png"
+                                                },
+                                                {
+                                                    "type":  "booster_bundle",
+                                                    "name":  "Booster Bundle",
+                                                    "img":  "images/sealed/scarletandvioletbase_boosterbundle.png"
+                                                }
+                                            ]
+                             },
+    "crownzenith":  {
+                        "slug":  "crownzenith",
+                        "name":  "Crown Zenith",
+                        "era":  "Sword \u0026 Shield",
+                        "releaseDate":  "January 20 2023",
+                        "totalValue":  null,
+                        "totalCards":  342,
+                        "cards":  341,
+                        "secretCards":  1,
+                        "logo":  "images/sets/crownzenithlogo.png",
+                        "boxImage":  "images/sets/crownzenith.png",
+                        "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                        "sealed":  [
+                                       {
+                                           "type":  "etb",
+                                           "name":  "Elite Trainer Box",
+                                           "img":  "images/sealed/crownzenith_etb.png"
+                                       },
+                                       {
+                                           "type":  "pc_etb",
+                                           "name":  "Pokemon Center Elite Trainer Box",
+                                           "img":  "images/sealed/crownzenith_pcetb.png"
+                                       },
+                                       {
+                                           "type":  "booster_bundle",
+                                           "name":  "Booster Bundle",
+                                           "img":  "images/sealed/crownzenith_boosterbundle.png"
+                                       }
+                                   ]
+                    },
+    "silvertempest":  {
+                          "slug":  "silvertempest",
+                          "name":  "Silver Tempest",
+                          "era":  "Sword \u0026 Shield",
+                          "releaseDate":  "November 11 2022",
+                          "totalValue":  null,
+                          "totalCards":  387,
+                          "cards":  367,
+                          "secretCards":  20,
+                          "logo":  "images/sets/silvertempestlogo.png",
+                          "boxImage":  "images/sets/silvertempest.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box",
+                                             "img":  "images/sealed/silvertempest_etb.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box",
+                                             "img":  "images/sealed/silvertempest_pcetb.png"
+                                         },
+                                         {
+                                             "type":  "booster_box",
+                                             "name":  "Booster Box",
+                                             "img":  "images/sealed/silvertempest_boosterbox.png"
+                                         },
+                                         {
+                                             "type":  "booster_bundle",
+                                             "name":  "Booster Bundle",
+                                             "img":  "images/sealed/silvertempest_boosterbundle.png"
+                                         }
+                                     ]
+                      },
+    "lostorigin":  {
+                       "slug":  "lostorigin",
+                       "name":  "Lost Origin",
+                       "era":  "Sword \u0026 Shield",
+                       "releaseDate":  "September 09 2022",
+                       "totalValue":  null,
+                       "totalCards":  396,
+                       "cards":  375,
+                       "secretCards":  21,
+                       "logo":  "images/sets/lostoriginlogo.png",
+                       "boxImage":  "images/sets/lostorigin.png",
+                       "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                       "sealed":  [
+                                      {
+                                          "type":  "etb",
+                                          "name":  "Elite Trainer Box",
+                                          "img":  "images/sealed/lostorigin_etb.png"
+                                      },
+                                      {
+                                          "type":  "pc_etb",
+                                          "name":  "Pokemon Center Elite Trainer Box",
+                                          "img":  "images/sealed/lostorigin_pcetb.png"
+                                      },
+                                      {
+                                          "type":  "booster_box",
+                                          "name":  "Booster Box",
+                                          "img":  "images/sealed/lostorigin_boosterbox.png"
+                                      },
+                                      {
+                                          "type":  "booster_bundle",
+                                          "name":  "Booster Bundle",
+                                          "img":  "images/sealed/lostorigin_boosterbundle.png"
+                                      }
+                                  ]
+                   },
+    "pokemongo":  {
+                      "slug":  "pokemongo",
+                      "name":  "Pokemon GO",
+                      "era":  "Sword \u0026 Shield",
+                      "releaseDate":  "July 01 2022",
+                      "totalValue":  null,
+                      "totalCards":  148,
+                      "cards":  138,
+                      "secretCards":  10,
+                      "logo":  "images/sets/pokemongologo.png",
+                      "boxImage":  "images/sets/pokemongo.png",
+                      "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                      "sealed":  [
+                                     {
+                                         "type":  "etb",
+                                         "name":  "Elite Trainer Box",
+                                         "img":  "images/sealed/pokemongo_etb.png"
+                                     },
+                                     {
+                                         "type":  "pc_etb",
+                                         "name":  "Pokemon Center Elite Trainer Box",
+                                         "img":  "images/sealed/pokemongo_pcetb.png"
+                                     }
+                                 ]
+                  },
+    "astralradiance":  {
+                           "slug":  "astralradiance",
+                           "name":  "Astral Radiance",
+                           "era":  "Sword \u0026 Shield",
+                           "releaseDate":  "March 27 2022",
+                           "totalValue":  null,
+                           "totalCards":  374,
+                           "cards":  347,
+                           "secretCards":  27,
+                           "logo":  "images/sets/astralradiancelogo.png",
+                           "boxImage":  "images/sets/astralradiance.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box",
+                                              "img":  "images/sealed/astralradiance_etb.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box",
+                                              "img":  "images/sealed/astralradiance_pcetb.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/astralradiance_boosterbox.png"
+                                          }
+                                      ]
+                       },
+    "brilliantstars":  {
+                           "slug":  "brilliantstars",
+                           "name":  "Brilliant Stars",
+                           "era":  "Sword \u0026 Shield",
+                           "releaseDate":  "February 25 2023",
+                           "totalValue":  null,
+                           "totalCards":  340,
+                           "cards":  325,
+                           "secretCards":  15,
+                           "logo":  "images/sets/brilliantstarslogo.png",
+                           "boxImage":  "images/sets/brilliantstars.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box",
+                                              "img":  "images/sealed/brilliantstars_etb.png"
+                                          },
+                                          {
+                                              "type":  "pc_etb",
+                                              "name":  "Pokemon Center Elite Trainer Box",
+                                              "img":  "images/sealed/brilliantstars_pcetb.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/brilliantstars_boosterbox.png"
+                                          },
+                                          {
+                                              "type":  "upc",
+                                              "name":  "Arceus V Ultra Premium Collection",
+                                              "img":  "images/sealed/brilliantstars_upc.png"
+                                          }
+                                      ]
+                       },
+    "fusionstrike":  {
+                         "slug":  "fusionstrike",
+                         "name":  "Fusion Strike",
+                         "era":  "Sword \u0026 Shield",
+                         "releaseDate":  "October 31 2021",
+                         "totalValue":  null,
+                         "totalCards":  501,
+                         "cards":  481,
+                         "secretCards":  20,
+                         "logo":  "images/sets/fusionstrikelogo.png",
+                         "boxImage":  "images/sets/fusionstrike.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/fusionstrike_etb.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box",
+                                            "img":  "images/sealed/fusionstrike_pcetb.png"
+                                        },
+                                        {
+                                            "type":  "booster_box",
+                                            "name":  "Booster Box",
+                                            "img":  "images/sealed/fusionstrike_boosterbox.png"
+                                        }
+                                    ]
+                     },
+    "celebrations":  {
+                         "slug":  "celebrations",
+                         "name":  "Celebrations",
+                         "era":  "Sword \u0026 Shield",
+                         "releaseDate":  "October 08 2021",
+                         "totalValue":  null,
+                         "totalCards":  25,
+                         "cards":  25,
+                         "secretCards":  0,
+                         "logo":  "images/sets/celebrationslogo.png",
+                         "boxImage":  "images/sets/celebrations.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/celebrations_etb.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box",
+                                            "img":  "images/sealed/celebrations_pcetb.png"
+                                        },
+                                        {
+                                            "type":  "upc",
+                                            "name":  "Ultra Premium Collection",
+                                            "img":  "images/sealed/celebrations_upc.png"
+                                        }
+                                    ]
+                     },
+    "celebrationsclassiccollection":  {
+                                          "slug":  "celebrationsclassiccollection",
+                                          "name":  "Celebrations: Classic Collection",
+                                          "era":  "Sword \u0026 Shield",
+                                          "releaseDate":  "October 07 2021",
+                                          "totalValue":  null,
+                                          "totalCards":  25,
+                                          "cards":  25,
+                                          "secretCards":  0,
+                                          "logo":  "images/sets/celebrationsclassiccollectionlogo.png",
+                                          "boxImage":  "images/sets/celebrationsclassiccollection.png",
+                                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                                          "sealed":  [
+                                                         {
+                                                             "type":  "etb",
+                                                             "name":  "Elite Trainer Box",
+                                                             "img":  "images/sealed/celebrations_etb.png"
+                                                         },
+                                                         {
+                                                             "type":  "pc_etb",
+                                                             "name":  "Pokemon Center Elite Trainer Box",
+                                                             "img":  "images/sealed/celebrations_pcetb.png"
+                                                         },
+                                                         {
+                                                             "type":  "upc",
+                                                             "name":  "Ultra Premium Collection",
+                                                             "img":  "images/sealed/celebrations_upc.png"
+                                                         }
+                                                     ]
+                                      },
+    "evolvingskies":  {
+                          "slug":  "evolvingskies",
+                          "name":  "Evolving Skies",
+                          "era":  "Sword \u0026 Shield",
+                          "releaseDate":  "August 27 2021",
+                          "totalValue":  null,
+                          "totalCards":  369,
+                          "cards":  335,
+                          "secretCards":  34,
+                          "logo":  "images/sets/evolvingskieslogo.png",
+                          "boxImage":  "images/sets/evolvingskies.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box (SEGV)",
+                                             "img":  "images/sealed/evolvingskies_etb_segv.png"
+                                         },
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box (LUJF)",
+                                             "img":  "images/sealed/evolvingskies_etb_lujf.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box (FJUL)",
+                                             "img":  "images/sealed/evolvingskies_pcetb_fjul.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box (GVSE)",
+                                             "img":  "images/sealed/evolvingskies_pcetb_gvse.png"
+                                         },
+                                         {
+                                             "type":  "booster_box",
+                                             "name":  "Booster Box",
+                                             "img":  "images/sealed/evolvingskies_boosterbox.png"
+                                         }
+                                     ]
+                      },
+    "chillingreign":  {
+                          "slug":  "chillingreign",
+                          "name":  "Chilling Reign",
+                          "era":  "Sword \u0026 Shield",
+                          "releaseDate":  "June 18 2021",
+                          "totalValue":  null,
+                          "totalCards":  370,
+                          "cards":  335,
+                          "secretCards":  35,
+                          "logo":  "images/sets/chillingreignlogo.png",
+                          "boxImage":  "images/sets/chillingreign.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box (Shadow Rider Calyrex)",
+                                             "img":  "images/sealed/chillingreign_etb_shadowridercalyrex.png"
+                                         },
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box (Ice Rider Calyrex)",
+                                             "img":  "images/sealed/chillingreign_etb_iceridercalyrex.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box (Shadow Rider Calyrex)",
+                                             "img":  "images/sealed/chillingreign_pcetb_shadowridercalyrex.png"
+                                         },
+                                         {
+                                             "type":  "pc_etb",
+                                             "name":  "Pokemon Center Elite Trainer Box (Ice Rider Calyrex)",
+                                             "img":  "images/sealed/chillingreign_pcetb_iceridercalyrex.png"
+                                         },
+                                         {
+                                             "type":  "booster_box",
+                                             "name":  "Booster Box",
+                                             "img":  "images/sealed/chillingreign_boosterbox.png"
+                                         }
+                                     ]
+                      },
+    "battlestyles":  {
+                         "slug":  "battlestyles",
+                         "name":  "Battle Styles",
+                         "era":  "Sword \u0026 Shield",
+                         "releaseDate":  "March 19 2021",
+                         "totalValue":  null,
+                         "totalCards":  306,
+                         "cards":  286,
+                         "secretCards":  20,
+                         "logo":  "images/sets/battlestyleslogo.png",
+                         "boxImage":  "images/sets/battlestyles.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box (Rapid Strike)",
+                                            "img":  "images/sealed/battlestyles_etb_rapidstrike.png"
+                                        },
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box (Single Strike)",
+                                            "img":  "images/sealed/battlestyles_etb_singlestrike.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box (Rapid Strike)",
+                                            "img":  "images/sealed/battlestyles_pcetb_rapidstrike.png"
+                                        },
+                                        {
+                                            "type":  "pc_etb",
+                                            "name":  "Pokemon Center Elite Trainer Box (Single Strike)",
+                                            "img":  "images/sealed/battlestyles_pcetb_singlestrike.png"
+                                        },
+                                        {
+                                            "type":  "booster_box",
+                                            "name":  "Booster Box",
+                                            "img":  "images/sealed/battlestyles_boosterbox.png"
+                                        }
+                                    ]
+                     },
+    "shiningfates":  {
+                         "slug":  "shiningfates",
+                         "name":  "Shining Fates",
+                         "era":  "Sword \u0026 Shield",
+                         "releaseDate":  "February 19 2021",
+                         "totalValue":  null,
+                         "totalCards":  241,
+                         "cards":  240,
+                         "secretCards":  1,
+                         "logo":  "images/sets/shiningfateslogo.png",
+                         "boxImage":  "images/sets/shiningfates.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/shiningfates_etb.png"
+                                        }
+                                    ]
+                     },
+    "vividvoltage":  {
+                         "slug":  "vividvoltage",
+                         "name":  "Vivid Voltage",
+                         "era":  "Sword \u0026 Shield",
+                         "releaseDate":  "November 13 2020",
+                         "totalValue":  null,
+                         "totalCards":  345,
+                         "cards":  327,
+                         "secretCards":  18,
+                         "logo":  "images/sets/vividvoltagelogo.png",
+                         "boxImage":  "images/sets/vividvoltage.png",
+                         "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                         "sealed":  [
+                                        {
+                                            "type":  "etb",
+                                            "name":  "Elite Trainer Box",
+                                            "img":  "images/sealed/vividvoltage_etb.png"
+                                        },
+                                        {
+                                            "type":  "booster_box",
+                                            "name":  "Booster Box",
+                                            "img":  "images/sealed/vividvoltage_boosterbox.png"
+                                        }
+                                    ]
+                     },
+    "championspath":  {
+                          "slug":  "championspath",
+                          "name":  "Champion\u0027s Path",
+                          "era":  "Sword \u0026 Shield",
+                          "releaseDate":  "September 25 2020",
+                          "totalValue":  null,
+                          "totalCards":  134,
+                          "cards":  127,
+                          "secretCards":  7,
+                          "logo":  "images/sets/championspathlogo.png",
+                          "boxImage":  "images/sets/championspath.png",
+                          "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                          "sealed":  [
+                                         {
+                                             "type":  "etb",
+                                             "name":  "Elite Trainer Box",
+                                             "img":  "images/sealed/championspath_etb.png"
+                                         }
+                                     ]
+                      },
+    "darknessablaze":  {
+                           "slug":  "darknessablaze",
+                           "name":  "Darkness Ablaze",
+                           "era":  "Sword \u0026 Shield",
+                           "releaseDate":  "August 14 2020",
+                           "totalValue":  null,
+                           "totalCards":  356,
+                           "cards":  344,
+                           "secretCards":  12,
+                           "logo":  "images/sets/darknessablazelogo.png",
+                           "boxImage":  "images/sets/darknessablaze.png",
+                           "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                           "sealed":  [
+                                          {
+                                              "type":  "etb",
+                                              "name":  "Elite Trainer Box",
+                                              "img":  "images/sealed/darknessablaze_etb.png"
+                                          },
+                                          {
+                                              "type":  "booster_box",
+                                              "name":  "Booster Box",
+                                              "img":  "images/sealed/darknessablaze_boosterbox.png"
+                                          }
+                                      ]
+                       },
+    "rebelclash":  {
+                       "slug":  "rebelclash",
+                       "name":  "Rebel Clash",
+                       "era":  "Sword \u0026 Shield",
+                       "releaseDate":  "May 01 2020",
+                       "totalValue":  null,
+                       "totalCards":  360,
+                       "cards":  343,
+                       "secretCards":  17,
+                       "logo":  "images/sets/rebelclashlogo.png",
+                       "boxImage":  "images/sets/rebelclash.png",
+                       "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                       "sealed":  [
+                                      {
+                                          "type":  "etb",
+                                          "name":  "Elite Trainer Box",
+                                          "img":  "images/sealed/rebelclash_etb.png"
+                                      },
+                                      {
+                                          "type":  "booster_box",
+                                          "name":  "Booster Box",
+                                          "img":  "images/sealed/rebelclash_boosterbox.png"
+                                      }
+                                  ]
+                   },
+    "swordandshieldbase":  {
+                               "slug":  "swordandshieldbase",
+                               "name":  "Sword \u0026 Shield Base",
+                               "era":  "Sword \u0026 Shield",
+                               "releaseDate":  "February 07 2020",
+                               "totalValue":  null,
+                               "totalCards":  399,
+                               "cards":  385,
+                               "secretCards":  14,
+                               "logo":  "images/sets/swordandshieldbaselogo.png",
+                               "boxImage":  "images/sets/swordandshieldbase.png",
+                               "pokedataUrl":  "https://www.pokedata.io/sets#ENGLISH",
+                               "sealed":  [
+                                              {
+                                                  "type":  "etb",
+                                                  "name":  "Elite Trainer Box (Zacian)",
+                                                  "img":  "images/sealed/swordandshield_etb.png"
+                                              },
+                                              {
+                                                  "type":  "etb",
+                                                  "name":  "Elite Trainer Box (Zamazenta)",
+                                                  "img":  "images/sealed/swordandshield_etb.png"
+                                              },
+                                              {
+                                                  "type":  "pc_etb",
+                                                  "name":  "Pokemon Center Elite Trainer Box (Zacian)",
+                                                  "img":  "images/sealed/swordandshield_pcetb.png"
+                                              },
+                                              {
+                                                  "type":  "pc_etb",
+                                                  "name":  "Pokemon Center Elite Trainer Box (Zamazenta)",
+                                                  "img":  "images/sealed/swordandshield_pcetb.png"
+                                              },
+                                              {
+                                                  "type":  "booster_box",
+                                                  "name":  "Booster Box",
+                                                  "img":  "images/sealed/swordandshield_boosterbox.png"
+                                              },
+                                              {
+                                                  "type":  "upc",
+                                                  "name":  "Charizard Ultra Premium Collection",
+                                                  "img":  "images/sealed/swordandshield_upc_charizard.png"
+                                              }
+                                          ]
+                           }
+}

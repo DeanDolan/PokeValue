@@ -1,0 +1,219 @@
+<%# References I used while putting this page together:
+    - Rails views and layouts: https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Bootstrap 5 grid, forms, buttons, tables: https://getbootstrap.com/docs/5.3/getting-started/introduction/
+    - Basic HTML table structure: https://www.w3schools.com/html/html_tables.asp
+%>
+
+<div class="container py-3">
+  <style>
+    /* Top header layout for title and main action */
+    .rf-page-header{
+      margin:12px 0 16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .rf-page-title{margin:0;font-size:1.4rem;line-height:1.1;}
+    .rf-subtitle{margin:2px 0 0;font-size:.85rem;color:#6b7280;}
+
+    /* Card that wraps the raffle filters */
+    .rf-filters-card{
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      padding:16px;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      margin-bottom:18px;
+    }
+
+    /* Small label style used for each filter field */
+    .rf-field-label{
+      font-size:.75rem;
+      color:#4b5563;
+      margin-bottom:3px;
+    }
+
+    /* Card that wraps the raffle listings table */
+    .rf-table-card{
+      position:relative;
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      overflow:hidden;
+    }
+
+    /* Horizontal scroll support for smaller screens */
+    .rf-table-wrap{
+      overflow-x:auto;
+      min-height:220px;
+    }
+
+    /* Main raffle table style */
+    .rf-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:820px;
+      font-size:.85rem;
+    }
+
+    /* Table header cells */
+    .rf-table thead th{
+      background:#f9fafb;
+      font-weight:600;
+      text-align:center;
+      font-size:.8rem;
+      color:#374151;
+      padding:10px 12px;
+      border-bottom:1px solid #e5e7eb;
+      white-space:nowrap;
+    }
+
+    /* Table body cells */
+    .rf-table tbody td{
+      padding:10px 12px;
+      border-bottom:1px solid #f1f5f9;
+      font-size:.82rem;
+      vertical-align:middle;
+      text-align:center;
+    }
+
+    /* Message overlay when there is no raffle data yet */
+    .rf-empty-state{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      padding:16px;
+      color:#6b7280;
+      font-size:.85rem;
+    }
+  </style>
+
+  <!-- Header -->
+  <div class="rf-page-header">
+    <div>
+      <!-- Main page title and short description -->
+      <h1 class="rf-page-title">Raffle</h1>
+      <p class="rf-subtitle mb-0">Enter live raffles and track upcoming ones.</p>
+    </div>
+    <!-- Primary action button for starting a new raffle (design only for now) -->
+    <button type="button" class="btn btn-success">
+      Host Raffle
+    </button>
+  </div>
+
+  <!-- Filters card -->
+  <section class="rf-filters-card">
+    <!-- Search row -->
+    <div class="row g-3 mb-2">
+      <div class="col-12">
+        <div class="mb-2">
+          <label for="rf-search" class="rf-field-label">Search</label>
+          <input id="rf-search" type="search"
+                 class="form-control"
+                 placeholder="Search product name from raffle listings..." />
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter controls row -->
+    <div class="row g-3">
+      <div class="col-6 col-md-4 col-lg-2">
+        <label for="rf-status" class="rf-field-label">Status</label>
+        <select id="rf-status" class="form-select">
+          <option value="">Any</option>
+          <option value="live">Live</option>
+          <option value="upcoming">Upcoming</option>
+          <option value="ended">Ended</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-4 col-lg-3">
+        <label for="rf-location" class="rf-field-label">Location (Country)</label>
+        <select id="rf-location" class="form-select">
+          <option value="">All Countries</option>
+          <option value="IE">Ireland</option>
+          <option value="GB">United Kingdom</option>
+          <option value="FR">France</option>
+          <option value="DE">Germany</option>
+          <option value="ES">Spain</option>
+          <option value="IT">Italy</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+          <option value="AU">Australia</option>
+          <!-- extend list later if needed -->
+        </select>
+      </div>
+
+      <div class="col-6 col-md-4 col-lg-2">
+        <label for="rf-price-min" class="rf-field-label">Ticket Price Min (€)</label>
+        <input id="rf-price-min" type="number" step="0.01" min="0"
+               class="form-control" placeholder="0.00" />
+      </div>
+
+      <div class="col-6 col-md-4 col-lg-2">
+        <label for="rf-price-max" class="rf-field-label">Ticket Price Max (€)</label>
+        <input id="rf-price-max" type="number" step="0.01" min="0"
+               class="form-control" placeholder="0.00" />
+      </div>
+
+      <div class="col-6 col-md-4 col-lg-2">
+        <label for="rf-sort" class="rf-field-label">Sort by</label>
+        <select id="rf-sort" class="form-select">
+          <option value="ending-soon">Ending Soonest</option>
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="price-asc">Price: Low → High</option>
+          <option value="price-desc">Price: High → Low</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-4 col-lg-3">
+        <label for="rf-type" class="rf-field-label">Raffle Type</label>
+        <select id="rf-type" class="form-select">
+          <option value="">Any</option>
+          <option value="raffle">Raffle</option>
+          <option value="mini">Mini Raffle</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Filter buttons (only visual for now) -->
+    <div class="d-flex justify-content-end gap-2 mt-3 flex-wrap">
+      <button type="button" class="btn btn-outline-secondary btn-sm">
+        Clear
+      </button>
+      <button type="button" class="btn btn-primary btn-sm">
+        Apply Filters
+      </button>
+    </div>
+  </section>
+
+  <!-- Raffle table -->
+  <section class="rf-table-card">
+    <div class="rf-table-wrap">
+      <table class="rf-table" aria-label="Raffle Listings">
+        <thead>
+          <tr>
+            <th>Host</th>
+            <th>Prize</th>
+            <th>Ticket Price</th>
+            <th>Tickets Left</th>
+            <th>Ends</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Design only – rows will be populated later -->
+        </tbody>
+      </table>
+    </div>
+    <div class="rf-empty-state">
+      No raffle data yet.
+    </div>
+  </section>
+</div>

@@ -1,0 +1,25 @@
+/* References I’ve used for this kind of styling:
+   - MDN (CSS basics, box model, borders, background, inheritance):
+     https://developer.mozilla.org/en-US/docs/Learn/CSS
+   - W3Schools (CSS selectors + color/border examples):
+     https://www.w3schools.com/css/default.asp
+*/
+
+/* Footer container styling: light border on top and subtle background
+   to separate the footer from the main content visually */
+.website.footer {
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+
+/* Muted text colour for tagline + copyright line */
+.website.footer .footer-tagline,
+.website.footer .footer-copy {
+  color: #6c757d;
+}
+
+/* Keep the logo aligned nicely with text in the footer */
+.website.footer .logo img {
+  display: inline-block;
+  vertical-align: middle;
+}

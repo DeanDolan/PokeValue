@@ -1,0 +1,243 @@
+<%# References I used while building this page:
+    - Rails layouts / rendering (ERB templates): https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Rails form helpers (form_with, *_field_tag, select_tag): https://guides.rubyonrails.org/form_helpers.html
+    - Bootstrap 5 layout, grid, cards, modals, buttons: https://getbootstrap.com/docs/5.3/getting-started/introduction/
+    - Rails number helpers (number_to_currency): https://api.rubyonrails.org/classes/ActionView/Helpers/NumberHelper.html
+%>
+
+<div class="container py-4">
+  <div class="mb-3">
+    <%# back link up to the set page, keeps the browsing flow simple %>
+    <%= link_to "← Back to set", set_path(slug: @set_slug), class: "btn btn-link p-0" %>
+  </div>
+
+  <div class="row g-4 align-items-stretch">
+    <!-- Left: Product image -->
+    <div class="col-12 col-lg-5">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-center justify-content-center">
+          <%# main product image, capped in height so it doesn’t overpower the layout %>
+          <%= image_tag @product_img_url,
+                        alt: @product_name,
+                        class: "img-fluid",
+                        style: "max-height:320px;object-fit:contain;" %>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: details + actions -->
+    <div class="col-12 col-lg-7">
+      <div class="text-center mb-3">
+        <%# set logo at the top of the details panel %>
+        <%= image_tag @set_logo_url,
+                      alt: @set_name,
+                      class: "mb-2",
+                      style: "max-height:60px;object-fit:contain;" %>
+
+        <%# fall back to product type name when product_name is missing %>
+        <h3 class="mb-0"><%= @product_name.presence || @product_type_name %></h3>
+
+        <%# compact line with era · set name · product type %>
+        <div class="text-muted small">
+          <%= [@era, @set_name, @product_type_name].compact.join(" · ") %>
+        </div>
+      </div>
+
+      <%# small stat cards for context about the product %>
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Set</div>
+              <div class="fw-semibold"><%= @set_name %></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Era</div>
+              <div class="fw-semibold"><%= @era %></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Release Date</div>
+              <div class="fw-semibold"><%= @release_date %></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Product Type</div>
+              <div class="fw-semibold"><%= @product_type_name %></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Estimated Value</div>
+              <div class="fw-semibold">
+                <%= @product_value.present? ? number_to_currency(@product_value, unit: "€") : "€0.00" %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-4">
+          <div class="card h-100">
+            <div class="card-body text-center py-3">
+              <div class="small text-muted">Listings</div>
+              <div class="fw-semibold"><%= @product_listings || 0 %></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <%# main product actions: portfolio, watchlist, projections %>
+      <div class="d-flex flex-wrap gap-2 justify-content-center">
+        <% if defined?(user_signed_in?) && user_signed_in? %>
+          <%# when logged in, open the add-holding modal %>
+          <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addHoldingModal">
+            + Add to Portfolio
+          </button>
+        <% else %>
+          <%# when logged out, send them to the auth modal instead %>
+          <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#authModal">
+            + Add to Portfolio
+          </button>
+        <% end %>
+        <button class="btn btn-outline-secondary">+ Add to Watchlist</button>
+        <button class="btn btn-outline-primary">Future Projections</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%# ---------------- Auth modal when NOT logged in ---------------- %>
+<% if !(defined?(user_signed_in?) && user_signed_in?) %>
+  <div class="modal fade" id="authModal" tabindex="-1" aria-labelledby="authModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="authModalLabel">Log in to add to portfolio</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <%# simple login form rendered inside the modal %>
+          <%= form_with url: login_path, method: :post, local: true do %>
+            <div class="mb-3">
+              <label class="form-label" for="login_username">Username</label>
+              <%= text_field_tag :username, nil, class: "form-control", id: "login_username", required: true %>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="login_password">Password</label>
+              <%= password_field_tag :password, nil, class: "form-control", id: "login_password", required: true %>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Log in</button>
+            </div>
+          <% end %>
+
+          <hr class="my-3">
+
+          <div class="text-center small">
+            Don't have an account?
+            <%= link_to "Register", register_path, class: "btn btn-link btn-sm" %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<%# ---------------- Add-holding modal when logged in ---------------- %>
+<% if defined?(user_signed_in?) && user_signed_in? %>
+  <div class="modal fade" id="addHoldingModal" tabindex="-1" aria-labelledby="addHoldingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addHoldingModalLabel">Add to Portfolio</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <%# short summary of the product inside the modal header %>
+          <div class="mb-3 small text-muted text-center">
+            <div><strong><%= @product_type_name %></strong></div>
+            <div><%= @set_name %> · <%= @era %></div>
+          </div>
+
+          <%# form that actually creates the holding entry for the current user %>
+          <%= form_with url: holdings_path, scope: :holding, method: :post, local: true do %>
+            <%# hidden fields so the record keeps the correct product metadata %>
+            <%= hidden_field_tag "holding[set_slug]", @set_slug %>
+            <%= hidden_field_tag "holding[type_code]", @product_type %>
+            <%= hidden_field_tag "holding[image_url]", @product_img_url %>
+
+            <%= hidden_field_tag "holding[era]", @era %>
+            <%= hidden_field_tag "holding[set_name]", @set_name %>
+            <%= hidden_field_tag "holding[product_type]", @product_type_name %>
+            <%= hidden_field_tag "holding[value]", @product_value %>
+
+            <div class="mb-3">
+              <label class="form-label">Estimated value / unit (€)</label>
+              <%# just showing the value here, not editable in this modal %>
+              <input type="text"
+                     class="form-control"
+                     value="<%= @product_value.present? ? number_to_currency(@product_value, unit: '€') : '€0.00' %>"
+                     disabled>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="holding_quantity">Quantity</label>
+              <%= number_field_tag "holding[quantity]", 1, min: 1, class: "form-control", id: "holding_quantity", required: true %>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="holding_cost_per_unit">Cost per unit (€)</label>
+              <%= number_field_tag "holding[cost_per_unit]",
+                                   @product_value,
+                                   step: "0.01",
+                                   min: 0,
+                                   class: "form-control",
+                                   id: "holding_cost_per_unit",
+                                   required: true %>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="holding_purchase_date">Purchase date</label>
+              <%= date_field_tag "holding[purchase_date]", Date.today, class: "form-control", id: "holding_purchase_date" %>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="holding_condition">Condition</label>
+              <%= select_tag "holding[condition]",
+                             options_for_select(@conditions || []),
+                             include_blank: "Select condition",
+                             class: "form-select",
+                             id: "holding_condition" %>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-success">Save to Portfolio</button>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>

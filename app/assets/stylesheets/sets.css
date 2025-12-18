@@ -1,0 +1,226 @@
+/* References I leaned on for this layout / styling:
+   - CSS Grid + responsive layouts:
+     https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout
+   - General CSS basics and selectors:
+     https://www.w3schools.com/css/default.asp
+*/
+
+/* Main layout wrapper for sets page: sidebar + main column */
+.sets-layout.container{
+  display:grid;
+  grid-template-columns:300px 1fr; /* fixed sidebar, flexible main */
+  gap:20px;
+}
+
+/* On smaller screens the layout collapses into a single column */
+@media (max-width:900px){
+  .sets-layout.container{
+    grid-template-columns:1fr;
+  }
+}
+
+/* Sidebar box on the left (era list) */
+.sets-sidebar{
+  background:#fff;
+  border:1px solid #eee;
+  border-radius:12px;
+  padding:14px;
+}
+
+/* "Era" header inside the sidebar */
+.sidebar-title{
+  margin:0 0 10px;
+  font-size:16px;
+  font-weight:700;
+}
+
+/* Vertical list of eras in the sidebar */
+.era-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+/* Single clickable era row */
+.era-item{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:12px 14px;
+  border-radius:10px;
+  cursor:pointer;
+  user-select:none; /* avoid text highlighting while clicking around */
+}
+
+/* Slight hover feedback so the list feels interactive */
+.era-item:hover{
+  background:#f6f7f8;
+}
+
+/* Active era (currently selected) */
+.era-item.active{
+  background:#eef5ff;
+  outline:1px solid #d7e6ff;
+}
+
+/* Small logo/thumbnail for each era inside the sidebar list */
+.era-logo{
+  width:72px;
+  height:72px;
+  object-fit:contain;
+}
+
+/* Header above the grid: badge + title + search */
+.sets-header{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:30px;
+}
+
+/* Wrap badge + heading nicely in the header */
+.sets-title-wrap{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+/* Main page title "Sets" etc */
+.sets-header h1{
+  margin:0;
+  font-size:28px;
+  line-height:1;
+}
+
+/* Era badge image above the grid */
+.era-badge{
+  width:220px;
+  height:60px;
+  object-fit:contain;
+  display:block;
+}
+
+/* Slightly scale up the Mega Evolution badge */
+.era-badge.is-mega{
+  transform:scale(1.15);
+  transform-origin:left center;
+}
+
+/* Search input on the right side of the header */
+.sets-search{
+  width:340px;
+  max-width:100%;
+  padding:10px 12px;
+  border:1px solid #ddd;
+  border-radius:10px;
+}
+
+/* Tiny result count text under the badge */
+.result-count{
+  color:#666;
+  font-size:13px;
+  margin-top:6px;
+}
+
+/* Grid of set cards */
+.sets-grid{
+  margin-top:14px;
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:14px;
+}
+
+/* Responsive breakpoints to keep cards readable */
+@media (max-width:1200px){
+  .sets-grid{
+    grid-template-columns:repeat(4,1fr);
+  }
+}
+
+@media (max-width:980px){
+  .sets-grid{
+    grid-template-columns:repeat(3,1fr);
+  }
+}
+
+@media (max-width:720px){
+  .sets-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+
+@media (max-width:480px){
+  .sets-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+/* Single set card (link wrapper) */
+.set-card{
+  background:#fff;
+  border:1px solid #eee;
+  border-radius:12px;
+  overflow:hidden;
+  text-decoration:none;
+  color:inherit;
+  display:flex;
+  flex-direction:column;
+}
+
+/* Thumbnail frame for set art */
+.set-thumb{
+  position:relative;
+  aspect-ratio:4/3;
+  overflow:hidden;
+  background:#fafafa;
+}
+
+/* Set image itself */
+.set-thumb img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  transition:transform .25s ease;
+}
+
+/* Slight zoom on hover just to give a bit of life to the cards */
+.set-card:hover .set-thumb img{
+  transform:scale(1.06);
+}
+
+/* Card body under the image */
+.set-body{
+  padding:10px;
+  text-align:center;
+}
+
+/* Set name text */
+.set-name{
+  margin:0;
+  font-size:14px;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* Era label under the set name */
+.set-era{
+  margin:4px 0 0;
+  color:#777;
+  font-size:12px;
+}
+
+/* Empty state styling when no sets match filters */
+.empty{
+  text-align:center;
+  color:#666;
+  padding:40px 0;
+  border:1px dashed #ddd;
+  border-radius:12px;
+  margin-top:16px;
+}

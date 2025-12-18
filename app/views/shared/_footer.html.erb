@@ -1,0 +1,11 @@
+<footer class="website footer">
+  <div class="footer-inner container py-4 text-center">
+    <%= link_to portfolio_path, class: "logo d-inline-block mb-2" do %>
+      <%= image_tag "pokevaluelogo.png",
+                    alt: "PokeValue logo",
+                    height: 100 %>
+    <% end %>
+    <p class="footer-tagline mb-1">Pokemon investing since 2025.</p>
+    <div class="text-muted small">© <%= Time.current.year %> PokeValue</div>
+  </div>
+</footer>

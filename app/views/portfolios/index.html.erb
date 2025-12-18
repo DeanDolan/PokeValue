@@ -1,0 +1,492 @@
+<%# References I used:
+    - Rails Guides – Layouts, Rendering & ERB basics: https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Rails Guides – Active View helpers (form helpers, number_to_currency, etc.): https://guides.rubyonrails.org/action_view_overview.html
+    - Bootstrap 5 docs – grid, tables, spacing utilities: https://getbootstrap.com/docs/5.3/layout/grid/
+    - MDN – DOM selection, dataset attributes, basic JS filtering: https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector
+%>
+
+<%
+require "json"
+
+# load sets JSON so I can resolve product thumbnails + links in the holdings table
+sets_data =
+  begin
+    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
+    JSON.parse(raw)
+  rescue
+    {}
+  end
+
+# map JSON product type codes to nice display names used in holdings
+type_map = {
+  "etb"                      => "Elite Trainer Box",
+  "pc_etb"                   => "Pokemon Center Elite Trainer Box",
+  "booster_box"              => "Booster Box",
+  "booster_bundle"           => "Booster Bundle",
+  "booster_bundle_display"   => "Booster Bundle Display",
+  "enhanced_booster_box"     => "Enhanced Booster Box",
+  "ultra_premium_collection" => "Ultra Premium Collection",
+  "upc"                      => "Ultra Premium Collection",
+  "spc"                      => "Super Premium Collection",
+  "mini_tin"                 => "Mini Tin",
+  "mini_tin_display"         => "Mini Tin Display"
+}
+inv_type_map  = type_map.invert
+images_sealed = Rails.root.join("app", "assets", "images", "sealed")
+
+# given a holding's set name + product type, find the matching product in sets.json,
+# work out the sealed image URL and the product show page link
+meta_for = lambda do |set_name, human_type|
+  s = sets_data.values.find { |x| x["name"].to_s == set_name.to_s }
+  next nil unless s
+
+  type_code = inv_type_map[human_type] || human_type.to_s.downcase.gsub(/\s+/, "_")
+  prod = Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
+
+  img_base = File.basename((prod && (prod["img"] || prod[:img])).to_s) rescue nil
+  img_url  =
+    if img_base.present? && File.exist?(images_sealed.join(img_base))
+      asset_path("sealed/#{img_base}")
+    else
+      asset_path("pokevaluelogo.png")
+    end
+
+  href = product_path(slug: s["slug"], type: type_code)
+  { img_url: img_url, href: href }
+end
+%>
+
+<!-- keep Portfolio Overview and Holdings using the same heading size -->
+<h4 class="mb-3">Portfolio Overview</h4>
+
+<style>
+  /* filter controls row above the table */
+  .filters-row{display:flex;flex-wrap:nowrap;gap:.25rem}
+  .filter-col{flex:1 1 0;min-width:150px}
+  .filter-col .form-label{
+    width:100%;
+    text-align:center;
+    font-size:.7rem;
+  }
+  .filter-col .form-control,
+  .filter-col .form-select{
+    text-align:center;
+    font-size:.7rem;
+    padding:.25rem .35rem;
+  }
+
+  /* small tweak for summary cards */
+  .card .card-title{font-size:.8rem}
+  .card .fs-4{font-size:1.1rem}
+
+  /* holdings table tuned so it fits on one screen without horizontal scroll on laptop */
+  .table.holdings-table{
+    width:100%;
+    font-size:.7rem; /* body text size */
+    border-collapse:collapse;
+  }
+
+  .table.holdings-table thead th,
+  .table.holdings-table tbody td{
+    vertical-align:middle;
+    text-align:center;
+    padding:.25rem .3rem;
+    line-height:1.2;
+    word-wrap:break-word; /* let longer text wrap instead of forcing horizontal scroll */
+  }
+
+  .table.holdings-table thead th{
+    font-size:.75rem;   /* heading size */
+    font-weight:700;
+    white-space:nowrap; /* headings are short so I keep them on one line */
+  }
+
+  .table.holdings-table tbody td{
+    font-size:.7rem;    /* content size */
+  }
+
+  /* column widths kept fairly small so the table can fit across on a small laptop */
+  .col-product{width:40px}    /* thumbnail only */
+  .col-era{width:70px}        /* "Sword & Shield" will wrap if needed */
+  .col-set{width:120px}
+  .col-type{width:120px}
+  .col-condition{width:110px}
+  .col-date{width:80px}
+  .col-qty{width:50px}
+  .col-money{width:70px}
+  .col-pl{width:70px}
+  .col-roi{width:70px}
+  .col-actions{width:110px}   /* narrow but still enough to keep the 3 buttons inside */
+
+  .table-bordered>:not(caption)>*{border-width:1px 0}
+  .table-bordered>:not(caption)>*>*{border-width:0 1px}
+
+  /* make actions buttons slim so they stay compact inside the Actions column */
+  .holdings-actions .btn{
+    padding:.18rem .3rem;
+    font-size:.65rem;
+    line-height:1;
+    white-space:nowrap;
+  }
+
+  .product-thumb{
+    height:38px;
+    width:auto;
+    object-fit:contain;
+  }
+
+  /* on desktop I don't want horizontal scrolling for the table wrapper */
+  @media (min-width: 768px){
+    .table-responsive{overflow-x:visible;}
+  }
+</style>
+
+<!-- top 4 portfolio summary cards (totals pulled from @totals in the controller) -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card h-100"><div class="card-body py-2">
+      <h6 class="card-title mb-1">Total Cost</h6>
+      <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:cost]) : "€0.00" %></div>
+    </div></div>
+  </div>
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card h-100"><div class="card-body py-2">
+      <h6 class="card-title mb-1">Total Value</h6>
+      <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:value]) : "€0.00" %></div>
+    </div></div>
+  </div>
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card h-100"><div class="card-body py-2">
+      <h6 class="card-title mb-1">Unrealised P/L</h6>
+      <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:pl]) : "€0.00" %></div>
+    </div></div>
+  </div>
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card h-100"><div class="card-body py-2">
+      <h6 class="card-title mb-1">ROI</h6>
+      <div class="fs-4 text-secondary">
+        <% if @totals %>
+          <%= sprintf("%.2f%%", @totals[:roi].to_f) %>
+        <% else %>
+          0.00%
+        <% end %>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<div class="mb-4 text-center">
+  <button class="btn btn-outline-primary btn-sm">View Metrics</button>
+</div>
+
+<h4 class="mb-3">Holdings</h4>
+
+<!-- filters row 1: text search + dropdown filters -->
+<div class="filters-row mb-2">
+  <div class="filter-col">
+    <label class="form-label mb-1">Search</label>
+    <input type="search" class="form-control text-center" id="filter-q" placeholder="Search holdings...">
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">Era</label>
+    <select class="form-select text-center" id="filter-era">
+      <option value="">All</option>
+      <% @eras.each do |e| %>
+        <option value="<%= e %>"><%= e %></option>
+      <% end %>
+    </select>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">Set</label>
+    <select class="form-select text-center" id="filter-set">
+      <option value="">All</option>
+    </select>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">Product Type</label>
+    <select class="form-select text-center" id="filter-type">
+      <option value="">All</option>
+      <% @types.each do |t| %>
+        <option value="<%= t %>"><%= t %></option>
+      <% end %>
+    </select>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">Condition</label>
+    <select class="form-select text-center" id="filter-condition">
+      <option value="">All</option>
+      <% @conditions.each do |c| %>
+        <option value="<%= c %>"><%= c %></option>
+      <% end %>
+    </select>
+  </div>
+</div>
+
+<!-- filters row 2: numeric ranges + date range, all applied client-side -->
+<div class="filters-row mb-3">
+  <div class="filter-col">
+    <label class="form-label mb-1">Cost Range</label>
+    <div class="d-flex gap-2">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-cost-min" placeholder="min">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-cost-max" placeholder="max">
+    </div>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">Value Range</label>
+    <div class="d-flex gap-2">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-value-min" placeholder="min">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-value-max" placeholder="max">
+    </div>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">P/L Range</label>
+    <div class="d-flex gap-2">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-pl-min" placeholder="min">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-pl-max" placeholder="max">
+    </div>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">ROI %</label>
+    <div class="d-flex gap-2">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-roi-min" placeholder="min">
+      <input type="number" step="0.01" class="form-control text-center" id="filter-roi-max" placeholder="max">
+    </div>
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">From</label>
+    <input type="date" class="form-control text-center" id="filter-date-start">
+  </div>
+  <div class="filter-col">
+    <label class="form-label mb-1">To</label>
+    <input type="date" class="form-control text-center" id="filter-date-end">
+  </div>
+</div>
+
+<!-- holdings table: rows are tagged with data-* attributes so JS can filter them -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered holdings-table mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="col-product">Product</th>
+            <th class="col-era">Era</th>
+            <th class="col-set">Set</th>
+            <th class="col-type">Product Type</th>
+            <th class="col-condition">Condition</th>
+            <th class="col-date">Purchase Date</th>
+            <th class="col-qty">Qty</th>
+            <th class="col-money">Cost</th>
+            <th class="col-money">Total Cost</th>
+            <th class="col-money">Value</th>
+            <th class="col-money">Total Value</th>
+            <th class="col-pl">P/L</th>
+            <th class="col-roi">ROI %</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="holdings-body">
+          <% if @holdings.any? %>
+            <% @holdings.each do |h| %>
+              <% meta = meta_for.call(h.set_name, h.product_type) %>
+              <tr
+                data-era="<%= h.era %>"
+                data-set="<%= h.set_name %>"
+                data-type="<%= h.product_type %>"
+                data-condition="<%= h.condition %>"
+                data-date="<%= h.purchase_date&.strftime("%Y-%m-%d") %>"
+                data-cost="<%= h.cost_per_unit.to_f %>"
+                data-total-cost="<%= h.total_cost.to_f %>"
+                data-value="<%= h.value.to_f %>"
+                data-total-value="<%= h.total_value.to_f %>"
+                data-pl="<%= h.pl.to_f %>"
+                data-roi="<%= h.roi_pct.to_f %>"
+                data-search="<%= [h.era, h.set_name, h.product_type, h.condition].join(" ").downcase %>">
+                <td>
+                  <% if meta %>
+                    <%= link_to meta[:href] do %>
+                      <%= image_tag meta[:img_url], alt: h.product_type, class: "product-thumb" %>
+                    <% end %>
+                  <% else %>
+                    <%= image_tag "pokevaluelogo.png", alt: h.product_type, class: "product-thumb" %>
+                  <% end %>
+                </td>
+                <td><%= h.era %></td>
+                <td><%= h.set_name %></td>
+                <td><%= h.product_type %></td>
+                <td><%= h.condition %></td>
+                <td><%= h.purchase_date&.strftime("%Y-%m-%d") %></td>
+                <td><%= h.quantity %></td>
+                <td><%= number_to_currency(h.cost_per_unit, unit: "€") %></td>
+                <td><%= number_to_currency(h.total_cost, unit: "€") %></td>
+                <td><%= number_to_currency(h.value, unit: "€") %></td>
+                <td><%= number_to_currency(h.total_value, unit: "€") %></td>
+                <!-- keep sign + amount together so "-" doesn't end up on its own line -->
+                <td class="text-nowrap"><%= number_to_currency(h.pl, unit: "€") %></td>
+                <td><%= "#{number_with_precision(h.roi_pct, precision: 2)}%" %></td>
+                <td>
+                  <div class="holdings-actions d-inline-flex flex-nowrap">
+                    <% if meta %>
+                      <%= link_to "View", meta[:href], class: "btn btn-sm btn-outline-primary me-1" %>
+                    <% else %>
+                      <span class="btn btn-sm btn-outline-secondary disabled me-1">View</span>
+                    <% end %>
+                    <%= link_to "Edit", edit_holding_path(h), class: "btn btn-sm btn-outline-secondary me-1" %>
+                    <%= link_to "Remove",
+                                holding_path(h),
+                                data: {
+                                  turbo_method: :delete,
+                                  turbo_confirm: "Are you sure you want to remove this product from your portfolio?"
+                                },
+                                class: "btn btn-sm btn-outline-danger" %>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          <% else %>
+            <tr>
+              <td colspan="14" class="text-center text-muted py-4">No products within holdings.</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- quick shortcut to go pick a new product from Sets page -->
+<div class="mt-3 d-flex justify-content-end">
+  <%= link_to "+ Add Product", sets_path, class: "btn btn-success btn-sm" %>
+</div>
+
+<script type="module">
+  // static map of sets in filters, grouped by era
+  const SETS_BY_ERA = {
+    "Mega Evolution": ["Phantasmal Flames", "Mega Evolution Base"],
+    "Scarlet & Violet": [
+      "White Flare","Black Bolt","Destined Rivals","Journey Together",
+      "Prismatic Evolutions","Surging Sparks","Stellar Crown","Shrouded Fable",
+      "Twilight Masquerade","Temporal Forces","Paldean Fates","Paradox Rift","151",
+      "Obsidian Flames","Paldea Evolved","Scarlet & Violet Base"
+    ],
+    "Sword & Shield": [
+      "Crown Zenith","Silver Tempest","Lost Origin","Pokemon GO",
+      "Astral Radiance","Brilliant Stars","Fusion Strike","Celebrations",
+      "Celebrations: Classic Collection","Evolving Skies","Chilling Reign",
+      "Battle Styles","Shining Fates","Vivid Voltage","Champion's Path",
+      "Darkness Ablaze","Rebel Clash","Sword & Shield Base"
+    ]
+  };
+
+  const eraSel   = document.getElementById("filter-era");
+  const setSel   = document.getElementById("filter-set");
+  const typeSel  = document.getElementById("filter-type");
+  const condSel  = document.getElementById("filter-condition");
+  const qInput   = document.getElementById("filter-q");
+
+  const costMin  = document.getElementById("filter-cost-min");
+  const costMax  = document.getElementById("filter-cost-max");
+  const valueMin = document.getElementById("filter-value-min");
+  const valueMax = document.getElementById("filter-value-max");
+  const plMin    = document.getElementById("filter-pl-min");
+  const plMax    = document.getElementById("filter-pl-max");
+  const roiMin   = document.getElementById("filter-roi-min");
+  const roiMax   = document.getElementById("filter-roi-max");
+  const dateFrom = document.getElementById("filter-date-start");
+  const dateTo   = document.getElementById("filter-date-end");
+
+  const tbody    = document.getElementById("holdings-body");
+
+  // whenever era changes, rebuild the Set dropdown so it only shows sets from that era
+  function populateSets() {
+    const era = eraSel?.value;
+    const sets = era ? (SETS_BY_ERA[era] || []) : [];
+    if (setSel) {
+      setSel.innerHTML = '<option value="">All</option>' + sets.map(s => `<option value="${s}">${s}</option>`).join("");
+    }
+  }
+
+  // helper for numeric filters (cost, value, pl, roi)
+  function inRange(value, min, max) {
+    if (min !== "" && !isNaN(min) && value < Number(min)) return false;
+    if (max !== "" && !isNaN(max) && value > Number(max)) return false;
+    return true;
+  }
+
+  // main filter function – runs on every change / keypress
+  function applyFilters() {
+    const era  = eraSel?.value || "";
+    const set  = setSel?.value || "";
+    const type = typeSel?.value || "";
+    const cond = condSel?.value || "";
+    const q    = (qInput?.value || "").trim().toLowerCase();
+
+    const cMin  = costMin?.value || "";
+    const cMax  = costMax?.value || "";
+    const vMin  = valueMin?.value || "";
+    const vMax  = valueMax?.value || "";
+    const pMin  = plMin?.value || "";
+    const pMax  = plMax?.value || "";
+    const rMin  = roiMin?.value || "";
+    const rMax  = roiMax?.value || "";
+    const dFrom = dateFrom?.value || "";
+    const dTo   = dateTo?.value || "";
+
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+
+    rows.forEach(row => {
+      const rowEra   = row.getAttribute("data-era") || "";
+      const rowSet   = row.getAttribute("data-set") || "";
+      const rowType  = row.getAttribute("data-type") || "";
+      const rowCond  = row.getAttribute("data-condition") || "";
+      const rowDate  = row.getAttribute("data-date") || "";
+      const rowCost  = parseFloat(row.getAttribute("data-cost") || "0");
+      const rowVal   = parseFloat(row.getAttribute("data-value") || "0");
+      const rowPL    = parseFloat(row.getAttribute("data-pl") || "0");
+      const rowROI   = parseFloat(row.getAttribute("data-roi") || "0");
+      const haystack = (row.getAttribute("data-search") || "");
+
+      let visible = true;
+
+      if (era && rowEra !== era)   visible = false;
+      if (set && rowSet !== set)   visible = false;
+      if (type && rowType !== type)visible = false;
+      if (cond && rowCond !== cond)visible = false;
+
+      if (q && !haystack.includes(q)) visible = false;
+
+      if (!inRange(rowCost, cMin, cMax)) visible = false;
+      if (!inRange(rowVal,  vMin, vMax)) visible = false;
+      if (!inRange(rowPL,   pMin, pMax)) visible = false;
+      if (!inRange(rowROI,  rMin, rMax)) visible = false;
+
+      if (dFrom && rowDate && rowDate < dFrom) visible = false;
+      if (dTo   && rowDate && rowDate > dTo)   visible = false;
+
+      row.classList.toggle("d-none", !visible);
+    });
+  }
+
+  // hook up all filter inputs so they live-update the table
+  eraSel?.addEventListener("change", () => { populateSets(); applyFilters(); });
+  setSel?.addEventListener("change", applyFilters);
+  typeSel?.addEventListener("change", applyFilters);
+  condSel?.addEventListener("change", applyFilters);
+  qInput?.addEventListener("input", applyFilters);
+
+  costMin?.addEventListener("input", applyFilters);
+  costMax?.addEventListener("input", applyFilters);
+  valueMin?.addEventListener("input", applyFilters);
+  valueMax?.addEventListener("input", applyFilters);
+  plMin?.addEventListener("input", applyFilters);
+  plMax?.addEventListener("input", applyFilters);
+  roiMin?.addEventListener("input", applyFilters);
+  roiMax?.addEventListener("input", applyFilters);
+  dateFrom?.addEventListener("change", applyFilters);
+  dateTo?.addEventListener("change", applyFilters);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    populateSets();
+    applyFilters();
+  });
+</script>

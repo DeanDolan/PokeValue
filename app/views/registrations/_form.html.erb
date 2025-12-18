@@ -1,0 +1,130 @@
+<%# References I used here:
+    - Rails form helpers (form_with, *_tag helpers):
+      https://guides.rubyonrails.org/form_helpers.html
+    - HTML form basics and validation attributes (required, minlength, maxlength, pattern):
+      https://developer.mozilla.org/en-US/docs/Learn/Forms
+    - Password input and pattern attribute details:
+      https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/password
+    - Keydown event and keyboard handling for custom behaviour:
+      https://developer.mozilla.org/en-US/docs/Web/API/Element/keydown_event
+%>
+
+<%= form_with url: register_path, method: :post, local: true do %>
+  <!-- Username field – HTML validation set to 5–15 characters -->
+  <div class="mb-3">
+    <label class="form-label">Username</label>
+    <%= text_field_tag :username,
+      params[:username],
+      class: "form-control",
+      required: true,
+      minlength: 5,
+      maxlength: 15,
+      autocomplete: "username" %>
+    <div class="form-text">
+      Username must be between 5 and 15 characters long.
+    </div>
+  </div>
+
+  <!-- Country select – no free text, just a dropdown that can be filtered by typing -->
+  <div class="mb-3">
+    <label class="form-label">Country</label>
+    <%= select_tag :country_code,
+      options_for_select(
+        eu_countries.map { |c| ["#{c[:flag]} #{c[:name]}", c[:code]] },
+        params[:country_code]
+      ),
+      include_blank: "Select country",
+      class: "form-select",
+      required: true,
+      id: "country-select" %>
+  </div>
+
+  <!-- Password field – 12–20 chars, at least one digit and one non-alphanumeric symbol -->
+  <div class="mb-3">
+    <label class="form-label">Password</label>
+    <%= password_field_tag :password,
+      nil,
+      class: "form-control",
+      required: true,
+      autocomplete: "new-password",
+      minlength: 12,
+      maxlength: 20,
+      pattern: '(?=.*\d)(?=.*[^A-Za-z0-9]).{12,20}',
+      title: "Password must be 12–20 characters long and include at least one digit and one symbol." %>
+    <div class="form-text">
+      Password must be 12–20 characters long and include at least one number (0–9)
+      and at least one symbol (for example: ! ? @ # € &).
+    </div>
+  </div>
+
+  <!-- Confirm password mirrors password length rules, actual match is enforced in the controller -->
+  <div class="mb-3">
+    <label class="form-label">Confirm Password</label>
+    <%= password_field_tag :password_confirmation,
+      nil,
+      class: "form-control",
+      required: true,
+      autocomplete: "new-password",
+      minlength: 12,
+      maxlength: 20 %>
+  </div>
+
+  <!-- Simple primary action button to submit the registration form -->
+  <div class="d-grid">
+    <%= submit_tag "Register", class: "btn btn-success" %>
+  </div>
+<% end %>
+
+<script type="module">
+  // Small type-ahead filter for the country dropdown so I can quickly narrow down the list while it’s focused
+  document.addEventListener("DOMContentLoaded", () => {
+    const select = document.getElementById("country-select");
+    if (!select) return;
+
+    const allOptions     = Array.from(select.options);
+    const blankOption    = allOptions.find(o => o.value === "");
+    const countryOptions = allOptions.filter(o => o.value !== "");
+
+    let typed = "";
+    let timer = null;
+
+    // When the select has focus, build up a buffer from keys and hide options that don't match that buffer
+    select.addEventListener("keydown", (e) => {
+      const key = e.key;
+
+      if (key === "Backspace") {
+        typed = typed.slice(0, -1);
+      } else if (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        typed += key.toLowerCase();
+      } else if (key === "Escape") {
+        // Escape clears the buffer and shows all countries again
+        typed = "";
+        countryOptions.forEach(o => { o.hidden = false; });
+        return;
+      } else {
+        // Ignore navigation keys, tab, enter, etc.
+        return;
+      }
+
+      // Clear the buffer after a short pause so slow typing still works
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        typed = "";
+        countryOptions.forEach(o => { o.hidden = false; });
+      }, 800);
+
+      // Reset visibility before applying the current filter
+      countryOptions.forEach(o => { o.hidden = false; });
+
+      if (typed.length === 0) return;
+
+      // Hide options that don't contain the typed string anywhere in their label
+      countryOptions.forEach(o => {
+        const text = o.text.toLowerCase();
+        if (!text.includes(typed)) {
+          o.hidden = true;
+        }
+      });
+    });
+  });
+</script>

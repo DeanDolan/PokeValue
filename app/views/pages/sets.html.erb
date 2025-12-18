@@ -1,0 +1,220 @@
+<%# References I leaned on building this page:
+    - Rails layouts & rendering: https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Bootstrap grid / spacing: https://getbootstrap.com/docs/5.3/layout/grid/
+    - DOM + localStorage basics: https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage
+%>
+
+<div class="container py-3 sets-layout">
+  <div class="row g-3">
+    <aside class="col-12 col-lg-3">
+      <div class="border rounded-3 p-3 bg-white">
+        <h3 class="h6 mb-3">Era</h3>
+
+        <!-- Era buttons on the left – I use data-era so JS can read which era is selected -->
+        <ul class="list-unstyled d-flex flex-column gap-2 mb-0" id="era-list">
+          <% @eras.each_with_index do |era, i| %>
+            <li>
+              <button
+                type="button"
+                class="btn w-100 text-start era-item <%= i.zero? ? 'active btn-primary' : 'btn-outline-secondary' %>"
+                data-era="<%= era %>">
+                <%= era %>
+              </button>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </aside>
+
+    <section class="col-12 col-lg-9">
+      <!-- Top row: era badge image + result count + search box -->
+      <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-3">
+        <div class="d-flex align-items-center gap-3">
+          <%= image_tag @era_badges[@eras.first], id: "era-badge", class: "era-badge", alt: @eras.first %>
+          <span class="text-muted small" id="result-count"></span>
+        </div>
+        <div class="w-100" style="max-width:340px;">
+          <input id="sets-search" class="form-control" type="search" placeholder="Search sets...">
+        </div>
+      </div>
+
+      <!-- Grid of sets – each card carries data-era and data-name for filtering -->
+      <div id="sets-grid" class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3">
+        <% @sets.each do |s| %>
+          <div class="col set-card" data-era="<%= s[:era] %>" data-name="<%= s[:name].downcase %>">
+            <%= link_to set_path(slug: s[:slug]), class: "text-decoration-none text-reset" do %>
+              <div class="card h-100">
+                <%= image_tag s[:image_url], alt: s[:name], class: "card-img-top", style: "aspect-ratio:4/3;object-fit:cover;" %>
+                <div class="card-body py-2 text-center">
+                  <div class="fw-semibold small"><%= s[:name] %></div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Empty state message when filters hide everything -->
+      <div id="sets-empty" class="text-center text-muted border border-2 border-dashed rounded-3 py-5 mt-3 d-none">
+        No sets match your filters.
+      </div>
+    </section>
+  </div>
+</div>
+
+<style>
+  /* Badge sizing tweaks per era so the logos look balanced */
+  .era-badge{max-height:56px;object-fit:contain}
+  .era-badge.is-mega{max-height:96px}
+  .era-badge.is-sv-small{max-height:44px}
+  .era-badge.is-ss-smaller{max-height:36px}
+
+  /* Active era button shouldn't be clickable again */
+  .era-item.active{pointer-events:none}
+
+  .border-dashed{border-style:dashed}
+</style>
+
+<script>
+  (() => {
+    const eraList = document.getElementById('era-list');
+    const grid    = document.getElementById('sets-grid');
+    const empty   = document.getElementById('sets-empty');
+    const search  = document.getElementById('sets-search');
+    const badge   = document.getElementById('era-badge');
+    const count   = document.getElementById('result-count');
+
+    // If something goes wrong and these aren't there, just bail early
+    if (!eraList || !grid) return;
+
+    // Map era names to the correct badge URL coming from the controller
+    const eraToBadge = {
+      "Mega Evolution":   "<%= @era_badges['Mega Evolution'] %>",
+      "Scarlet & Violet": "<%= @era_badges['Scarlet & Violet'] %>",
+      "Sword & Shield":   "<%= @era_badges['Sword & Shield'] %>"
+    };
+
+    // Helper for assigning a size class to the badge depending on era
+    function sizeClassForEra(era){
+      if (era === "Mega Evolution")   return "is-mega";
+      if (era === "Scarlet & Violet") return "is-sv-small";
+      if (era === "Sword & Shield")   return "is-ss-smaller";
+      return "";
+    }
+
+    const firstEra   = "<%= @eras.first %>";
+    const buttons    = Array.from(eraList.querySelectorAll('button[data-era]'));
+    let storedEra    = null;
+
+    // Try to restore last selected era so when I go back from a set page, the same era stays active
+    try {
+      storedEra = window.localStorage.getItem('setsActiveEra');
+    } catch(_) {}
+
+    let activeEra = firstEra;
+    if (storedEra && buttons.some(b => b.getAttribute('data-era') === storedEra)) {
+      activeEra = storedEra;
+    }
+
+    // Make sure button styles reflect whichever era is actually active
+    buttons.forEach(b => {
+      const era = b.getAttribute('data-era');
+      b.classList.remove('active','btn-primary','btn-outline-secondary');
+      if (era === activeEra) {
+        b.classList.add('active','btn-primary');
+      } else {
+        b.classList.add('btn-outline-secondary');
+      }
+    });
+
+    // Restore search term as well so the filter feels sticky when navigating around
+    let storedSearch = "";
+    try {
+      storedSearch = window.localStorage.getItem('setsSearch') || "";
+    } catch(_) {}
+    if (search) search.value = storedSearch;
+
+    // Core filter logic: only show cards that match the active era + search text
+    function apply() {
+      const q = (search && search.value ? search.value : "").trim().toLowerCase();
+      const cards = Array.from(grid.querySelectorAll('.set-card'));
+      let shown = 0;
+
+      cards.forEach(c => {
+        const era   = c.getAttribute('data-era');
+        const name  = c.getAttribute('data-name') || "";
+        const matchEra  = era === activeEra;
+        const matchText = !q || name.includes(q);
+        const visible   = matchEra && matchText;
+
+        c.classList.toggle('d-none', !visible);
+        if (visible) shown++;
+      });
+
+      // Toggle empty message and update the count label
+      empty.classList.toggle('d-none', shown > 0);
+      count.textContent = shown + (shown === 1 ? " set" : " sets");
+    }
+
+    // Initialise badge image + size class for the starting era
+    const initialBadgeSrc = eraToBadge[activeEra] || "";
+    if (initialBadgeSrc) {
+      badge.src = initialBadgeSrc;
+      badge.alt = activeEra;
+    }
+    badge.classList.remove('is-mega','is-sv-small','is-ss-smaller');
+    const initialCls = sizeClassForEra(activeEra);
+    if (initialCls) badge.classList.add(initialCls);
+
+    // Clicking an era button updates activeEra, stores it, and reapplies filters
+    eraList.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-era]');
+      if (!btn) return;
+
+      const newEra = btn.getAttribute('data-era');
+      if (!newEra || newEra === activeEra) return;
+
+      activeEra = newEra;
+
+      // Swap button visuals so only the new era looks active
+      buttons.forEach(b => {
+        b.classList.remove('active','btn-primary','btn-outline-secondary');
+        if (b === btn) {
+          b.classList.add('active','btn-primary');
+        } else {
+          b.classList.add('btn-outline-secondary');
+        }
+      });
+
+      // Persist selected era so "back" from set page keeps the same filter
+      try {
+        window.localStorage.setItem('setsActiveEra', activeEra);
+      } catch(_) {}
+
+      // Update badge src + sizing
+      const src = eraToBadge[activeEra] || "";
+      if (src) {
+        badge.src = src;
+        badge.alt = activeEra;
+      }
+      badge.classList.remove('is-mega','is-sv-small','is-ss-smaller');
+      const cls = sizeClassForEra(activeEra);
+      if (cls) badge.classList.add(cls);
+
+      apply();
+    });
+
+    // Live search on key input, also saved into localStorage
+    if (search) {
+      search.addEventListener('input', () => {
+        try {
+          window.localStorage.setItem('setsSearch', search.value.trim());
+        } catch(_) {}
+        apply();
+      });
+    }
+
+    // First pass so the page respects any stored filters straight away
+    apply();
+  })();
+</script>

@@ -1,0 +1,290 @@
+<%# References I leaned on here:
+    - Rails layouts / views: https://guides.rubyonrails.org/layouts_and_rendering.html
+    - Bootstrap grid / spacing: https://getbootstrap.com/docs/5.3/layout/grid/
+    - File input basics (accept/multiple): https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file
+%>
+
+<div class="container py-3">
+  <style>
+    /* Page header layout and basic typography for the Showcase page */
+    .sc-page-header{
+      margin:12px 0 16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .sc-page-title{margin:0;font-size:1.4rem;line-height:1.1;}
+    .sc-subtitle{margin:2px 0 0;font-size:.85rem;color:#6b7280;}
+
+    /* Shared card look so everything feels like one design system */
+    .sc-card{
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+    }
+
+    /* Top “Create a post” card wrapper */
+    .sc-create-card{
+      padding:12px;
+      margin-bottom:18px;
+    }
+
+    .sc-create-title{
+      margin:0 0 10px;
+      font-size:1.1rem;
+      text-align:center;
+    }
+
+    /* Simple one-column form grid for the create post form */
+    .sc-form-grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+      max-width:640px;
+      margin:0 auto;
+    }
+
+    .sc-field{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .sc-label{
+      font-size:.75rem;
+      color:#4b5563;
+    }
+
+    /* Shared input/textarea styling so the form feels consistent with the rest of the app */
+    .sc-input,
+    .sc-textarea{
+      font-size:.9rem;
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid #d4d4d8;
+      background:#fff;
+      outline:none;
+    }
+
+    .sc-textarea{
+      min-height:96px;
+      resize:vertical;
+    }
+
+    .sc-input:focus,
+    .sc-textarea:focus{
+      border-color:#2563eb;
+      box-shadow:0 0 0 1px #2563eb20;
+    }
+
+    /* Image uploader area – dashed border and small helper text */
+    .sc-uploader{
+      border:1px dashed #cbd5e1;
+      border-radius:12px;
+      padding:12px;
+      display:grid;
+      gap:6px;
+      place-items:center;
+      text-align:center;
+    }
+
+    .sc-uploader p{
+      margin:0;
+      font-size:.8rem;
+      color:#6b7280;
+    }
+
+    .sc-uploader input[type="file"]{
+      font-size:.85rem;
+    }
+
+    .sc-hint{
+      font-size:.75rem;
+      color:#9ca3af;
+    }
+
+    /* Form actions row (Clear / Post buttons) */
+    .sc-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:6px;
+    }
+
+    .sc-btn{
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid #d4d4d8;
+      background:#f3f4f6;
+      font-size:.9rem;
+      font-weight:600;
+      cursor:pointer;
+    }
+
+    .sc-btn:hover{
+      background:#e5e7eb;
+    }
+
+    .sc-btn-primary{
+      background:#16a34a;
+      color:#fff;
+      border-color:#16a34a;
+    }
+
+    .sc-btn-primary:hover{
+      background:#15803d;
+    }
+
+    /* Feed card shell – this will eventually hold community posts */
+    .sc-feed-card{
+      position:relative;
+      overflow:hidden;
+    }
+
+    .sc-feed-header{
+      padding:12px 14px;
+      border-bottom:1px solid #e5e7eb;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .sc-feed-title{
+      margin:0;
+      font-size:1rem;
+    }
+
+    .sc-feed-wrap{
+      min-height:260px;
+    }
+
+    /* Empty state text centred in the card until there are real posts */
+    .sc-empty-state{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      color:#6b7280;
+      font-size:.85rem;
+      pointer-events:none;
+    }
+
+    /* Reply preview row at the bottom of the feed card */
+    .sc-reply-preview{
+      padding:12px 16px;
+      border-top:1px solid #f1f5f9;
+      display:grid;
+      gap:10px;
+      background:#fafafa;
+    }
+
+    .sc-reply-row{
+      display:grid;
+      grid-template-columns:1fr minmax(120px,160px);
+      gap:10px;
+    }
+
+    .sc-reply-input{
+      font-size:.9rem;
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid #d4d4d8;
+      background:#fff;
+      outline:none;
+    }
+
+    .sc-reply-input:focus{
+      border-color:#2563eb;
+      box-shadow:0 0 0 1px #2563eb20;
+    }
+
+    /* Mobile tweaks so the layout doesn’t feel cramped on small screens */
+    @media (max-width:640px){
+      .sc-form-grid{max-width:100%;}
+      .sc-reply-row{grid-template-columns:1fr;}
+    }
+  </style>
+
+  <!-- Page header with title and small subtitle -->
+  <div class="sc-page-header">
+    <div>
+      <h1 class="sc-page-title">Showcase</h1>
+      <p class="sc-subtitle mb-0">
+        Share your pulls, sealed displays, and collection highlights.
+      </p>
+    </div>
+  </div>
+
+  <!-- Create post card (design only for now, no backend wiring yet) -->
+  <section class="sc-create-card sc-card">
+    <h2 class="sc-create-title">Create a Post</h2>
+    <div class="sc-form-grid">
+      <!-- Heading input for the post -->
+      <div class="sc-field">
+        <label class="sc-label" for="sc-post-title">Heading</label>
+        <input id="sc-post-title"
+               class="sc-input"
+               type="text"
+               placeholder="e.g. Just pulled my favourite card!" />
+      </div>
+
+      <!-- Image uploader – just a plain file input with multiple images allowed -->
+      <div class="sc-field">
+        <label class="sc-label" for="sc-post-images">Images</label>
+        <div class="sc-uploader">
+          <input id="sc-post-images" type="file" accept="image/*" multiple />
+          <p>Upload up to 10 images. PNG or JPG recommended.</p>
+          <div class="sc-hint">Videos are not supported.</div>
+        </div>
+      </div>
+
+      <!-- Optional description for extra story behind the post -->
+      <div class="sc-field">
+        <label class="sc-label" for="sc-post-body">Description</label>
+        <textarea id="sc-post-body"
+                  class="sc-textarea"
+                  placeholder="e.g. I just opened my first pack of the day and pulled the most expensive card!"></textarea>
+      </div>
+
+      <!-- Action buttons – currently just visual, no JS wired up yet -->
+      <div class="sc-actions">
+        <button type="button" class="sc-btn">
+          Clear
+        </button>
+        <button type="button" class="sc-btn sc-btn-primary">
+          Post
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feed card (design only) where community posts will eventually show -->
+  <section class="sc-feed-card sc-card">
+    <div class="sc-feed-header">
+      <h3 class="sc-feed-title">Community Posts</h3>
+    </div>
+    <div class="sc-feed-wrap">
+      <!-- Future posts will go here -->
+    </div>
+    <div class="sc-empty-state">
+      No posts yet
+    </div>
+
+    <!-- Simple reply strip at the bottom to hint at future interaction -->
+    <div class="sc-reply-preview">
+      <div class="sc-reply-row">
+        <input class="sc-reply-input" type="text" placeholder="Write a reply…" />
+        <button type="button" class="sc-btn">
+          Reply
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Small spacer at the bottom so content doesn’t feel jammed into the footer -->
+  <div style="height:18px;"></div>
+</div>

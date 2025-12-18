@@ -1,0 +1,23 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  username: MyString
+  email: MyString
+  country_code: MyString
+  recovery_question: MyString
+  recovery_answer_digest: MyString
+  password_digest: MyString
+  admin: false
+  failed_attempts: 1
+  locked_at: 2025-12-10 21:45:15
+
+two:
+  username: MyString
+  email: MyString
+  country_code: MyString
+  recovery_question: MyString
+  recovery_answer_digest: MyString
+  password_digest: MyString
+  admin: false
+  failed_attempts: 1
+  locked_at: 2025-12-10 21:45:15
