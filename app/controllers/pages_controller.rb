@@ -1,15 +1,6 @@
-# References:
-# - Rails controllers, params, rendering:
-#   https://guides.rubyonrails.org/action_controller_overview.html
-# - Active Record basics and querying:
-#   https://guides.rubyonrails.org/active_record_basics.html
-# - JSON parsing in Ruby:
-#   https://ruby-doc.org/stdlib/libdoc/json/rdoc/JSON.html
-
 class PagesController < ApplicationController
   require "json"
 
-  # Central place for turning product type codes into friendly labels
   PRODUCT_TYPE_NAMES = {
     "etb"                      => "Elite Trainer Box",
     "pc_etb"                   => "Pokemon Center Elite Trainer Box",
@@ -24,29 +15,24 @@ class PagesController < ApplicationController
     "mini_tin_display"         => "Mini Tin Display"
   }
 
-  # Static pages that are layout only for now
   def home; end
   def marketplace; end
   def auction; end
   def raffle; end
   def showcase; end
 
-  # Sets list page
   def sets
     data        = load_sets_data
     images_sets = Rails.root.join("app", "assets", "images", "sets")
 
-    # Fixed list of eras I want to show in the sidebar
     @eras = [ "Mega Evolution", "Scarlet & Violet", "Sword & Shield" ]
 
-    # Badge images per era for the header area
     @era_badges = {
       "Mega Evolution"   => view_context.asset_path("sets/megaevolution.png"),
       "Scarlet & Violet" => view_context.asset_path("sets/scarletandviolet.png"),
       "Sword & Shield"   => view_context.asset_path("sets/swordandshield.png")
     }
 
-    # Build a plain Ruby hash per set that the view can loop over
     @sets = data.values.map do |s|
       box = File.basename(s["boxImage"].to_s) rescue nil
       img =
@@ -60,12 +46,10 @@ class PagesController < ApplicationController
     end
   end
 
-  # Single set page
   def set
     slug = params[:slug].to_s
     data = load_sets_data
 
-    # Find the entry in the JSON data that matches the slug
     s = data.values.find { |x| x["slug"].to_s == slug }
     raise ActiveRecord::RecordNotFound unless s
 
@@ -81,17 +65,17 @@ class PagesController < ApplicationController
     @cards        = s["cards"]
     @secret       = s["secretCards"]
 
-    # Try to resolve the set logo from the assets folder, fall back to app logo
+    logo_override = set_logo_override_filename(slug: slug)
     logo_base = File.basename(s["logo"].to_s) rescue nil
     @logo_url =
-      if logo_base.present? && File.exist?(images_sets.join(logo_base))
+      if logo_override.present? && File.exist?(images_sets.join(logo_override))
+        view_context.asset_path("sets/#{logo_override}")
+      elsif logo_base.present? && File.exist?(images_sets.join(logo_base))
         view_context.asset_path("sets/#{logo_base}")
       else
         view_context.asset_path("pokevaluelogo.png")
       end
 
-    # --- Urgency for set-level box ---
-    # Convert release date into a Date object so I can compare months since release
     release_date_obj =
       begin
         raw_release.present? ? Date.parse(raw_release.to_s) : nil
@@ -104,7 +88,6 @@ class PagesController < ApplicationController
 
     if release_date_obj
       today  = Date.current
-      # Approx months since release by comparing year and month
       months = (today.year - release_date_obj.year) * 12 + (today.month - release_date_obj.month)
 
       if months < 6
@@ -127,33 +110,40 @@ class PagesController < ApplicationController
         @urgency_class = "urgency-black"
       end
     end
-    # ---------------------------------
 
-    # Some data files use "products", some "sealed" – I handle both
     products_src = s["products"] || s["sealed"] || []
-    @products = Array(products_src).map do |p|
-      img_key  = p["img"]  || p[:img]
-      name_key = p["name"] || p[:name]
-      type_key = (p["type"] || p[:type]).to_s
+    @products =
+      Array(products_src).filter_map do |prod|
+        next if hidden_product?(slug: slug, product: prod)
 
-      img_base = File.basename(img_key.to_s) rescue nil
-      img_url =
-        if img_base.present? && File.exist?(images_sealed.join(img_base))
-          view_context.asset_path("sealed/#{img_base}")
+        img_key  = prod["img"]  || prod[:img]
+        name_key = prod["name"] || prod[:name]
+        type_key = (prod["type"] || prod[:type]).to_s
+
+        override = sealed_override_filename(set_name: @set_name, type_key: type_key)
+        if override.present? && File.exist?(images_sealed.join(override))
+          img_url = view_context.asset_path("sealed/#{override}")
         else
-          view_context.asset_path("pokevaluelogo.png")
+          img_base = File.basename(img_key.to_s) rescue nil
+          img_url =
+            if img_base.present? && File.exist?(images_sealed.join(img_base))
+              view_context.asset_path("sealed/#{img_base}")
+            else
+              view_context.asset_path("pokevaluelogo.png")
+            end
         end
 
-      {
-        type:    type_key,
-        name:    name_key.to_s,
-        img_url: img_url,
-        link:    product_path(slug: slug, type: type_key)
-      }
-    end
+        route_type = build_route_type_for_product(type_key: type_key, name: name_key.to_s)
+
+        {
+          type:    type_key,
+          name:    name_key.to_s,
+          img_url: img_url,
+          link:    set_product_path(slug: slug, type: route_type)
+        }
+      end
   end
 
-  # Single product page
   def product
     slug      = params[:slug].to_s
     want_type = params[:type].to_s
@@ -164,8 +154,31 @@ class PagesController < ApplicationController
 
     products_src = s["products"] || s["sealed"] || []
 
-    # Find the product entry that matches the type in the URL
-    p = Array(products_src).find { |prod| (prod["type"] || prod[:type]).to_s == want_type }
+    parsed = parse_route_type(want_type)
+    base_type = parsed[:base_type]
+    want_variant_slug = parsed[:variant_slug]
+    want_origin_slug = parsed[:origin_slug]
+
+    p =
+      Array(products_src).find do |prod|
+        next if hidden_product?(slug: slug, product: prod)
+
+        prod_type = (prod["type"] || prod[:type]).to_s
+        next false unless normalize_type(prod_type) == base_type
+
+        prod_name = (prod["name"] || prod[:name]).to_s
+        v = extract_variant(prod_name)
+        o = infer_origin(type_key: prod_type, name: prod_name)
+
+        v_slug = v.present? ? slugify(v) : nil
+        o_slug = o.present? ? slugify(o) : nil
+
+        ok_variant = want_variant_slug.present? ? (v_slug == want_variant_slug) : true
+        ok_origin  = want_origin_slug.present?  ? (o_slug == want_origin_slug)  : true
+
+        ok_variant && ok_origin
+      end
+
     raise ActiveRecord::RecordNotFound unless p
 
     images_sets   = Rails.root.join("app", "assets", "images", "sets")
@@ -175,7 +188,6 @@ class PagesController < ApplicationController
     @set_name = s["name"]
 
     raw_release = s["releaseDate"].to_s.presence
-    # Try to parse the date into a proper Date for formatting and urgency logic
     release_date_obj =
       if raw_release
         begin
@@ -190,32 +202,41 @@ class PagesController < ApplicationController
     @release_date = release_date_obj ? release_date_obj.strftime("%Y-%m-%d") : (raw_release || "TBD")
     @era          = s["era"].to_s
 
-    # Resolve set logo for the top right panel
+    set_logo_override = set_logo_override_filename(slug: slug)
     set_logo_base = File.basename(s["logo"].to_s) rescue nil
     @set_logo_url =
-      if set_logo_base.present? && File.exist?(images_sets.join(set_logo_base))
+      if set_logo_override.present? && File.exist?(images_sets.join(set_logo_override))
+        view_context.asset_path("sets/#{set_logo_override}")
+      elsif set_logo_base.present? && File.exist?(images_sets.join(set_logo_base))
         view_context.asset_path("sets/#{set_logo_base}")
-      else
-        view_context.asset_path("pokevaluelogo.png")
-      end
-
-    # Resolve the product image
-    img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
-    @product_img_url =
-      if img_base.present? && File.exist?(images_sealed.join(img_base))
-        view_context.asset_path("sealed/#{img_base}")
       else
         view_context.asset_path("pokevaluelogo.png")
       end
 
     @product_name      = (p["name"] || p[:name]).to_s
     @product_type      = (p["type"] || p[:type]).to_s
-    # Prefer a friendly label from the mapping, fall back to the raw name
-    @product_type_name = PRODUCT_TYPE_NAMES[@product_type] || @product_name
-    @product_value     = p["value"]    || p[:value]
+
+    override = sealed_override_filename(set_name: @set_name, type_key: @product_type)
+    if override.present? && File.exist?(images_sealed.join(override))
+      @product_img_url = view_context.asset_path("sealed/#{override}")
+    else
+      img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
+      @product_img_url =
+        if img_base.present? && File.exist?(images_sealed.join(img_base))
+          view_context.asset_path("sealed/#{img_base}")
+        else
+          view_context.asset_path("pokevaluelogo.png")
+        end
+    end
+
+    @product_type_name = PRODUCT_TYPE_NAMES[normalize_type(@product_type)] || @product_name
+    fallback_value     = p["value"]    || p[:value]
     @product_listings  = p["listings"] || p[:listings]
 
-    # Urgency Level for product page (same logic as set)
+    @admin_value_sku = build_value_override_sku(set_slug: slug, route_type: want_type)
+    override_row = Product.find_by(sku: @admin_value_sku)
+    @product_value = override_row&.value || fallback_value
+
     @urgency_label = "Unknown"
     @urgency_class = "urgency-unknown"
 
@@ -244,7 +265,6 @@ class PagesController < ApplicationController
       end
     end
 
-    # Static lists the view uses to show context, filters or dropdowns
     @eras = [ "Mega Evolution", "Scarlet & Violet", "Sword & Shield" ]
     @types = [
       "Booster Box", "Elite Trainer Box", "Pokemon Center Elite Trainer Box",
@@ -260,7 +280,6 @@ class PagesController < ApplicationController
       "Box Only", "Contents Only"
     ]
 
-    # If user is logged in, show their past holdings for this product
     @holdings =
       if defined?(current_user) && current_user
         current_user.holdings.where(set_name: @set_name, product_type: @product_type_name).order(created_at: :desc)
@@ -269,12 +288,10 @@ class PagesController < ApplicationController
       end
   end
 
-  # JSON endpoint for the global search bar
   def search_index
     q = params[:q].to_s.strip
     return render json: { sets: [], products: [] } if q.blank?
 
-    # Split the query into lowercase tokens for flexible matching
     tokens        = q.downcase.split(/\s+/)
     data          = load_sets_data
     images_sets   = Rails.root.join("app", "assets", "images", "sets")
@@ -288,7 +305,6 @@ class PagesController < ApplicationController
       era      = s["era"].to_s
       slug     = s["slug"].to_s
 
-      # Try set logo first, fall back to box image, then app logo
       logo_base = File.basename(s["logo"].to_s) rescue nil
       box_base  = File.basename(s["boxImage"].to_s) rescue nil
       set_img =
@@ -314,19 +330,27 @@ class PagesController < ApplicationController
         }
       end
 
-      # Go through each sealed product for this set and see if it matches the query
-      Array(s["products"] || s["sealed"]).each do |p|
-        type_code = (p["type"] || p[:type]).to_s
-        friendly  = PRODUCT_TYPE_NAMES[type_code] || (p["name"] || p[:name]).to_s
-        prod_name = (p["name"] || p[:name]).to_s
+      Array(s["products"] || s["sealed"]).each do |prod|
+        next if hidden_product?(slug: slug, product: prod)
 
-        img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
-        prod_img =
-          if img_base.present? && File.exist?(images_sealed.join(img_base))
-            view_context.asset_path("sealed/#{img_base}")
-          else
-            view_context.asset_path("pokevaluelogo.png")
-          end
+        type_code = (prod["type"] || prod[:type]).to_s
+        prod_name = (prod["name"] || prod[:name]).to_s
+        friendly  = PRODUCT_TYPE_NAMES[normalize_type(type_code)] || prod_name
+
+        override = sealed_override_filename(set_name: set_name, type_key: type_code)
+        if override.present? && File.exist?(images_sealed.join(override))
+          prod_img = view_context.asset_path("sealed/#{override}")
+        else
+          img_base = File.basename((prod["img"] || prod[:img]).to_s) rescue nil
+          prod_img =
+            if img_base.present? && File.exist?(images_sealed.join(img_base))
+              view_context.asset_path("sealed/#{img_base}")
+            else
+              view_context.asset_path("pokevaluelogo.png")
+            end
+        end
+
+        route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
 
         hay_prod     = "#{set_name} #{era} #{friendly} #{type_code} #{prod_name}".downcase
         prod_matches = tokens.all? { |t| hay_prod.include?(t) }
@@ -337,22 +361,120 @@ class PagesController < ApplicationController
             label:     friendly,
             subtitle:  "Product · #{set_name}",
             image_url: prod_img,
-            href:      product_path(slug: slug, type: type_code),
+            href:      set_product_path(slug: slug, type: route_type),
             set_name:  set_name
           }
         end
       end
     end
 
-    # Keep response size under control so global search stays snappy
     render json: { sets: sets.first(25), products: products.first(50) }
   end
 
   private
 
-  # Helper for loading and parsing the sets JSON once per request
   def load_sets_data
     path = Rails.root.join("config", "sets.json")
     JSON.parse(File.read(path, encoding: "bom|utf-8"))
+  end
+
+  def set_logo_override_filename(slug:)
+    s = normalize_text(slug)
+    return "celebrationsclassiccollection.png" if s == "celebrationsclassiccollection"
+    nil
+  end
+
+  def sealed_override_filename(set_name:, type_key:)
+    sn = normalize_text(set_name)
+    base = normalize_type(type_key)
+
+    if sn == normalize_text("Scarlet & Violet Base")
+      return "scarletandviolet_boosterbox.png" if base == "booster_box"
+      return "scarletandviolet_boosterbundle.png" if base == "booster_bundle"
+    end
+
+    nil
+  end
+
+  def hidden_product?(slug:, product:)
+    type_key = (product["type"] || product[:type]).to_s
+    name_key = (product["name"] || product[:name]).to_s
+
+    base_type = normalize_type(type_key)
+    name_ci   = normalize_text(name_key)
+
+    if normalize_text(slug) == "151"
+      return true if [ "mini_tin", "mini_tin_display" ].include?(base_type)
+    end
+
+    hidden_names = [
+      normalize_text("Team Rocket's Moltres ex Ultra Premium Collection")
+    ]
+
+    hidden_names.include?(name_ci)
+  end
+
+  def normalize_text(s)
+    s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
+  end
+
+  def normalize_type(t)
+    x = t.to_s.strip.downcase
+    x = x.tr("-", "_")
+    x = x.gsub(/\s+/, "_")
+    x
+  end
+
+  def slugify(s)
+    normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
+  def extract_variant(name)
+    m = name.to_s.match(/\(([^)]+)\)/)
+    m ? m[1].to_s.strip : nil
+  end
+
+  def infer_origin(type_key:, name:)
+    t = normalize_type(type_key)
+    n = normalize_text(name)
+    return "Pokemon Center" if t == "pc_etb"
+    return "Pokemon Center" if n.include?("pokemon center")
+    nil
+  end
+
+  def build_route_type_for_product(type_key:, name:)
+    base   = normalize_type(type_key)
+    variant = extract_variant(name)
+    origin  = infer_origin(type_key: type_key, name: name)
+
+    out = base.dup
+    out << "--v-#{slugify(variant)}" if variant.present?
+    out << "--o-#{slugify(origin)}"  if origin.present?
+    out
+  end
+
+  def parse_route_type(route_type)
+    raw = route_type.to_s.strip
+    parts = raw.split("--")
+
+    base = normalize_type(parts.shift || "")
+    v = nil
+    o = nil
+
+    parts.each do |p|
+      if p.start_with?("v-")
+        v = p.delete_prefix("v-").to_s.strip
+      elsif p.start_with?("o-")
+        o = p.delete_prefix("o-").to_s.strip
+      end
+    end
+
+    { base_type: base, variant_slug: v.presence, origin_slug: o.presence }
+  end
+
+  def build_value_override_sku(set_slug:, route_type:)
+    a = set_slug.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
+    b = route_type.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
+    "#{a}--#{b}"
   end
 end

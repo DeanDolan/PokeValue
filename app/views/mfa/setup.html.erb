@@ -1,0 +1,51 @@
+<div class="container py-4" style="max-width:680px;">
+  <h1 class="mb-3">Set up Admin MFA</h1>
+
+  <div class="alert alert-warning">
+    You must enable MFA for the admin account before continuing.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="mb-2 fw-semibold">Secret</div>
+      <div class="font-monospace"><%= @secret %></div>
+      <div class="small text-muted mt-2">Add this secret to your authenticator as a TOTP account (6 digits, 30 seconds).</div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="mb-2 fw-semibold">Provisioning URI</div>
+      <div class="small font-monospace" style="word-break: break-all;"><%= @otpauth_uri %></div>
+    </div>
+  </div>
+
+  <%= form_with url: mfa_enable_path, method: :post, local: true do %>
+    <div class="mb-3">
+      <label class="form-label">Enter a 6-digit code to enable</label>
+      <%= text_field_tag :code, nil, class: "form-control", required: true, autocomplete: "one-time-code" %>
+    </div>
+
+    <div class="d-grid">
+      <%= submit_tag "Enable MFA", class: "btn btn-success" %>
+    </div>
+  <% end %>
+
+  <% if defined?(@recovery_codes) && @recovery_codes.present? %>
+    <hr class="my-4">
+
+    <div class="alert alert-info">
+      Save these recovery codes. Each code can be used once.
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <ul class="mb-0">
+          <% @recovery_codes.each do |c| %>
+            <li class="font-monospace"><%= c %></li>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  <% end %>
+</div>

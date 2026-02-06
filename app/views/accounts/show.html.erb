@@ -1,3 +1,141 @@
-<h2>My Account</h2>
-<p>Username: <strong><%= @user.username %></strong></p>
-<p>Country: <%= @user.country_code %></p>
+<%
+require "json"
+
+sets_data =
+  begin
+    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
+    JSON.parse(raw)
+  rescue
+    {}
+  end
+
+type_map = {
+  "etb"                      => "Elite Trainer Box",
+  "pc_etb"                   => "Pokemon Center Elite Trainer Box",
+  "booster_box"              => "Booster Box",
+  "booster_bundle"           => "Booster Bundle",
+  "booster_bundle_display"   => "Booster Bundle Display",
+  "enhanced_booster_box"     => "Enhanced Booster Box",
+  "ultra_premium_collection" => "Ultra Premium Collection",
+  "upc"                      => "Ultra Premium Collection",
+  "spc"                      => "Super Premium Collection",
+  "mini_tin"                 => "Mini Tin",
+  "mini_tin_display"         => "Mini Tin Display"
+}
+
+images_sealed = Rails.root.join("app", "assets", "images", "sealed")
+
+items =
+  if defined?(@watchlist_items) && @watchlist_items
+    @watchlist_items
+  elsif @user.respond_to?(:watchlist_items)
+    @user.watchlist_items
+  elsif @user.respond_to?(:watchlists)
+    @user.watchlists
+  else
+    []
+  end
+
+meta_for = lambda do |item|
+  sku =
+    if item.respond_to?(:sku)
+      item.sku.to_s
+    elsif item.respond_to?(:product_sku)
+      item.product_sku.to_s
+    else
+      ""
+    end
+
+  slug =
+    if item.respond_to?(:set_slug)
+      item.set_slug.to_s
+    else
+      sku.split(":", 2)[0].to_s
+    end
+
+  type_code =
+    if item.respond_to?(:route_type)
+      item.route_type.to_s
+    else
+      sku.split(":", 2)[1].to_s
+    end
+
+  s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
+  era = s ? s["era"].to_s : ""
+  set_name = s ? s["name"].to_s : slug.to_s
+  product_type_name = type_map[type_code] || type_code.to_s.tr("_", " ").split.map(&:capitalize).join(" ")
+
+  prod = if s
+    Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
+  end
+
+  img_base = File.basename((prod && (prod["img"] || prod[:img])).to_s) rescue nil
+  img_url =
+    if img_base.present? && File.exist?(images_sealed.join(img_base))
+      asset_path("sealed/#{img_base}")
+    else
+      asset_path("pokevaluelogo.png")
+    end
+
+  href = set_product_path(slug: slug, type: type_code)
+  label = [era.presence, set_name.presence, product_type_name.presence].compact.join(" · ")
+  { sku: sku, href: href, img_url: img_url, label: label }
+end
+%>
+
+<div class="container py-4">
+  <h2 class="mb-3">My Account</h2>
+
+  <p class="mb-1">
+    Username: <strong><%= @user.username %></strong>
+  </p>
+
+  <p class="mb-4">
+    Country:
+    <span style="font-size: 1.2rem; line-height: 1;" title="<%= country_name(@user.country_code) %>">
+      <%= flag_emoji(@user.country_code) %>
+    </span>
+  </p>
+
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0">Watchlist</h5>
+    <div class="small text-muted"><%= items.size %> item<%= items.size == 1 ? "" : "s" %></div>
+  </div>
+
+  <% if items.any? %>
+    <div class="card">
+      <div class="list-group list-group-flush">
+        <% items.each do |it| %>
+          <% m = meta_for.call(it) %>
+          <div class="list-group-item">
+            <div class="d-flex align-items-center gap-3">
+              <%= link_to m[:href], class: "d-inline-flex align-items-center text-decoration-none" do %>
+                <%= image_tag m[:img_url], alt: m[:label], style: "height:44px;width:auto;object-fit:contain;" %>
+              <% end %>
+
+              <div class="flex-grow-1">
+                <%= link_to m[:label], m[:href], class: "text-decoration-none text-body fw-semibold" %>
+              </div>
+
+              <div class="d-flex align-items-center gap-2">
+                <%= link_to "View", m[:href], class: "btn btn-sm btn-outline-primary" %>
+
+                <%= button_to "Remove",
+                              remove_watchlist_path(sku: m[:sku]),
+                              method: :delete,
+                              params: { return_to: request.fullpath },
+                              class: "btn btn-sm btn-outline-danger" %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <div class="card">
+      <div class="card-body text-muted">
+        No items in your watchlist yet.
+      </div>
+    </div>
+  <% end %>
+</div>

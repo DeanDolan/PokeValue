@@ -1,43 +1,23 @@
-<%# References I leaned on building this page:
-    - Rails layouts & rendering: https://guides.rubyonrails.org/layouts_and_rendering.html
-    - Bootstrap grid, cards, and spacing: https://getbootstrap.com/docs/5.3/layout/grid/
-    - Flexbox basics for centering and alignment: https://www.w3schools.com/css/css3_flexbox.asp
+<%
+  hidden_exact = [
+    "Team Rocket's Moltres ex Ultra Premium Collection",
+    "Team Rocket’s Moltres ex Ultra Premium Collection",
+    "151 Mini Tin",
+    "151 Mini Tin Display"
+  ]
+
+  def normalize_name(s)
+    s.to_s.strip.downcase.gsub("’", "'")
+  end
 %>
 
 <div class="container py-3">
   <style>
-    /* Equal tile height for all top info cards and let descenders show fully */
-    .equal-tile{
-      min-height:120px;
-      overflow:visible; /* keep letters like g/y/p fully visible */
-    }
+    .equal-tile{min-height:120px;overflow:visible;}
+    .tile-logo{max-height:60px;max-width:100%;height:auto;width:auto;object-fit:contain;}
+    .equal-tile .small.text-muted{font-size:0.70rem;line-height:1.2;white-space:nowrap;}
+    .equal-tile .fw-semibold{font-size:0.80rem;line-height:1.35;margin-top:2px;padding:0 3px;text-align:center;}
 
-    /* Set badge logo sizing so it looks clean in the first tile */
-    .tile-logo{
-      max-height:60px;
-      max-width:100%;
-      height:auto;
-      width:auto;
-      object-fit:contain;
-    }
-
-    /* Headings in tiles (Era, Release Date, Total Set Value, etc.) stay on one line */
-    .equal-tile .small.text-muted{
-      font-size:0.70rem;
-      line-height:1.2;
-      white-space:nowrap; /* stop headings from wrapping */
-    }
-
-    /* Main value text inside tiles (era name, dates, amounts, etc.) */
-    .equal-tile .fw-semibold{
-      font-size:0.80rem;
-      line-height:1.35;
-      margin-top:2px;
-      padding:0 3px;
-      text-align:center;
-    }
-
-    /* Urgency tile colour levels */
     .urgency-tile.urgency-green  { background-color:#16a34a; color:#ffffff; }
     .urgency-tile.urgency-yellow { background-color:#eab308; color:#111827; }
     .urgency-tile.urgency-orange { background-color:#f97316; color:#111827; }
@@ -46,23 +26,10 @@
     .urgency-tile.urgency-black  { background-color:#000000; color:#ffffff; }
     .urgency-tile.urgency-unknown{ background-color:#e5e7eb; color:#111827; }
 
-    /* Make the urgency heading inherit text colour from the background */
-    .urgency-tile .small.text-muted{
-      color:inherit !important;
-      opacity:.85;
-    }
-
-    /* Urgency value text:
-       e.g. "Medium (12-18 months)", "Out of print (>3 years)", "Very Low (0-6 months)" */
-    .urgency-tile .fw-semibold{
-      font-size:0.72rem;        /* slightly smaller to keep it on one line */
-      white-space:nowrap;       /* force single line */
-      overflow:hidden;          /* don't spill outside the card */
-      text-overflow:ellipsis;   /* ellipsis on very small screens */
-    }
+    .urgency-tile .small.text-muted{color:inherit !important;opacity:.85;}
+    .urgency-tile .fw-semibold{font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   </style>
 
-  <!-- Top info tiles for this set: logo, era, release date, value, card counts, urgency -->
   <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3 mb-4">
     <div class="col">
       <div class="card h-100 equal-tile d-flex align-items-center justify-content-center text-center p-3">
@@ -100,7 +67,6 @@
       </div>
     </div>
 
-    <!-- Urgency tile uses @urgency_class + @urgency_label from the controller based on release date -->
     <div class="col">
       <div class="card h-100 equal-tile urgency-tile d-flex flex-column align-items-center justify-content-center text-center p-3 <%= @urgency_class %>">
         <div class="small text-muted">Urgency Level</div>
@@ -109,12 +75,17 @@
     </div>
   </div>
 
-  <!-- Products grid for this set -->
   <div class="row">
     <div class="col-12">
       <% if @products.present? %>
         <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-4">
           <% @products.each do |p| %>
+            <%
+              n = p[:name].to_s
+              next if hidden_exact.any? { |x| normalize_name(x) == normalize_name(n) }
+              next if normalize_name(n).include?("team rocket") && normalize_name(n).include?("ultra premium collection")
+            %>
+
             <div class="col">
               <a href="<%= p[:link] %>" class="text-decoration-none">
                 <div class="card h-100">

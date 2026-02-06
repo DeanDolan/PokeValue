@@ -1,0 +1,18 @@
+<div class="container py-4" style="max-width:520px;">
+  <h1 class="mb-3">Admin MFA</h1>
+
+  <div class="alert alert-info">
+    Enter a 6-digit code from your authenticator app, or a recovery code.
+  </div>
+
+  <%= form_with url: mfa_path, method: :post, local: true do %>
+    <div class="mb-3">
+      <label class="form-label">Code</label>
+      <%= text_field_tag :code, nil, class: "form-control", required: true, autocomplete: "one-time-code" %>
+    </div>
+
+    <div class="d-grid">
+      <%= submit_tag "Verify", class: "btn btn-primary" %>
+    </div>
+  <% end %>
+</div>

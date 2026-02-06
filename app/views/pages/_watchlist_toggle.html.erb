@@ -1,0 +1,17 @@
+<% if user_signed_in? %>
+  <% if @watchlisted %>
+    <%= button_to "Remove from Watchlist",
+                  watchlist_remove_path(slug: @watchlist_slug, type: @watchlist_type),
+                  method: :delete,
+                  params: { return_to: request.fullpath },
+                  class: "btn btn-outline-danger btn-sm" %>
+  <% else %>
+    <%= button_to "Add to Watchlist",
+                  watchlist_add_path(slug: @watchlist_slug, type: @watchlist_type),
+                  method: :post,
+                  params: { return_to: request.fullpath },
+                  class: "btn btn-outline-primary btn-sm" %>
+  <% end %>
+<% else %>
+  <%= link_to "Add to Watchlist", root_path, class: "btn btn-outline-primary btn-sm" %>
+<% end %>

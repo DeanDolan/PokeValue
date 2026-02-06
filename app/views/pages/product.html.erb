@@ -1,49 +1,56 @@
-<%# References I used while building this page:
-    - Rails layouts / rendering (ERB templates): https://guides.rubyonrails.org/layouts_and_rendering.html
-    - Rails form helpers (form_with, *_field_tag, select_tag): https://guides.rubyonrails.org/form_helpers.html
-    - Bootstrap 5 layout, grid, cards, modals, buttons: https://getbootstrap.com/docs/5.3/getting-started/introduction/
-    - Rails number helpers (number_to_currency): https://api.rubyonrails.org/classes/ActionView/Helpers/NumberHelper.html
+<% display_product_name = params[:product_name].presence || @product_name.presence || @product_type_name %>
+<% display_product_img_url = params[:image_url].presence || @product_img_url %>
+
+<% derived_variant = params[:product_variant].presence || (display_product_name.to_s[/\(([^)]+)\)/, 1].to_s.strip.presence || "") %>
+<% derived_origin =
+  params[:origin].presence ||
+  (display_product_name.to_s.downcase.include?("pokemon center") ? "Pokemon Center" : "")
+%>
+
+<% watchlist_sku = "#{@set_slug}:#{@product_type}" %>
+<% is_watchlisted =
+  (defined?(user_signed_in?) && user_signed_in?) &&
+  current_user &&
+  current_user.watchlists.exists?(product_sku: watchlist_sku)
 %>
 
 <div class="container py-4">
   <div class="mb-3">
-    <%# back link up to the set page, keeps the browsing flow simple %>
     <%= link_to "← Back to set", set_path(slug: @set_slug), class: "btn btn-link p-0" %>
   </div>
 
   <div class="row g-4 align-items-stretch">
-    <!-- Left: Product image -->
     <div class="col-12 col-lg-5">
       <div class="card h-100">
         <div class="card-body d-flex align-items-center justify-content-center">
-          <%# main product image, capped in height so it doesn’t overpower the layout %>
-          <%= image_tag @product_img_url,
-                        alt: @product_name,
+          <%= image_tag display_product_img_url,
+                        alt: display_product_name,
                         class: "img-fluid",
                         style: "max-height:320px;object-fit:contain;" %>
         </div>
       </div>
     </div>
 
-    <!-- Right: details + actions -->
     <div class="col-12 col-lg-7">
       <div class="text-center mb-3">
-        <%# set logo at the top of the details panel %>
         <%= image_tag @set_logo_url,
                       alt: @set_name,
                       class: "mb-2",
                       style: "max-height:60px;object-fit:contain;" %>
 
-        <%# fall back to product type name when product_name is missing %>
-        <h3 class="mb-0"><%= @product_name.presence || @product_type_name %></h3>
+        <h3 class="mb-0"><%= display_product_name %></h3>
 
-        <%# compact line with era · set name · product type %>
         <div class="text-muted small">
           <%= [@era, @set_name, @product_type_name].compact.join(" · ") %>
         </div>
+
+        <% if is_watchlisted %>
+          <div class="mt-2">
+            <span class="badge text-bg-success">On your watchlist</span>
+          </div>
+        <% end %>
       </div>
 
-      <%# small stat cards for context about the product %>
       <div class="row g-3 mb-4">
         <div class="col-6 col-md-4">
           <div class="card h-100">
@@ -88,6 +95,23 @@
               <div class="fw-semibold">
                 <%= @product_value.present? ? number_to_currency(@product_value, unit: "€") : "€0.00" %>
               </div>
+
+              <% if defined?(admin_mfa_verified?) && admin_mfa_verified? %>
+                <div class="mt-2">
+                  <%= form_with url: admin_product_value_path(sku: @admin_value_sku), method: :patch, local: true do %>
+                    <%= hidden_field_tag :return_to, request.fullpath %>
+                    <%= hidden_field_tag :name, display_product_name %>
+                    <div class="input-group input-group-sm">
+                      <%= number_field_tag :value, @product_value, step: "0.01", min: 0, class: "form-control", required: true %>
+                      <button class="btn btn-outline-primary" type="submit">Update</button>
+                    </div>
+                  <% end %>
+                </div>
+              <% elsif defined?(admin_signed_in?) && admin_signed_in? %>
+                <div class="mt-2">
+                  <%= link_to "Verify MFA to edit value", mfa_path, class: "btn btn-outline-primary btn-sm" %>
+                </div>
+              <% end %>
             </div>
           </div>
         </div>
@@ -102,27 +126,126 @@
         </div>
       </div>
 
-      <%# main product actions: portfolio, watchlist, projections %>
       <div class="d-flex flex-wrap gap-2 justify-content-center">
         <% if defined?(user_signed_in?) && user_signed_in? %>
-          <%# when logged in, open the add-holding modal %>
           <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addHoldingModal">
             + Add to Portfolio
           </button>
         <% else %>
-          <%# when logged out, send them to the auth modal instead %>
           <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#authModal">
             + Add to Portfolio
           </button>
         <% end %>
-        <button class="btn btn-outline-secondary">+ Add to Watchlist</button>
-        <button class="btn btn-outline-primary">Future Projections</button>
+
+        <% if defined?(user_signed_in?) && user_signed_in? %>
+          <% if is_watchlisted %>
+            <%= button_to "Remove from Watchlist",
+                          remove_watchlist_path(sku: watchlist_sku),
+                          method: :delete,
+                          form: { class: "d-inline" },
+                          params: { return_to: request.fullpath },
+                          class: "btn btn-outline-danger" %>
+          <% else %>
+            <%= button_to "+ Add to Watchlist",
+                          watchlist_path(sku: watchlist_sku),
+                          method: :post,
+                          form: { class: "d-inline" },
+                          params: { return_to: request.fullpath },
+                          class: "btn btn-outline-secondary" %>
+          <% end %>
+        <% else %>
+          <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#authModal">
+            + Add to Watchlist
+          </button>
+        <% end %>
+
+        <button
+          class="btn btn-outline-primary"
+          data-bs-toggle="modal"
+          data-bs-target="#forecastModal"
+          data-forecast-set-name="<%= @set_name %>"
+          data-forecast-product-name="<%= display_product_name %>"
+          data-forecast-product-variant="<%= derived_variant %>"
+          data-forecast-origin="<%= derived_origin %>">
+          Future Projections
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<%# ---------------- Auth modal when NOT logged in ---------------- %>
+<div class="modal fade" id="forecastModal" tabindex="-1"
+     data-controller="forecast"
+     data-forecast-endpoint-value="/forecast">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Future Projections</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="6m" data-action="click->forecast#changeHorizon">6m</button>
+          <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="1y" data-action="click->forecast#changeHorizon">1y</button>
+          <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="3y" data-action="click->forecast#changeHorizon">3y</button>
+          <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="5y" data-action="click->forecast#changeHorizon">5y</button>
+
+          <div class="ms-auto small text-muted">
+            As of: <span data-forecast-target="asof">—</span>
+          </div>
+        </div>
+
+        <div class="small text-muted mb-2" data-forecast-target="status">Loading…</div>
+
+        <div style="height:360px;">
+          <canvas data-forecast-target="canvas"></canvas>
+        </div>
+
+        <hr>
+
+        <div class="row g-2 text-center">
+          <div class="col-6 col-lg-3">
+            <div class="card">
+              <div class="card-body">
+                <div class="small text-muted">6m</div>
+                <div class="fw-semibold" data-forecast-target="m6">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-6 col-lg-3">
+            <div class="card">
+              <div class="card-body">
+                <div class="small text-muted">1y</div>
+                <div class="fw-semibold" data-forecast-target="m1y">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-6 col-lg-3">
+            <div class="card">
+              <div class="card-body">
+                <div class="small text-muted">3y</div>
+                <div class="fw-semibold" data-forecast-target="m3y">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-6 col-lg-3">
+            <div class="card">
+              <div class="card-body">
+                <div class="small text-muted">5y</div>
+                <div class="fw-semibold" data-forecast-target="m5y">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <% if !(defined?(user_signed_in?) && user_signed_in?) %>
   <div class="modal fade" id="authModal" tabindex="-1" aria-labelledby="authModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -133,7 +256,6 @@
         </div>
 
         <div class="modal-body">
-          <%# simple login form rendered inside the modal %>
           <%= form_with url: login_path, method: :post, local: true do %>
             <div class="mb-3">
               <label class="form-label" for="login_username">Username</label>
@@ -163,29 +285,25 @@
   </div>
 <% end %>
 
-<%# ---------------- Add-holding modal when logged in ---------------- %>
 <% if defined?(user_signed_in?) && user_signed_in? %>
   <div class="modal fade" id="addHoldingModal" tabindex="-1" aria-labelledby="addHoldingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="addHoldingModalLabel">Add to Portfolio</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
 
         <div class="modal-body">
-          <%# short summary of the product inside the modal header %>
           <div class="mb-3 small text-muted text-center">
             <div><strong><%= @product_type_name %></strong></div>
             <div><%= @set_name %> · <%= @era %></div>
           </div>
 
-          <%# form that actually creates the holding entry for the current user %>
           <%= form_with url: holdings_path, scope: :holding, method: :post, local: true do %>
-            <%# hidden fields so the record keeps the correct product metadata %>
             <%= hidden_field_tag "holding[set_slug]", @set_slug %>
             <%= hidden_field_tag "holding[type_code]", @product_type %>
-            <%= hidden_field_tag "holding[image_url]", @product_img_url %>
+            <%= hidden_field_tag "holding[image_url]", display_product_img_url %>
 
             <%= hidden_field_tag "holding[era]", @era %>
             <%= hidden_field_tag "holding[set_name]", @set_name %>
@@ -194,7 +312,6 @@
 
             <div class="mb-3">
               <label class="form-label">Estimated value / unit (€)</label>
-              <%# just showing the value here, not editable in this modal %>
               <input type="text"
                      class="form-control"
                      value="<%= @product_value.present? ? number_to_currency(@product_value, unit: '€') : '€0.00' %>"
