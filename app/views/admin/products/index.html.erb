@@ -1,0 +1,61 @@
+<%= form_with url: update_values_admin_products_path, method: :patch, local: true do %>
+  <style>
+    .admin-table{width:100%;font-size:.85rem}
+    .admin-table th,.admin-table td{text-align:center;vertical-align:middle}
+    .col-img{width:70px}
+    .col-era{width:140px}
+    .col-set{width:220px}
+    .col-release{width:150px}
+    .col-listings{width:90px}
+    .col-value{width:160px}
+    .product-thumb{height:42px;width:auto;object-fit:contain}
+  </style>
+
+  <% @groups.each do |type_name, rows| %>
+    <div class="mt-3 mb-2 fw-semibold"><%= type_name %></div>
+
+    <div class="table-responsive">
+      <table class="table table-bordered admin-table mb-3">
+        <thead class="table-light">
+          <tr>
+            <th class="col-img">Product</th>
+            <th class="col-era">Era</th>
+            <th class="col-set">Set</th>
+            <th class="col-release">Release Date</th>
+            <th class="col-listings">Listings</th>
+            <th class="col-value">Estimated Value (€)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% rows.each do |p| %>
+            <tr>
+              <td>
+                <%= link_to p[:href] do %>
+                  <%= image_tag p[:img_url], alt: p[:product_name], class: "product-thumb" %>
+                <% end %>
+                <div class="small text-muted text-truncate" style="max-width:180px;margin:0 auto;"><%= p[:product_name] %></div>
+              </td>
+              <td><%= p[:era] %></td>
+              <td><%= p[:set_name] %></td>
+              <td><%= p[:release_date] %></td>
+              <td><%= p[:listings].to_i %></td>
+              <td>
+                <%= hidden_field_tag "names[#{p[:sku]}]", p[:product_name] %>
+                <%= number_field_tag "values[#{p[:sku]}]",
+                                     p[:value],
+                                     step: "0.01",
+                                     min: 0,
+                                     class: "form-control form-control-sm text-center",
+                                     style: "max-width:140px;margin:0 auto;" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
+  <div class="d-flex justify-content-end mb-4">
+    <button type="submit" class="btn btn-primary">Update Values</button>
+  </div>
+<% end %>

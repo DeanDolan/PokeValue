@@ -1,98 +1,64 @@
-# References:
-# - Rails controllers / strong params:
-#   https://guides.rubyonrails.org/action_controller_overview.html
-# - Active Record basics (find_or_initialize_by, callbacks, validations):
-#   https://guides.rubyonrails.org/active_record_basics.html
-
 class HoldingsController < ApplicationController
-  # Shared auth helpers (current_user, user_signed_in? etc.)
   include Authentication
 
-  # Nobody should hit these actions without being logged in
-  before_action :require_login!
-
   def create
-    # Strong params I expect from the add-holding form
-    permitted = holding_params
+    unless current_user
+      redirect_to login_path
+      return
+    end
 
-    # Extra identifiers used to build/find the Product
     set_slug  = params.dig(:holding, :set_slug).to_s
     type_code = params.dig(:holding, :type_code).to_s
-    sku       = [ set_slug, type_code ].join(":")
 
-    # Create or find the Product for this holding based on SKU
-    product = Product.find_or_initialize_by(sku: sku)
-    product.name ||= "#{permitted[:set_name]} – #{permitted[:product_type]}"
-    product.save!
+    product = find_product(set_slug, type_code)
 
-    # If user already has a holding for this product, update the existing one
-    existing = current_user.holdings.find_by(product_id: product.id)
-    if existing
-      # Increase quantity and overwrite the latest cost/value info
-      new_qty = existing.quantity.to_i + permitted[:quantity].to_i
-
-      existing.quantity      = new_qty
-      existing.cost_per_unit = permitted[:cost_per_unit]
-      existing.purchase_date = permitted[:purchase_date]
-      existing.condition     = permitted[:condition]
-      existing.value         = permitted[:value]
-      existing.total_cost    = new_qty * existing.cost_per_unit.to_d
-      existing.total_value   = new_qty * existing.value.to_d
-      existing.save!
-
-      redirect_to portfolio_path, notice: "Product updated in portfolio successfully!"
-    else
-      # New holding for this user + product
-      holding = current_user.holdings.build(permitted)
-      holding.product_id  = product.id
-      holding.total_cost  = holding.quantity.to_i * holding.cost_per_unit.to_d
-      holding.total_value = holding.quantity.to_i * holding.value.to_d
-      holding.save!
-
-      redirect_to portfolio_path, notice: "Product added to portfolio successfully!"
+    unless product
+      redirect_back fallback_location: sets_path, alert: "Product not found for #{set_slug}:#{type_code}"
+      return
     end
-  rescue ActiveRecord::RecordInvalid => e
-    # On validation problems, I surface the first error as a flash
-    redirect_to portfolio_path, alert: e.record.errors.full_messages.first || "Could not add product."
+
+    holding = current_user.holdings.new(create_params)
+    holding.product = product
+
+    if holding.respond_to?(:value)
+      if holding.value.present?
+        holding.value = holding.value.to_d
+      elsif product.respond_to?(:value) && product.value.present?
+        holding.value = product.value.to_d
+      end
+    end
+
+    if holding.save
+      redirect_back fallback_location: portfolio_path, notice: "Added to portfolio."
+    else
+      redirect_back fallback_location: portfolio_path, alert: holding.errors.full_messages.to_sentence
+    end
   end
 
   def edit
-    # Only allow editing holdings that belong to the current user
     @holding = current_user.holdings.find(params[:id])
   end
 
   def update
-    @holding = current_user.holdings.find(params[:id])
+    holding = current_user.holdings.find(params[:id])
 
-    if @holding.update(holding_params)
-      # Recalculate totals whenever editable fields change
-      @holding.total_cost  = @holding.quantity.to_i * @holding.cost_per_unit.to_d
-      @holding.total_value = @holding.quantity.to_i * @holding.value.to_d
-      @holding.save!
-      redirect_to portfolio_path, notice: "Holding updated."
+    if holding.update(update_params)
+      redirect_back fallback_location: portfolio_path, notice: "Updated."
     else
-      flash.now[:alert] = @holding.errors.full_messages.first || "Update failed."
-      render :edit, status: :unprocessable_entity
+      redirect_back fallback_location: portfolio_path, alert: holding.errors.full_messages.to_sentence
     end
   end
 
   def destroy
-    # Soft guard by scoping to current_user
-    h = current_user.holdings.find(params[:id])
-    h.destroy
-    redirect_to portfolio_path, notice: "Holding removed."
+    holding = current_user.holdings.find(params[:id])
+    holding.destroy
+    redirect_back fallback_location: portfolio_path, notice: "Removed."
   end
 
   private
 
-  # Simple guard to push people back to portfolio if they are not logged in
-  def require_login!
-    redirect_to portfolio_path, alert: "Please log in to manage holdings." unless user_signed_in?
-  end
-
-  # Strong params for holdings
-  def holding_params
-    hp = params.require(:holding).permit(
+  def create_params
+    params.require(:holding).permit(
       :era,
       :set_name,
       :product_type,
@@ -102,13 +68,48 @@ class HoldingsController < ApplicationController
       :condition,
       :value
     )
+  end
 
-    # Normalise to numeric types so calculations stay consistent
-    hp[:quantity]      = (hp[:quantity].presence      || 1).to_i
-    hp[:cost_per_unit] = (hp[:cost_per_unit].presence || 0).to_d
-    # If value is blank I treat it as 0 rather than mirroring cost_per_unit
-    hp[:value]         = (hp[:value].presence         || 0).to_d
+  def update_params
+    params.require(:holding).permit(
+      :quantity,
+      :cost_per_unit,
+      :purchase_date,
+      :condition
+    )
+  end
 
-    hp
+  def find_product(set_slug, type_code)
+    return nil if set_slug.blank? || type_code.blank?
+
+    sku = "#{set_slug}:#{type_code}"
+    cols = Product.column_names
+
+    if cols.include?("sku")
+      p = Product.find_by(sku: sku)
+      return p if p
+    end
+
+    if cols.include?("set_slug") && cols.include?("type_code")
+      p = Product.find_by(set_slug: set_slug, type_code: type_code)
+      return p if p
+    end
+
+    if cols.include?("set_slug") && cols.include?("product_type")
+      p = Product.find_by(set_slug: set_slug, product_type: type_code)
+      return p if p
+    end
+
+    if cols.include?("slug") && cols.include?("type_code")
+      p = Product.find_by(slug: set_slug, type_code: type_code)
+      return p if p
+    end
+
+    if cols.include?("slug") && cols.include?("product_type")
+      p = Product.find_by(slug: set_slug, product_type: type_code)
+      return p if p
+    end
+
+    nil
   end
 end

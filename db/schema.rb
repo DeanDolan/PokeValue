@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_31_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_07_182545) do
   create_table "admin_audits", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip"
@@ -44,7 +44,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_31_190000) do
     t.string "username"
     t.decimal "value", precision: 10, scale: 2, default: "0.0", null: false
     t.index ["product_id"], name: "index_holdings_on_product_id"
-    t.index ["user_id", "product_id"], name: "index_holdings_on_user_id_and_product_id", unique: true, where: "product_id IS NOT NULL"
     t.index ["user_id"], name: "index_holdings_on_user_id"
   end
 
@@ -58,6 +57,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_31_190000) do
     t.string "sku"
     t.datetime "updated_at", null: false
     t.decimal "value", precision: 10, scale: 2, default: "0.0", null: false
+  end
+
+  create_table "set_overrides", force: :cascade do |t|
+    t.integer "cards"
+    t.datetime "created_at", null: false
+    t.integer "secret_cards"
+    t.string "slug", null: false
+    t.decimal "total_value", precision: 12, scale: 2
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_set_overrides_on_slug", unique: true
+  end
+
+  create_table "summary_entries", force: :cascade do |t|
+    t.string "action", null: false
+    t.string "condition"
+    t.decimal "cost_per_unit", precision: 10, scale: 2
+    t.datetime "created_at", null: false
+    t.string "era"
+    t.string "image_url"
+    t.string "product_type"
+    t.date "purchase_date"
+    t.integer "quantity"
+    t.string "set_name"
+    t.string "set_slug"
+    t.string "type_code"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.decimal "value", precision: 10, scale: 2
+    t.index ["user_id", "created_at"], name: "index_summary_entries_on_user_id_and_created_at"
+    t.index ["user_id"], name: "index_summary_entries_on_user_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -93,5 +122,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_31_190000) do
   add_foreign_key "admin_audits", "users"
   add_foreign_key "holdings", "products"
   add_foreign_key "holdings", "users"
+  add_foreign_key "summary_entries", "users"
   add_foreign_key "watchlists", "users"
 end

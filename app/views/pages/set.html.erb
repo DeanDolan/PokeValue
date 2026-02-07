@@ -30,6 +30,34 @@
     .urgency-tile .fw-semibold{font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   </style>
 
+  <% if defined?(admin_signed_in?) && admin_signed_in? %>
+    <div class="mb-3">
+      <div class="card">
+        <div class="card-body">
+          <%= form_with url: admin_set_path(slug: @set_slug), method: :patch, local: true do %>
+            <div class="row g-2 align-items-end">
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1">Total Set Value (€)</label>
+                <%= number_field_tag :total_value, @total_value, step: "0.01", min: 0, class: "form-control" %>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Cards</label>
+                <%= number_field_tag :cards, @cards, step: 1, min: 0, class: "form-control" %>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Secret</label>
+                <%= number_field_tag :secret_cards, @secret, step: 1, min: 0, class: "form-control" %>
+              </div>
+              <div class="col-12 col-md-2 d-grid">
+                <button class="btn btn-primary" type="submit">Update</button>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
   <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3 mb-4">
     <div class="col">
       <div class="card h-100 equal-tile d-flex align-items-center justify-content-center text-center p-3">

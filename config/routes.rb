@@ -1,6 +1,7 @@
 Rails.application.routes.draw do
   root "portfolios#index"
   get "/portfolio", to: "portfolios#index", as: :portfolio
+  get "/portfolio/metrics", to: "portfolios#metrics", as: :portfolio_metrics, defaults: { format: :json }
 
   get "/sets",             to: "pages#sets",    as: :sets
   get "/sets/:slug",       to: "pages#set",     as: :set
@@ -33,6 +34,21 @@ Rails.application.routes.draw do
 
   namespace :admin do
     resources :product_values, param: :sku, only: [ :update ]
+
+    resources :products, only: [ :index ] do
+      collection do
+        patch :update_values
+      end
+    end
+
+    resources :sets, param: :slug, only: [ :index ] do
+      collection do
+        patch :update_values
+      end
+      member do
+        patch :update
+      end
+    end
   end
 
   resources :holdings, only: [ :create, :edit, :update, :destroy ]

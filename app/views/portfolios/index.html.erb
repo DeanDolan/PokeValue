@@ -33,7 +33,7 @@ meta_for = lambda do |set_name, human_type|
   prod = Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
 
   img_base = File.basename((prod && (prod["img"] || prod[:img])).to_s) rescue nil
-  img_url  =
+  img_url =
     if img_base.present? && File.exist?(images_sealed.join(img_base))
       asset_path("sealed/#{img_base}")
     else
@@ -51,77 +51,34 @@ end
   <style>
     .filters-row{display:flex;flex-wrap:nowrap;gap:.25rem}
     .filter-col{flex:1 1 0;min-width:150px}
-    .filter-col .form-label{
-      width:100%;
-      text-align:center;
-      font-size:.7rem;
-    }
-    .filter-col .form-control,
-    .filter-col .form-select{
-      text-align:center;
-      font-size:.7rem;
-      padding:.25rem .35rem;
-    }
-
+    .filter-col .form-label{width:100%;text-align:center;font-size:.7rem}
+    .filter-col .form-control,.filter-col .form-select{text-align:center;font-size:.7rem;padding:.25rem .35rem}
     .card .card-title{font-size:.8rem}
     .card .fs-4{font-size:1.1rem}
-
-    .table.holdings-table{
-      width:100%;
-      font-size:.7rem;
-      border-collapse:collapse;
-    }
-
-    .table.holdings-table thead th,
-    .table.holdings-table tbody td{
-      vertical-align:middle;
-      text-align:center;
-      padding:.25rem .3rem;
-      line-height:1.2;
-      word-wrap:break-word;
-    }
-
-    .table.holdings-table thead th{
-      font-size:.75rem;
-      font-weight:700;
-      white-space:nowrap;
-    }
-
-    .table.holdings-table tbody td{
-      font-size:.7rem;
-    }
-
+    .table.holdings-table{width:100%;font-size:.7rem;border-collapse:collapse}
+    .table.holdings-table thead th,.table.holdings-table tbody td{vertical-align:middle;text-align:center;padding:.25rem .3rem;line-height:1.2;word-wrap:break-word}
+    .table.holdings-table thead th{font-size:.75rem;font-weight:700;white-space:nowrap}
+    .table.holdings-table tbody td{font-size:.7rem}
     .col-product{width:40px}
+    .col-ts{width:110px}
+    .col-entry{width:85px}
     .col-era{width:70px}
     .col-set{width:120px}
     .col-type{width:120px}
     .col-condition{width:110px}
-    .col-date{width:80px}
+    .col-date{width:90px}
     .col-qty{width:50px}
     .col-money{width:70px}
     .col-pl{width:70px}
     .col-roi{width:70px}
-    .col-actions{width:110px}
-
+    .col-actions{width:120px}
     .table-bordered>:not(caption)>*{border-width:1px 0}
     .table-bordered>:not(caption)>*>*{border-width:0 1px}
-
-    .holdings-actions .btn{
-      padding:.18rem .3rem;
-      font-size:.65rem;
-      line-height:1;
-      white-space:nowrap;
-    }
-
-    .product-thumb{
-      height:38px;
-      width:auto;
-      object-fit:contain;
-    }
-
-    @media (min-width: 768px){
-      .table-responsive{overflow-x:visible;}
-    }
+    .holdings-actions .btn{padding:.18rem .3rem;font-size:.65rem;line-height:1;white-space:nowrap}
+    .product-thumb{height:38px;width:auto;object-fit:contain}
+    @media (min-width: 768px){.table-responsive{overflow-x:visible}}
+    details.summary-edit > summary{list-style:none}
+    details.summary-edit > summary::-webkit-details-marker{display:none}
   </style>
 
   <div class="row g-3 mb-3">
@@ -145,7 +102,7 @@ end
     </div>
     <div class="col-12 col-md-6 col-lg-3">
       <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">ROI</h6>
+        <h6 class="card-title mb-1">ROI (%)</h6>
         <div class="fs-4 text-secondary">
           <% if @totals %>
             <%= sprintf("%.2f%%", @totals[:roi].to_f) %>
@@ -157,8 +114,9 @@ end
     </div>
   </div>
 
-  <div class="mb-4 text-center">
-    <button class="btn btn-outline-primary btn-sm">View Metrics</button>
+  <div class="mb-4 d-flex justify-content-center gap-2">
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#summaryModal">View Summary</button>
+    <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#metricsModal">View Metrics</button>
   </div>
 
   <h4 class="mb-3">Holdings</h4>
@@ -273,7 +231,7 @@ end
                   data-set="<%= h.set_name %>"
                   data-type="<%= h.product_type %>"
                   data-condition="<%= h.condition %>"
-                  data-date="<%= h.purchase_date&.strftime("%Y-%m-%d") %>"
+                  data-date="<%= (h.purchase_date || h.created_at&.to_date)&.strftime("%Y-%m-%d") %>"
                   data-cost="<%= h.cost_per_unit.to_f %>"
                   data-total-cost="<%= h.total_cost.to_f %>"
                   data-value="<%= h.value.to_f %>"
@@ -294,7 +252,7 @@ end
                   <td><%= h.set_name %></td>
                   <td><%= h.product_type %></td>
                   <td><%= h.condition %></td>
-                  <td><%= h.purchase_date&.strftime("%Y-%m-%d") %></td>
+                  <td><%= (h.purchase_date || h.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
                   <td><%= h.quantity %></td>
                   <td><%= number_to_currency(h.cost_per_unit, unit: "€") %></td>
                   <td><%= number_to_currency(h.total_cost, unit: "€") %></td>
@@ -309,7 +267,31 @@ end
                       <% else %>
                         <span class="btn btn-sm btn-outline-secondary disabled me-1">View</span>
                       <% end %>
-                      <%= link_to "Edit", edit_holding_path(h), class: "btn btn-sm btn-outline-secondary me-1" %>
+
+                      <details class="summary-edit me-1">
+                        <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
+                        <div class="border rounded p-2 mt-2 bg-white" style="min-width:240px;">
+                          <%= form_with model: h, url: holding_path(h), method: :patch, local: true do |f| %>
+                            <div class="mb-2">
+                              <%= f.number_field :quantity, min: 1, step: 1, class: "form-control form-control-sm" %>
+                            </div>
+                            <div class="mb-2">
+                              <%= f.number_field :cost_per_unit, min: 0, step: "0.01", class: "form-control form-control-sm" %>
+                            </div>
+                            <div class="mb-2">
+                              <%= f.date_field :purchase_date, class: "form-control form-control-sm" %>
+                            </div>
+                            <div class="mb-2">
+                              <%= f.select :condition, options_for_select(@conditions, h.condition), {}, class: "form-select form-select-sm" %>
+                            </div>
+                            <div class="d-flex gap-2">
+                              <%= f.submit "Save", class: "btn btn-sm btn-primary" %>
+                              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('details').removeAttribute('open')">Cancel</button>
+                            </div>
+                          <% end %>
+                        </div>
+                      </details>
+
                       <%= button_to "Remove",
                                     holding_path(h),
                                     method: :delete,
@@ -332,5 +314,183 @@ end
 
   <div class="mt-3 d-flex justify-content-end">
     <%= link_to "+ Add Product", sets_path, class: "btn btn-success btn-sm" %>
+  </div>
+</div>
+
+<div class="modal fade" id="summaryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Summary</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-bordered holdings-table mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="col-ts">Timestamp</th>
+                <th class="col-product">Product</th>
+                <th class="col-era">Era</th>
+                <th class="col-set">Set</th>
+                <th class="col-type">Product Type</th>
+                <th class="col-condition">Condition</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-money">Cost</th>
+                <th class="col-money">Total Cost</th>
+                <th class="col-money">Value</th>
+                <th class="col-money">Total Value</th>
+                <th class="col-pl">P/L</th>
+                <th class="col-roi">ROI %</th>
+                <th class="col-entry">Entry Type</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="table-light fw-semibold">
+                <td colspan="8" class="text-start">Totals</td>
+                <td><%= @totals ? eur(@totals[:cost]) : "€0.00" %></td>
+                <td></td>
+                <td><%= @totals ? eur(@totals[:value]) : "€0.00" %></td>
+                <td><%= @totals ? eur(@totals[:pl]) : "€0.00" %></td>
+                <td>
+                  <% if @totals %>
+                    <%= sprintf("%.2f%%", @totals[:roi].to_f) %>
+                  <% else %>
+                    0.00%
+                  <% end %>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+
+              <% if @holdings.any? %>
+                <% @holdings.each do |h| %>
+                  <% meta = meta_for.call(h.set_name, h.product_type) %>
+                  <tr>
+                    <td class="text-nowrap"><%= (h.purchase_date || h.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
+                    <td>
+                      <% if meta %>
+                        <%= link_to meta[:href] do %>
+                          <%= image_tag meta[:img_url], alt: h.product_type, class: "product-thumb" %>
+                        <% end %>
+                      <% else %>
+                        <%= image_tag "pokevaluelogo.png", alt: h.product_type, class: "product-thumb" %>
+                      <% end %>
+                    </td>
+                    <td><%= h.era %></td>
+                    <td><%= h.set_name %></td>
+                    <td><%= h.product_type %></td>
+                    <td><%= h.condition %></td>
+                    <td><%= h.quantity %></td>
+                    <td><%= number_to_currency(h.cost_per_unit, unit: "€") %></td>
+                    <td><%= number_to_currency(h.total_cost, unit: "€") %></td>
+                    <td><%= number_to_currency(h.value, unit: "€") %></td>
+                    <td><%= number_to_currency(h.total_value, unit: "€") %></td>
+                    <td class="text-nowrap"><%= number_to_currency(h.pl, unit: "€") %></td>
+                    <td><%= "#{number_with_precision(h.roi_pct, precision: 2)}%" %></td>
+                    <td><span class="badge text-bg-success">ADDED</span></td>
+                    <td>
+                      <div class="holdings-actions d-inline-flex flex-nowrap">
+                        <details class="summary-edit me-1">
+                          <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
+                          <div class="border rounded p-2 mt-2 bg-white" style="min-width:240px;">
+                            <%= form_with model: h, url: holding_path(h), method: :patch, local: true do |f| %>
+                              <div class="mb-2">
+                                <%= f.number_field :quantity, min: 1, step: 1, class: "form-control form-control-sm" %>
+                              </div>
+                              <div class="mb-2">
+                                <%= f.number_field :cost_per_unit, min: 0, step: "0.01", class: "form-control form-control-sm" %>
+                              </div>
+                              <div class="mb-2">
+                                <%= f.date_field :purchase_date, class: "form-control form-control-sm" %>
+                              </div>
+                              <div class="mb-2">
+                                <%= f.select :condition, options_for_select(@conditions, h.condition), {}, class: "form-select form-select-sm" %>
+                              </div>
+                              <div class="d-flex gap-2">
+                                <%= f.submit "Save", class: "btn btn-sm btn-primary" %>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('details').removeAttribute('open')">Cancel</button>
+                              </div>
+                            <% end %>
+                          </div>
+                        </details>
+
+                        <%= button_to "Remove",
+                                      holding_path(h),
+                                      method: :delete,
+                                      form: { data: { turbo_confirm: "Remove this holding? This will also remove it from your portfolio." } },
+                                      class: "btn btn-sm btn-outline-danger" %>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              <% else %>
+                <tr>
+                  <td colspan="15" class="text-center text-muted py-4">No products within holdings.</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="metricsModal" tabindex="-1" aria-hidden="true" data-controller="metrics" data-action="shown.bs.modal->metrics#onShown" data-metrics-endpoint-value="<%= portfolio_metrics_path(format: :json) %>">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Metrics</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="small text-muted mb-2" data-metrics-target="status"></div>
+
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <button class="btn btn-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="cost">Total Cost</button>
+          <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="value">Total Value</button>
+          <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="pl">Unrealised P/L</button>
+          <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="roi">ROI (%)</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div data-metrics-target="panel" data-key="cost">
+              <div class="fw-semibold mb-2">Total Cost</div>
+              <div style="height:360px;">
+                <canvas data-key="cost"></canvas>
+              </div>
+            </div>
+
+            <div class="d-none" data-metrics-target="panel" data-key="value">
+              <div class="fw-semibold mb-2">Total Value</div>
+              <div style="height:360px;">
+                <canvas data-key="value"></canvas>
+              </div>
+            </div>
+
+            <div class="d-none" data-metrics-target="panel" data-key="pl">
+              <div class="fw-semibold mb-2">Unrealised P/L</div>
+              <div style="height:360px;">
+                <canvas data-key="pl"></canvas>
+              </div>
+            </div>
+
+            <div class="d-none" data-metrics-target="panel" data-key="roi">
+              <div class="fw-semibold mb-2">ROI (%)</div>
+              <div style="height:360px;">
+                <canvas data-key="roi"></canvas>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
   </div>
 </div>

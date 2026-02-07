@@ -1,5 +1,10 @@
+# app/controllers/admin/product_values_controller.rb
 module Admin
-  class ProductValuesController < BaseController
+  class ProductValuesController < ApplicationController
+    include Authentication
+
+    before_action :require_admin
+
     def update
       sku = params[:sku].to_s
       raise ActiveRecord::RecordNotFound unless sku.match?(/\A[a-zA-Z0-9\-_]+(?:--[a-zA-Z0-9\-_]+)*\z/)
@@ -41,6 +46,18 @@ module Admin
     end
 
     private
+
+    def require_admin
+      ok =
+        if respond_to?(:admin_signed_in?)
+          admin_signed_in?
+        elsif respond_to?(:current_user) && current_user
+          current_user.respond_to?(:admin?) ? current_user.admin? : false
+        else
+          false
+        end
+      redirect_to(root_path, alert: "Not authorized.", status: :see_other) unless ok
+    end
 
     def safe_return_to(path)
       p = path.to_s

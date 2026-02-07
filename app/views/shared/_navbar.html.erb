@@ -1,3 +1,4 @@
+<!-- app/views/shared/_navbar.html.erb -->
 <%# References:
     - Rails view helpers (link_to, image_tag, current_page?):
       https://guides.rubyonrails.org/action_view_helpers.html
@@ -31,38 +32,25 @@
         <li class="nav-item"><%= link_to "Auction", auction_path, class: ["nav-link", (current_page?(auction_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
         <li class="nav-item"><%= link_to "Raffle", raffle_path, class: ["nav-link", (current_page?(raffle_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
         <li class="nav-item"><%= link_to "Showcase", showcase_path, class: ["nav-link", (current_page?(showcase_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
+
+        <% if defined?(admin_signed_in?) && admin_signed_in? %>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+            <ul class="dropdown-menu">
+              <li><%= link_to "Products", admin_products_path, class: "dropdown-item" %></li>
+              <li><%= link_to "Sets", admin_sets_path, class: "dropdown-item" %></li>
+            </ul>
+          </li>
+        <% end %>
       </ul>
 
       <style>
-        /* Global search dropdown container, toggled via the "open" class */
         #global-search-results{display:none!important;position:absolute;z-index:1050}
         #global-search-results.open{display:block!important}
-
-        /* Bigger logo without making the navbar feel taller */
-        .navbar{
-          padding-top:0;
-          padding-bottom:0;
-          min-height:56px; /* keeps bar compact while allowing a taller logo */
-        }
-        .pv-navbar-logo{
-          height:52px;      /* slightly oversized logo for better branding */
-          width:auto;
-        }
-
-        /* Keep "username is logged in..." on a single line and ellipsise if needed */
-        .navbar-user-wrap{
-          display:flex;
-          align-items:center;
-          gap:.35rem;
-          flex-wrap:nowrap;
-        }
-        .navbar-user-text{
-          white-space:nowrap;
-          font-size:.85rem;
-          max-width:260px;
-          overflow:hidden;
-          text-overflow:ellipsis;
-        }
+        .navbar{padding-top:0;padding-bottom:0;min-height:56px}
+        .pv-navbar-logo{height:52px;width:auto}
+        .navbar-user-wrap{display:flex;align-items:center;gap:.35rem;flex-wrap:nowrap}
+        .navbar-user-text{white-space:nowrap;font-size:.85rem;max-width:260px;overflow:hidden;text-overflow:ellipsis}
       </style>
 
       <%# Global search input (sets + products) with dropdown results %>
@@ -104,11 +92,9 @@
 </nav>
 
 <script type="module">
-  // Cache references to the global search input and dropdown container
   const input  = document.getElementById("global-search");
   const menu   = document.getElementById("global-search-results");
 
-  // Build a single result row for the dropdown from a JSON item
   function row(item) {
     return `
       <a class="dropdown-item py-2" href="${item.href}">
@@ -123,7 +109,6 @@
     `;
   }
 
-  // Render a titled section (e.g. "Sets" or "Products") inside the dropdown
   function section(title, items) {
     if (!items || items.length === 0) return "";
     return `
@@ -132,7 +117,6 @@
     `;
   }
 
-  // Take the JSON response from /search_index.json and render it into the dropdown
   function render(data) {
     const setsHtml     = section("Sets", data.sets || []);
     const productsHtml = section("Products", data.products || []);
@@ -147,20 +131,17 @@
     }
   }
 
-  // Debounced input handler for the global search bar
   let timer;
   input?.addEventListener("input", (e) => {
     const q = e.target.value.trim();
     clearTimeout(timer);
 
-    // If query is empty, close the dropdown and bail early
     if (!q) {
       menu.classList.remove("open");
       menu.innerHTML = "";
       return;
     }
 
-    // Small debounce so I don't hit the server on every keystroke
     timer = setTimeout(async () => {
       try {
         const resp = await fetch("/search_index.json?q=" + encodeURIComponent(q));
@@ -168,19 +149,16 @@
         const data = await resp.json();
         render(data);
       } catch(_) {
-        // If the fetch fails for any reason, just leave the menu as is
       }
     }, 120);
   });
 
-  // Hide dropdown when clicking outside of it
   document.addEventListener("click", (e) => {
     if (!menu.contains(e.target) && e.target !== input) {
       menu.classList.remove("open");
     }
   });
 
-  // Hide dropdown when Turbo navigates or caches the page
   document.addEventListener("turbo:click", () => menu.classList.remove("open"));
   document.addEventListener("turbo:before-cache", () => menu.classList.remove("open"));
 </script>

@@ -1,5 +1,6 @@
 class PagesController < ApplicationController
   require "json"
+  require "date"
 
   PRODUCT_TYPE_NAMES = {
     "etb"                      => "Elite Trainer Box",
@@ -28,18 +29,18 @@ class PagesController < ApplicationController
     @eras = [ "Mega Evolution", "Scarlet & Violet", "Sword & Shield" ]
 
     @era_badges = {
-      "Mega Evolution"   => view_context.asset_path("sets/megaevolution.png"),
-      "Scarlet & Violet" => view_context.asset_path("sets/scarletandviolet.png"),
-      "Sword & Shield"   => view_context.asset_path("sets/swordandshield.png")
+      "Mega Evolution"   => safe_asset_path("sets/megaevolution.png"),
+      "Scarlet & Violet" => safe_asset_path("sets/scarletandviolet.png"),
+      "Sword & Shield"   => safe_asset_path("sets/swordandshield.png")
     }
 
     @sets = data.values.map do |s|
       box = File.basename(s["boxImage"].to_s) rescue nil
       img =
         if box.present? && File.exist?(images_sets.join(box))
-          view_context.asset_path("sets/#{box}")
+          safe_asset_path("sets/#{box}")
         else
-          view_context.asset_path("pokevaluelogo.png")
+          safe_asset_path("pokevaluelogo.png")
         end
 
       { name: s["name"], era: s["era"], image_url: img, slug: s["slug"] }
@@ -56,6 +57,7 @@ class PagesController < ApplicationController
     images_sets   = Rails.root.join("app", "assets", "images", "sets")
     images_sealed = Rails.root.join("app", "assets", "images", "sealed")
 
+    @set_slug     = slug
     @set_name     = s["name"]
     @era          = s["era"]
     raw_release   = s["releaseDate"]
@@ -65,15 +67,37 @@ class PagesController < ApplicationController
     @cards        = s["cards"]
     @secret       = s["secretCards"]
 
+    begin
+      if defined?(SetOverride)
+        cols = SetOverride.column_names rescue []
+        ov =
+          if cols.include?("set_slug")
+            SetOverride.find_by(set_slug: slug)
+          elsif cols.include?("slug")
+            SetOverride.find_by(slug: slug)
+          else
+            nil
+          end
+
+        if ov
+          @total_value = ov.total_value if ov.respond_to?(:total_value) && ov.total_value.present?
+          @total_cards = ov.total_cards if ov.respond_to?(:total_cards) && ov.total_cards.present?
+          @cards       = ov.cards if ov.respond_to?(:cards) && ov.cards.present?
+          @secret      = ov.secret_cards if ov.respond_to?(:secret_cards) && ov.secret_cards.present?
+        end
+      end
+    rescue
+    end
+
     logo_override = set_logo_override_filename(slug: slug)
     logo_base = File.basename(s["logo"].to_s) rescue nil
     @logo_url =
       if logo_override.present? && File.exist?(images_sets.join(logo_override))
-        view_context.asset_path("sets/#{logo_override}")
+        safe_asset_path("sets/#{logo_override}")
       elsif logo_base.present? && File.exist?(images_sets.join(logo_base))
-        view_context.asset_path("sets/#{logo_base}")
+        safe_asset_path("sets/#{logo_base}")
       else
-        view_context.asset_path("pokevaluelogo.png")
+        safe_asset_path("pokevaluelogo.png")
       end
 
     release_date_obj =
@@ -111,6 +135,12 @@ class PagesController < ApplicationController
       end
     end
 
+    sealed_files = begin
+      Dir.children(images_sealed)
+    rescue
+      []
+    end
+
     products_src = s["products"] || s["sealed"] || []
     @products =
       Array(products_src).filter_map do |prod|
@@ -121,17 +151,29 @@ class PagesController < ApplicationController
         type_key = (prod["type"] || prod[:type]).to_s
 
         override = sealed_override_filename(set_name: @set_name, type_key: type_key)
-        if override.present? && File.exist?(images_sealed.join(override))
-          img_url = view_context.asset_path("sealed/#{override}")
-        else
-          img_base = File.basename(img_key.to_s) rescue nil
-          img_url =
-            if img_base.present? && File.exist?(images_sealed.join(img_base))
-              view_context.asset_path("sealed/#{img_base}")
-            else
-              view_context.asset_path("pokevaluelogo.png")
+        img_url =
+          if override.present? && File.exist?(images_sealed.join(override))
+            safe_asset_path("sealed/#{override}")
+          else
+            requested_img = img_key.to_s
+            img_base = begin
+              File.basename(requested_img)
+            rescue
+              ""
             end
-        end
+
+            actual_img = nil
+            if img_base.present?
+              down = img_base.downcase
+              actual_img = sealed_files.find { |f| f.downcase == down }
+            end
+
+            if actual_img.present?
+              safe_asset_path("sealed/#{actual_img}")
+            else
+              safe_asset_path("pokevaluelogo.png")
+            end
+          end
 
         route_type = build_route_type_for_product(type_key: type_key, name: name_key.to_s)
 
@@ -184,6 +226,12 @@ class PagesController < ApplicationController
     images_sets   = Rails.root.join("app", "assets", "images", "sets")
     images_sealed = Rails.root.join("app", "assets", "images", "sealed")
 
+    sealed_files = begin
+      Dir.children(images_sealed)
+    rescue
+      []
+    end
+
     @set_slug = slug
     @set_name = s["name"]
 
@@ -206,11 +254,11 @@ class PagesController < ApplicationController
     set_logo_base = File.basename(s["logo"].to_s) rescue nil
     @set_logo_url =
       if set_logo_override.present? && File.exist?(images_sets.join(set_logo_override))
-        view_context.asset_path("sets/#{set_logo_override}")
+        safe_asset_path("sets/#{set_logo_override}")
       elsif set_logo_base.present? && File.exist?(images_sets.join(set_logo_base))
-        view_context.asset_path("sets/#{set_logo_base}")
+        safe_asset_path("sets/#{set_logo_base}")
       else
-        view_context.asset_path("pokevaluelogo.png")
+        safe_asset_path("pokevaluelogo.png")
       end
 
     @product_name      = (p["name"] || p[:name]).to_s
@@ -218,14 +266,26 @@ class PagesController < ApplicationController
 
     override = sealed_override_filename(set_name: @set_name, type_key: @product_type)
     if override.present? && File.exist?(images_sealed.join(override))
-      @product_img_url = view_context.asset_path("sealed/#{override}")
+      @product_img_url = safe_asset_path("sealed/#{override}")
     else
-      img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
+      requested_img = (p["img"] || p[:img]).to_s
+      img_base = begin
+        File.basename(requested_img)
+      rescue
+        ""
+      end
+
+      actual_img = nil
+      if img_base.present?
+        down = img_base.downcase
+        actual_img = sealed_files.find { |f| f.downcase == down }
+      end
+
       @product_img_url =
-        if img_base.present? && File.exist?(images_sealed.join(img_base))
-          view_context.asset_path("sealed/#{img_base}")
+        if actual_img.present?
+          safe_asset_path("sealed/#{actual_img}")
         else
-          view_context.asset_path("pokevaluelogo.png")
+          safe_asset_path("pokevaluelogo.png")
         end
     end
 
@@ -234,7 +294,11 @@ class PagesController < ApplicationController
     @product_listings  = p["listings"] || p[:listings]
 
     @admin_value_sku = build_value_override_sku(set_slug: slug, route_type: want_type)
-    override_row = Product.find_by(sku: @admin_value_sku)
+    override_row = begin
+      Product.find_by(sku: @admin_value_sku)
+    rescue
+      nil
+    end
     @product_value = override_row&.value || fallback_value
 
     @urgency_label = "Unknown"
@@ -297,6 +361,12 @@ class PagesController < ApplicationController
     images_sets   = Rails.root.join("app", "assets", "images", "sets")
     images_sealed = Rails.root.join("app", "assets", "images", "sealed")
 
+    sealed_files = begin
+      Dir.children(images_sealed)
+    rescue
+      []
+    end
+
     sets     = []
     products = []
 
@@ -309,11 +379,11 @@ class PagesController < ApplicationController
       box_base  = File.basename(s["boxImage"].to_s) rescue nil
       set_img =
         if logo_base.present? && File.exist?(images_sets.join(logo_base))
-          view_context.asset_path("sets/#{logo_base}")
+          safe_asset_path("sets/#{logo_base}")
         elsif box_base.present? && File.exist?(images_sets.join(box_base))
-          view_context.asset_path("sets/#{box_base}")
+          safe_asset_path("sets/#{box_base}")
         else
-          view_context.asset_path("pokevaluelogo.png")
+          safe_asset_path("pokevaluelogo.png")
         end
 
       hay_set     = "#{set_name} #{era}".downcase
@@ -338,17 +408,29 @@ class PagesController < ApplicationController
         friendly  = PRODUCT_TYPE_NAMES[normalize_type(type_code)] || prod_name
 
         override = sealed_override_filename(set_name: set_name, type_key: type_code)
-        if override.present? && File.exist?(images_sealed.join(override))
-          prod_img = view_context.asset_path("sealed/#{override}")
-        else
-          img_base = File.basename((prod["img"] || prod[:img]).to_s) rescue nil
-          prod_img =
-            if img_base.present? && File.exist?(images_sealed.join(img_base))
-              view_context.asset_path("sealed/#{img_base}")
-            else
-              view_context.asset_path("pokevaluelogo.png")
+        prod_img =
+          if override.present? && File.exist?(images_sealed.join(override))
+            safe_asset_path("sealed/#{override}")
+          else
+            requested_img = (prod["img"] || prod[:img]).to_s
+            img_base = begin
+              File.basename(requested_img)
+            rescue
+              ""
             end
-        end
+
+            actual_img = nil
+            if img_base.present?
+              down = img_base.downcase
+              actual_img = sealed_files.find { |f| f.downcase == down }
+            end
+
+            if actual_img.present?
+              safe_asset_path("sealed/#{actual_img}")
+            else
+              safe_asset_path("pokevaluelogo.png")
+            end
+          end
 
         route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
 
@@ -372,6 +454,18 @@ class PagesController < ApplicationController
   end
 
   private
+
+  def safe_asset_path(path, fallback = "pokevaluelogo.png")
+    begin
+      view_context.asset_path(path)
+    rescue
+      begin
+        view_context.asset_path(fallback)
+      rescue
+        "/assets/#{fallback}"
+      end
+    end
+  end
 
   def load_sets_data
     path = Rails.root.join("config", "sets.json")

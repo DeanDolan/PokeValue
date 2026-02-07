@@ -690,12 +690,12 @@
                                                 {
                                                     "type":  "booster_box",
                                                     "name":  "Booster Box",
-                                                    "img":  "images/sealed/scarletandvioletbase_boosterbox.png"
+                                                    "img":  "images/sealed/scarletandviolet_boosterbox.png"
                                                 },
                                                 {
                                                     "type":  "booster_bundle",
                                                     "name":  "Booster Bundle",
-                                                    "img":  "images/sealed/scarletandvioletbase_boosterbundle.png"
+                                                    "img":  "images/sealed/scarletandviolet_boosterbundle.png"
                                                 }
                                             ]
                              },
@@ -1055,7 +1055,7 @@
                                          {
                                              "type":  "booster_box",
                                              "name":  "Booster Box",
-                                             "img":  "images/sealed/chillingreign_boosterbox.png"
+                                             "img":  "images/sealed/chilling_reign_booster_box.png"
                                          }
                                      ]
                       },
@@ -1081,16 +1081,6 @@
                                             "type":  "etb",
                                             "name":  "Elite Trainer Box (Single Strike)",
                                             "img":  "images/sealed/battlestyles_etb_singlestrike.png"
-                                        },
-                                        {
-                                            "type":  "pc_etb",
-                                            "name":  "Pokemon Center Elite Trainer Box (Rapid Strike)",
-                                            "img":  "images/sealed/battlestyles_pcetb_rapidstrike.png"
-                                        },
-                                        {
-                                            "type":  "pc_etb",
-                                            "name":  "Pokemon Center Elite Trainer Box (Single Strike)",
-                                            "img":  "images/sealed/battlestyles_pcetb_singlestrike.png"
                                         },
                                         {
                                             "type":  "booster_box",
@@ -1230,22 +1220,12 @@
                                               {
                                                   "type":  "etb",
                                                   "name":  "Elite Trainer Box (Zacian)",
-                                                  "img":  "images/sealed/swordandshield_etb.png"
+                                                  "img":  "images/sealed/swordandshield_etb_zacian.png"
                                               },
                                               {
                                                   "type":  "etb",
                                                   "name":  "Elite Trainer Box (Zamazenta)",
-                                                  "img":  "images/sealed/swordandshield_etb.png"
-                                              },
-                                              {
-                                                  "type":  "pc_etb",
-                                                  "name":  "Pokemon Center Elite Trainer Box (Zacian)",
-                                                  "img":  "images/sealed/swordandshield_pcetb.png"
-                                              },
-                                              {
-                                                  "type":  "pc_etb",
-                                                  "name":  "Pokemon Center Elite Trainer Box (Zamazenta)",
-                                                  "img":  "images/sealed/swordandshield_pcetb.png"
+                                                  "img":  "images/sealed/swordandshield_etb_zamazenta.png"
                                               },
                                               {
                                                   "type":  "booster_box",

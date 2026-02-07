@@ -14,6 +14,14 @@
   current_user.watchlists.exists?(product_sku: watchlist_sku)
 %>
 
+<% holdings_qty =
+  if defined?(user_signed_in?) && user_signed_in? && defined?(@holdings) && @holdings.respond_to?(:sum)
+    @holdings.sum { |h| h.quantity.to_i }
+  else
+    0
+  end
+%>
+
 <div class="container py-4">
   <div class="mb-3">
     <%= link_to "← Back to set", set_path(slug: @set_slug), class: "btn btn-link p-0" %>
@@ -43,6 +51,12 @@
         <div class="text-muted small">
           <%= [@era, @set_name, @product_type_name].compact.join(" · ") %>
         </div>
+
+        <% if holdings_qty.to_i > 0 %>
+          <div class="mt-2">
+            <span class="badge text-bg-danger"><%= "#{holdings_qty} in holdings" %></span>
+          </div>
+        <% end %>
 
         <% if is_watchlisted %>
           <div class="mt-2">
@@ -96,7 +110,7 @@
                 <%= @product_value.present? ? number_to_currency(@product_value, unit: "€") : "€0.00" %>
               </div>
 
-              <% if defined?(admin_mfa_verified?) && admin_mfa_verified? %>
+              <% if defined?(admin_signed_in?) && admin_signed_in? %>
                 <div class="mt-2">
                   <%= form_with url: admin_product_value_path(sku: @admin_value_sku), method: :patch, local: true do %>
                     <%= hidden_field_tag :return_to, request.fullpath %>
@@ -106,10 +120,6 @@
                       <button class="btn btn-outline-primary" type="submit">Update</button>
                     </div>
                   <% end %>
-                </div>
-              <% elsif defined?(admin_signed_in?) && admin_signed_in? %>
-                <div class="mt-2">
-                  <%= link_to "Verify MFA to edit value", mfa_path, class: "btn btn-outline-primary btn-sm" %>
                 </div>
               <% end %>
             </div>
