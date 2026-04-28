@@ -7,7 +7,30 @@
   (display_product_name.to_s.downcase.include?("pokemon center") ? "Pokemon Center" : "")
 %>
 
+<% current_route_type = params[:type].presence || @product_type %>
 <% watchlist_sku = "#{@set_slug}:#{@product_type}" %>
+<% marketplace_listing_quantity =
+  begin
+    if defined?(MarketplaceListing)
+      quantity = MarketplaceListing.active.where(set_slug: @set_slug.to_s, route_type: current_route_type.to_s).sum(:quantity).to_i
+
+      if quantity.zero?
+        quantity = MarketplaceListing.active.where(product_sku: "#{@set_slug}:#{current_route_type}").sum(:quantity).to_i
+      end
+
+      if quantity.zero?
+        quantity = MarketplaceListing.active.where(set_slug: @set_slug.to_s, product_type_name: @product_type_name.to_s).sum(:quantity).to_i
+      end
+
+      quantity
+    else
+      0
+    end
+  rescue
+    0
+  end
+%>
+
 <% is_watchlisted =
   (defined?(user_signed_in?) && user_signed_in?) &&
   current_user &&
@@ -20,6 +43,27 @@
   else
     0
   end
+%>
+
+<%
+condition_options = [
+  "Loosely Sealed",
+  "Mini Tear/Hole (<2cm)",
+  "Unsealed",
+  "Small Tear (>2cm)",
+  "Big Tear (>1 inch)",
+  "Small Imperfections",
+  "Big Imperfections",
+  "Pressure Marks",
+  "Slightly Dented",
+  "Heavy Dented",
+  "Damaged",
+  "Box Only",
+  "Contents Only"
+]
+
+condition_options = ((@conditions || []) + condition_options).map(&:to_s).reject(&:blank?).uniq
+condition_options = condition_options.reject { |c| ["Mint Condition", "Small Tear", "Big Tear", "Small Tear (<1 inch)"].include?(c.to_s.strip) }
 %>
 
 <div class="container py-4">
@@ -130,7 +174,7 @@
           <div class="card h-100">
             <div class="card-body text-center py-3">
               <div class="small text-muted">Listings</div>
-              <div class="fw-semibold"><%= @product_listings || 0 %></div>
+              <div class="fw-semibold"><%= marketplace_listing_quantity %></div>
             </div>
           </div>
         </div>
@@ -139,11 +183,11 @@
       <div class="d-flex flex-wrap gap-2 justify-content-center">
         <% if defined?(user_signed_in?) && user_signed_in? %>
           <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addHoldingModal">
-            + Add to Portfolio
+            Add to Portfolio
           </button>
         <% else %>
           <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#authModal">
-            + Add to Portfolio
+            Add to Portfolio
           </button>
         <% end %>
 
@@ -156,7 +200,7 @@
                           params: { return_to: request.fullpath },
                           class: "btn btn-outline-danger" %>
           <% else %>
-            <%= button_to "+ Add to Watchlist",
+            <%= button_to "Add to Watchlist",
                           watchlist_path(sku: watchlist_sku),
                           method: :post,
                           form: { class: "d-inline" },
@@ -165,7 +209,7 @@
           <% end %>
         <% else %>
           <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#authModal">
-            + Add to Watchlist
+            Add to Watchlist
           </button>
         <% end %>
 
@@ -195,6 +239,11 @@
       </div>
 
       <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <strong>Warning:</strong>
+          Future projections are estimates only. They are based on available historical data and trend-based modelling, so they are not guaranteed to be accurate. These projections should not be treated as financial advice or relied on as the only reason to buy, sell, or hold a product. Product values can rise or fall, and PokeValue is not liable for any loss, missed profit, or financial decision made using these projections.
+        </div>
+
         <div class="d-flex gap-2 mb-3">
           <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="6m" data-action="click->forecast#changeHorizon">6m</button>
           <button class="btn btn-outline-primary btn-sm" data-forecast-target="hbtn" data-horizon="1y" data-action="click->forecast#changeHorizon">1y</button>
@@ -318,14 +367,19 @@
             <%= hidden_field_tag "holding[era]", @era %>
             <%= hidden_field_tag "holding[set_name]", @set_name %>
             <%= hidden_field_tag "holding[product_type]", @product_type_name %>
-            <%= hidden_field_tag "holding[value]", @product_value %>
 
             <div class="mb-3">
-              <label class="form-label">Estimated value / unit (€)</label>
-              <input type="text"
-                     class="form-control"
-                     value="<%= @product_value.present? ? number_to_currency(@product_value, unit: '€') : '€0.00' %>"
-                     disabled>
+              <label class="form-label" for="holding_value_input">Estimated value / unit (€)</label>
+              <%= number_field_tag "holding[value]",
+                                   @product_value,
+                                   step: "0.01",
+                                   min: 0,
+                                   class: "form-control",
+                                   id: "holding_value_input",
+                                   required: true,
+                                   readonly: true,
+                                   data: { base_value: @product_value.to_f } %>
+              <div class="form-text" id="holding_condition_note"></div>
             </div>
 
             <div class="mb-3">
@@ -352,7 +406,7 @@
             <div class="mb-3">
               <label class="form-label" for="holding_condition">Condition</label>
               <%= select_tag "holding[condition]",
-                             options_for_select(@conditions || []),
+                             options_for_select(condition_options),
                              include_blank: "Select condition",
                              class: "form-select",
                              id: "holding_condition" %>
@@ -367,4 +421,97 @@
       </div>
     </div>
   </div>
+
+  <script>
+    (function () {
+      function initHoldingConditionValue() {
+        const conditionSelect = document.getElementById("holding_condition");
+        const valueInput = document.getElementById("holding_value_input");
+        const note = document.getElementById("holding_condition_note");
+
+        if (!conditionSelect || !valueInput) return;
+        if (conditionSelect.dataset.bound === "1") return;
+        conditionSelect.dataset.bound = "1";
+
+        const baseValue = parseFloat(valueInput.dataset.baseValue || "0") || 0;
+
+        const naConditions = [
+          "unsealed",
+          "damaged",
+          "box only",
+          "contents only"
+        ];
+
+        const tenPercent = [
+          "loosely sealed",
+          "mini tear/hole (<2cm)",
+          "mini tear/hole (1cm)",
+          "pressure marks",
+          "small imperfections"
+        ];
+
+        const fifteenPercent = [
+          "big imperfections",
+          "small tear (>2cm)"
+        ];
+
+        const twentyPercent = [
+          "big tear (>1 inch)",
+          "big tear (>inch)",
+          "slightly dented"
+        ];
+
+        const thirtyPercent = [
+          "heavy dented"
+        ];
+
+        function normalize(value) {
+          return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+        }
+
+        function syncValue() {
+          const condition = normalize(conditionSelect.value);
+          let adjusted = baseValue;
+          let noteText = "";
+
+          if (naConditions.includes(condition)) {
+            valueInput.readOnly = false;
+            valueInput.classList.remove("bg-light");
+            if (!valueInput.value || parseFloat(valueInput.value) === 0) {
+              valueInput.value = baseValue.toFixed(2);
+            }
+            if (note) note.textContent = "This condition is marked as N/A for estimated value.";
+            return;
+          }
+
+          valueInput.readOnly = true;
+          valueInput.classList.add("bg-light");
+
+          if (tenPercent.includes(condition)) {
+            adjusted = baseValue * 0.9;
+            noteText = "10% condition reduction applied.";
+          } else if (fifteenPercent.includes(condition)) {
+            adjusted = baseValue * 0.85;
+            noteText = "15% condition reduction applied.";
+          } else if (twentyPercent.includes(condition)) {
+            adjusted = baseValue * 0.8;
+            noteText = "20% condition reduction applied.";
+          } else if (thirtyPercent.includes(condition)) {
+            adjusted = baseValue * 0.7;
+            noteText = "30% condition reduction applied.";
+          }
+
+          adjusted = Math.round(adjusted * 100) / 100;
+          valueInput.value = adjusted.toFixed(2);
+          if (note) note.textContent = noteText;
+        }
+
+        conditionSelect.addEventListener("change", syncValue);
+        syncValue();
+      }
+
+      document.addEventListener("DOMContentLoaded", initHoldingConditionValue);
+      document.addEventListener("turbo:load", initHoldingConditionValue);
+    })();
+  </script>
 <% end %>

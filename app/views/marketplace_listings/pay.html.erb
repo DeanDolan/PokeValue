@@ -1,0 +1,132 @@
+<%
+l = @listing
+offer = @offer
+seller = l.respond_to?(:seller) ? l.seller : nil
+seller_name = seller&.respond_to?(:username) && seller.username.present? ? seller.username : "User ##{l.seller_id}"
+seller_revolut_tag = defined?(@seller_revolut_tag) ? @seller_revolut_tag.to_s : seller&.revolut_tag.to_s
+%>
+
+<div class="container py-4">
+  <style>
+    .mpay-card{max-width:720px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .mpay-title{font-size:1.35rem;font-weight:900;margin:0 0 6px;color:#111827}
+    .mpay-sub{font-size:.88rem;color:#6b7280;margin:0 0 16px}
+    .mpay-line{font-size:.9rem;margin:7px 0}
+    .mpay-line strong{font-weight:800}
+    .mpay-tag-box{border:1px solid #e5e7eb;border-radius:14px;background:#fafafa;padding:14px;margin:16px 0}
+    .mpay-tag-label{font-size:.75rem;color:#6b7280;font-weight:900;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+    .mpay-tag-hidden{display:inline-block;background:#111827;color:#111827;border-radius:6px;padding:.22rem .7rem;min-width:170px;user-select:none}
+    .mpay-tag-value{font-size:1.05rem;font-weight:900;color:#111827}
+    .mpay-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+    .mpay-confirm-overlay{position:fixed;inset:0;background:rgba(15,23,42,.52);display:none;align-items:center;justify-content:center;z-index:3000;padding:16px}
+    .mpay-confirm-box{width:100%;max-width:420px;background:#fff;border:1px solid #d1d5db;border-radius:18px;box-shadow:0 24px 60px rgba(15,23,42,.28);padding:20px;text-align:center}
+    .mpay-confirm-title{font-size:1.1rem;font-weight:900;color:#111827;margin-bottom:8px}
+    .mpay-confirm-text{font-size:.92rem;color:#4b5563;margin-bottom:16px}
+    .mpay-confirm-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  </style>
+
+  <div class="mb-3">
+    <%= link_to "← Back to Listing", marketplace_listing_path(l), class: "btn btn-link p-0" %>
+  </div>
+
+  <div class="mpay-card">
+    <h1 class="mpay-title">Pay Seller</h1>
+    <p class="mpay-sub">Reveal the seller’s Revolut tag, send the payment, then confirm payment.</p>
+
+    <div class="mpay-line"><strong>Seller:</strong> <%= seller_name %></div>
+    <div class="mpay-line"><strong>Offer Amount:</strong> <%= number_to_currency(offer.offer_cents.to_i / 100.0, unit: "€") %></div>
+    <div class="mpay-line"><strong>Status:</strong> <%= offer.status.to_s.titleize %></div>
+
+    <div class="mpay-tag-box">
+      <div class="mpay-tag-label">Seller Revolut Tag</div>
+      <span class="mpay-tag-hidden" id="sellerTagHidden">Revolut Tag Hidden</span>
+      <span class="mpay-tag-value" id="sellerTagValue" style="display:none;"><%= seller_revolut_tag %></span>
+
+      <div class="mt-3">
+        <button type="button" class="btn btn-outline-dark btn-sm" id="revealSellerTagButton" <%= "disabled" if seller_revolut_tag.blank? %>>Reveal</button>
+      </div>
+    </div>
+
+    <%= form_with url: confirm_payment_marketplace_listing_path(l, offer_id: offer.id), method: :post, local: true, html: { class: "mpay-confirm-form", data: { confirm_title: "Confirm Payment", confirm_text: "Do you want to confirm that you sent this payment?" } } do %>
+      <div class="mpay-actions">
+        <%= submit_tag "Confirm Pay", class: "btn btn-success btn-sm" %>
+        <%= link_to "Cancel", marketplace_listing_path(l), class: "btn btn-outline-secondary btn-sm" %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mpay-confirm-overlay" id="mpayConfirmOverlay">
+    <div class="mpay-confirm-box">
+      <div class="mpay-confirm-title" id="mpayConfirmTitle">Confirm Payment</div>
+      <div class="mpay-confirm-text" id="mpayConfirmText">Do you want to confirm this payment?</div>
+      <div class="mpay-confirm-actions">
+        <button type="button" class="btn btn-outline-secondary" id="mpayConfirmNo">No</button>
+        <button type="button" class="btn btn-success" id="mpayConfirmYes">Yes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  const revealButton = document.getElementById("revealSellerTagButton");
+  const hiddenTag = document.getElementById("sellerTagHidden");
+  const valueTag = document.getElementById("sellerTagValue");
+
+  revealButton?.addEventListener("click", () => {
+    if (!hiddenTag || !valueTag) return;
+
+    hiddenTag.style.display = "none";
+    valueTag.style.display = "";
+
+    setTimeout(() => {
+      hiddenTag.style.display = "";
+      valueTag.style.display = "none";
+    }, 10000);
+  });
+
+  let pendingForm = null;
+  let confirmedForm = false;
+
+  const overlay = document.getElementById("mpayConfirmOverlay");
+  const titleEl = document.getElementById("mpayConfirmTitle");
+  const textEl = document.getElementById("mpayConfirmText");
+  const yesBtn = document.getElementById("mpayConfirmYes");
+  const noBtn = document.getElementById("mpayConfirmNo");
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest(".mpay-confirm-form");
+    if (!form) return;
+
+    if (confirmedForm) {
+      confirmedForm = false;
+      return;
+    }
+
+    event.preventDefault();
+
+    pendingForm = form;
+    if (titleEl) titleEl.textContent = form.dataset.confirmTitle || "Confirm";
+    if (textEl) textEl.textContent = form.dataset.confirmText || "Do you want to continue?";
+    if (overlay) overlay.style.display = "flex";
+  });
+
+  yesBtn?.addEventListener("click", () => {
+    if (!pendingForm) return;
+    const form = pendingForm;
+    pendingForm = null;
+    if (overlay) overlay.style.display = "none";
+    confirmedForm = true;
+    form.requestSubmit();
+  });
+
+  noBtn?.addEventListener("click", () => {
+    pendingForm = null;
+    if (overlay) overlay.style.display = "none";
+  });
+
+  overlay?.addEventListener("click", (event) => {
+    if (event.target !== overlay) return;
+    pendingForm = null;
+    overlay.style.display = "none";
+  });
+</script>

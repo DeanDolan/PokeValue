@@ -1,0 +1,364 @@
+<%
+  all_comments = post.community_comments.to_a
+  top_level_comments = all_comments.select { |comment| comment.parent_comment_id.nil? }
+  sorted_top_level_comments = top_level_comments.sort_by { |comment| [ -community_total_comment_reactions(comment), comment.created_at.to_i ] }
+
+  reaction_counts = community_reaction_counts(post)
+  total_reactions = reaction_counts.values.sum
+  current_reaction = current_user ? post.community_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
+  reactions_modal_id = "communityReactionsModal-#{post.id}"
+  all_image_urls = post.images.map { |image| url_for(image) }
+  shown_images = post.images.first([post.images.count, 4].min)
+%>
+
+<style>
+  .community-post-card{padding:1rem}
+  .community-post-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+  .community-user-line{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+  .community-username{font-weight:800;color:#111827}
+  .community-flag{font-size:1rem;line-height:1}
+  .community-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:.18rem .5rem;font-size:.72rem;font-weight:800}
+  .community-badge-admin{background:rgba(220,53,69,.12);border:1px solid rgba(220,53,69,.35);color:#dc3545}
+  .community-badge-default{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151}
+  .community-time{font-size:.8rem;color:#6b7280;margin-top:.15rem}
+  .community-delete-btn{border-radius:999px}
+  .community-post-body{margin-top:.8rem;color:#111827;font-size:.97rem;line-height:1.55;word-break:break-word}
+  .community-post-body p:last-child{margin-bottom:0}
+  .community-media-grid{display:grid;gap:.5rem;margin-top:.9rem}
+  .community-media-grid-1{grid-template-columns:1fr}
+  .community-media-grid-2{grid-template-columns:repeat(2,1fr)}
+  .community-media-grid-3{grid-template-columns:1.2fr .8fr;grid-template-rows:repeat(2,165px)}
+  .community-media-grid-4{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,165px)}
+  .community-media-grid-1 .community-media-item{height:340px}
+  .community-media-grid-2 .community-media-item{height:220px}
+  .community-media-grid-3 .community-media-item-1{grid-row:1 / span 2;height:335px}
+  .community-media-grid-3 .community-media-item:not(.community-media-item-1){height:165px}
+  .community-media-grid-4 .community-media-item{height:165px}
+  .community-media-item{position:relative;overflow:hidden;border-radius:1rem;background:#f3f4f6}
+  .community-media-button{display:block;width:100%;height:100%;padding:0;border:none;background:none;position:relative}
+  .community-media-image{width:100%;height:100%;object-fit:cover;display:block}
+  .community-media-more{position:absolute;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:2rem;font-weight:800}
+  .community-social-summary{display:flex;align-items:center;justify-content:flex-start;gap:.9rem;flex-wrap:wrap;margin-top:.95rem;padding-top:.85rem;border-top:1px solid #f3f4f6}
+  .community-social-link{border:none;background:none;padding:0;color:#475569;font-size:.9rem;font-weight:700}
+  .community-social-link:hover{color:#111827}
+  .community-social-emojis{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+  .community-social-emoji-pill{display:inline-flex;align-items:center;gap:.3rem;padding:.28rem .55rem;border-radius:999px;background:transparent;border:1px solid #e5e7eb;font-size:.84rem;font-weight:700;color:#111827}
+  .community-reactions-row{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.85rem}
+  .community-post-react-form{display:inline-block;margin:0}
+  .community-react-btn{position:relative;border:1px solid #d1d5db;background:transparent;color:#111827;border-radius:999px;padding:.45rem .75rem;font-size:.84rem;font-weight:700;display:inline-flex;align-items:center;gap:.35rem;box-shadow:none}
+  .community-react-btn.active{background:transparent;color:#111827;border-color:#111827;box-shadow:none}
+  .community-react-btn:hover::after{
+    content:attr(data-post-reaction-label);
+    position:absolute;
+    left:50%;
+    bottom:calc(100% + 8px);
+    transform:translateX(-50%);
+    background:#111827;
+    color:#fff;
+    padding:.32rem .55rem;
+    border-radius:.55rem;
+    font-size:.74rem;
+    font-weight:700;
+    line-height:1;
+    white-space:nowrap;
+    pointer-events:none;
+    z-index:20
+  }
+  .community-comment-compose{margin-top:.85rem}
+  .community-comment-form{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+  .community-comment-input{flex:1 1 260px;border-radius:999px}
+  .community-comments-wrap{margin-top:.85rem;padding-top:.85rem;border-top:1px solid #f3f4f6;display:grid;gap:.75rem}
+  .community-view-more-comments{margin-top:.15rem}
+  .community-comment-thread.depth-1{margin-left:1.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}
+  .community-comment-thread.depth-2{margin-left:2.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}
+  .community-comment-card{padding:.7rem .8rem;background:#f8fafc;border:1px solid #e5e7eb;border-radius:1rem}
+  .community-comment-line{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem}
+  .community-comment-user{font-size:.86rem;font-weight:800;color:#111827}
+  .community-comment-time{font-size:.76rem;color:#6b7280}
+  .community-comment-body{font-size:.9rem;color:#1f2937;line-height:1.45;word-break:break-word}
+  .community-comment-body p:last-child{margin-bottom:0}
+  .community-comment-social{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-top:.5rem}
+  .community-comment-summary-link{border:none;background:none;padding:0;color:#475569;font-size:.82rem;font-weight:700}
+  .community-comment-summary-link:hover{color:#111827}
+  .community-comment-reactions-row{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.55rem}
+  .community-comment-react-form{display:inline-block;margin:0}
+  .community-comment-react-btn{border:1px solid #d1d5db;background:transparent;color:#111827;border-radius:999px;padding:.28rem .5rem;font-size:.8rem;font-weight:700;display:inline-flex;align-items:center;gap:.28rem;box-shadow:none}
+  .community-comment-react-btn.active{background:transparent;color:#111827;border-color:#111827;box-shadow:none}
+  .community-reply-form-wrap{margin-top:.65rem}
+  .community-replies-wrap{display:grid;gap:.55rem;margin-top:.7rem}
+  .community-login-note{margin-top:.7rem;font-size:.84rem;color:#6b7280}
+  .community-reactions-filter-row{display:flex;gap:.55rem;flex-wrap:wrap;margin-bottom:.9rem}
+  .community-reactions-filter{border:1px solid #d1d5db;background:#fff;color:#111827;border-radius:999px;padding:.42rem .75rem;font-size:.84rem;font-weight:700}
+  .community-reactions-filter.active{background:#111827;color:#fff;border-color:#111827}
+  .community-reaction-people{display:grid;gap:.55rem}
+  .community-reaction-person{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem .85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}
+  .community-reaction-person-left{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+  .community-reaction-person-name{font-weight:800;color:#111827}
+  .community-reaction-kind{display:inline-flex;align-items:center;gap:.35rem;font-size:.9rem;font-weight:800;color:#111827}
+  .community-reactions-empty-filter{display:none;padding:.4rem 0;color:#6b7280}
+  @media (max-width:640px){
+    .community-post-head{flex-direction:column}
+    .community-media-grid-2,.community-media-grid-4{grid-template-columns:1fr}
+    .community-media-grid-3{grid-template-columns:1fr;grid-template-rows:none}
+    .community-media-grid-3 .community-media-item-1{grid-row:auto;height:220px}
+    .community-media-grid-1 .community-media-item,.community-media-grid-2 .community-media-item,.community-media-grid-3 .community-media-item,.community-media-grid-4 .community-media-item{height:220px}
+    .community-comment-form{flex-direction:column;align-items:stretch}
+    .community-reaction-person{align-items:flex-start;flex-direction:column}
+  }
+</style>
+
+<article id="community-post-<%= post.id %>" class="community-card community-post-card">
+  <div class="community-post-head">
+    <div>
+      <div class="community-user-line">
+        <span class="community-username"><%= post.user.username %></span>
+
+        <% flag = community_flag_emoji(post.user.country_code) %>
+        <% if flag.present? %>
+          <span class="community-flag"><%= flag %></span>
+        <% end %>
+
+        <% community_user_badges(post.user).each do |badge| %>
+          <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
+        <% end %>
+      </div>
+
+      <div class="community-time">
+        Posted <%= time_ago_in_words(post.created_at) %> ago
+      </div>
+    </div>
+
+    <% if current_user && (current_user.id == post.user_id || current_user.admin?) %>
+      <%= button_to "Delete",
+            community_post_path(post),
+            method: :delete,
+            params: { channel: selected_channel },
+            class: "btn btn-sm btn-outline-danger community-delete-btn",
+            form: { class: "d-inline mb-0" } %>
+    <% end %>
+  </div>
+
+  <% if post.body.present? %>
+    <div class="community-post-body">
+      <%= simple_format(h(post.body), {}, wrapper_tag: "div") %>
+    </div>
+  <% end %>
+
+  <% if shown_images.any? %>
+    <div class="community-media-grid community-media-grid-<%= [shown_images.count, 4].min %>">
+      <% shown_images.each_with_index do |image, index| %>
+        <div class="community-media-item community-media-item-<%= index + 1 %>">
+          <button
+            type="button"
+            class="community-media-button"
+            data-community-image-viewer="true"
+            data-image-index="<%= index %>"
+            data-image-urls="<%= all_image_urls.join('||') %>"
+            data-bs-toggle="modal"
+            data-bs-target="#communityImageViewerModal">
+            <%= image_tag image, class: "community-media-image", alt: "Post image" %>
+            <% if index == 3 && post.images.count > 4 %>
+              <div class="community-media-more">+<%= post.images.count - 4 %></div>
+            <% end %>
+          </button>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <div class="community-social-summary">
+    <div class="community-social-emojis" data-community-post-summary-emojis data-post-id="<%= post.id %>">
+      <% CommunityReaction::KINDS.each do |kind| %>
+        <% count = reaction_counts[kind].to_i %>
+        <% next if count.zero? %>
+        <span class="community-social-emoji-pill"><%= CommunityReaction.emoji_for(kind) %> <%= count %></span>
+      <% end %>
+    </div>
+
+    <button type="button" class="community-social-link" data-community-post-total-reactions data-post-id="<%= post.id %>" data-bs-toggle="modal" data-bs-target="#<%= reactions_modal_id %>">
+      Reactions (<%= total_reactions %>)
+    </button>
+
+    <button type="button" class="community-social-link" data-community-comments-toggle="<%= post.id %>">
+      Comments (<%= top_level_comments.size %>)
+    </button>
+  </div>
+
+  <div class="community-reactions-row">
+    <% CommunityReaction::KINDS.each do |kind| %>
+      <%= form_with url: react_community_post_path(post), method: :post, local: true, html: { class: "community-post-react-form", data: { turbo: false, community_post_id: post.id } } do %>
+        <%= hidden_field_tag :kind, kind %>
+        <%= hidden_field_tag :channel, selected_channel %>
+        <button
+          type="submit"
+          class="community-react-btn <%= "active" if current_reaction&.kind == kind %>"
+          data-post-reaction-kind="<%= kind %>"
+          data-post-reaction-emoji="<%= CommunityReaction.emoji_for(kind) %>"
+          data-post-reaction-label="<%= CommunityReaction.label_for(kind) %>"
+          title="<%= CommunityReaction.label_for(kind) %>">
+          <span><%= CommunityReaction.emoji_for(kind) %></span>
+          <span data-post-reaction-count><%= reaction_counts[kind].to_i.positive? ? reaction_counts[kind].to_i : "" %></span>
+        </button>
+      <% end %>
+    <% end %>
+  </div>
+
+  <div class="community-comments-wrap d-none" data-community-comments-container data-post-id="<%= post.id %>">
+    <% if current_user %>
+      <div class="community-comment-compose">
+        <%= form_with model: [post, CommunityComment.new], url: community_post_community_comments_path(post), local: true, class: "community-comment-form" do |f| %>
+          <%= hidden_field_tag :channel, selected_channel %>
+          <%= f.text_field :body, class: "form-control community-comment-input", placeholder: "Write a comment...", maxlength: CommunityComment::MAX_BODY_LENGTH %>
+          <%= f.submit "Comment", class: "btn btn-sm btn-dark" %>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="community-login-note">Log in to comment.</div>
+    <% end %>
+
+    <% sorted_top_level_comments.each do |comment| %>
+      <%= render "community_comments/comment", comment: comment, post: post, selected_channel: selected_channel, depth: 0, hidden: true %>
+    <% end %>
+
+    <% if sorted_top_level_comments.any? %>
+      <button type="button" class="community-social-link community-view-more-comments d-none" data-community-comments-more="<%= post.id %>">
+        More Comments
+      </button>
+    <% end %>
+  </div>
+</article>
+
+<div class="modal fade" id="<%= reactions_modal_id %>" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5">Reactions</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body community-reactions-modal-body" data-community-post-id="<%= post.id %>">
+        <div class="community-reactions-filter-row">
+          <button type="button" class="community-reactions-filter active" data-kind="all">All (<%= total_reactions %>)</button>
+          <% CommunityReaction::KINDS.each do |kind| %>
+            <button type="button" class="community-reactions-filter" data-kind="<%= kind %>" data-emoji="<%= CommunityReaction.emoji_for(kind) %>"><%= CommunityReaction.emoji_for(kind) %> <%= reaction_counts[kind].to_i %></button>
+          <% end %>
+        </div>
+
+        <div class="community-reaction-people" data-community-reactor-list>
+          <% if post.community_reactions.any? %>
+            <% post.community_reactions.order(created_at: :desc).each do |reaction| %>
+              <div class="community-reaction-person" data-kind="<%= reaction.kind %>">
+                <div class="community-reaction-person-left">
+                  <span class="community-reaction-person-name"><%= reaction.user.username %></span>
+
+                  <% reaction_flag = community_flag_emoji(reaction.user.country_code) %>
+                  <% if reaction_flag.present? %>
+                    <span class="community-flag"><%= reaction_flag %></span>
+                  <% end %>
+
+                  <% community_user_badges(reaction.user).each do |badge| %>
+                    <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
+                  <% end %>
+                </div>
+
+                <div class="community-reaction-kind">
+                  <span><%= CommunityReaction.emoji_for(reaction.kind) %></span>
+                  <span><%= CommunityReaction.label_for(reaction.kind) %></span>
+                </div>
+              </div>
+            <% end %>
+            <div class="community-reactions-empty-filter">No reactions for this filter.</div>
+          <% else %>
+            <div class="text-muted">No reactions yet.</div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    function visibleCommentRows(container){
+      return Array.from(container.querySelectorAll('[data-community-hidden-comment]')).filter(function(row){
+        return !row.classList.contains("d-none");
+      });
+    }
+
+    function hiddenCommentRows(container){
+      return Array.from(container.querySelectorAll('[data-community-hidden-comment="true"].d-none'));
+    }
+
+    function revealNextComments(container, amount){
+      hiddenCommentRows(container).slice(0, amount).forEach(function(row){
+        row.classList.remove("d-none");
+      });
+
+      const moreButton = container.querySelector("[data-community-comments-more]");
+      if(moreButton){
+        moreButton.classList.toggle("d-none", hiddenCommentRows(container).length === 0);
+      }
+    }
+
+    function closeComments(container){
+      container.classList.add("d-none");
+      container.dataset.open = "0";
+
+      Array.from(container.querySelectorAll('[data-community-hidden-comment]')).forEach(function(row){
+        row.classList.add("d-none");
+      });
+
+      const moreButton = container.querySelector("[data-community-comments-more]");
+      if(moreButton){
+        moreButton.classList.add("d-none");
+      }
+    }
+
+    function openComments(container){
+      container.classList.remove("d-none");
+      container.dataset.open = "1";
+
+      if(visibleCommentRows(container).length === 0){
+        revealNextComments(container, 5);
+      }
+
+      const moreButton = container.querySelector("[data-community-comments-more]");
+      if(moreButton){
+        moreButton.classList.toggle("d-none", hiddenCommentRows(container).length === 0);
+      }
+    }
+
+    function initCommunityCommentToggle(){
+      if(document.body.dataset.communityCommentsToggleReady === "true") return;
+      document.body.dataset.communityCommentsToggleReady = "true";
+
+      document.addEventListener("click", function(event){
+        const toggle = event.target.closest("[data-community-comments-toggle]");
+        if(toggle){
+          const postId = toggle.dataset.communityCommentsToggle;
+          const container = document.querySelector('[data-community-comments-container][data-post-id="' + postId + '"]');
+          if(!container) return;
+
+          if(container.dataset.open === "1"){
+            closeComments(container);
+          }else{
+            openComments(container);
+          }
+
+          return;
+        }
+
+        const more = event.target.closest("[data-community-comments-more]");
+        if(more){
+          const postId = more.dataset.communityCommentsMore;
+          const container = document.querySelector('[data-community-comments-container][data-post-id="' + postId + '"]');
+          if(!container) return;
+
+          revealNextComments(container, 5);
+        }
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", initCommunityCommentToggle);
+    document.addEventListener("turbo:load", initCommunityCommentToggle);
+  })();
+</script>

@@ -1,0 +1,6 @@
+<% u = local_assigns[:user] %>
+<% is_admin = u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && u.admin)) %>
+
+<% if is_admin %>
+  <span class="pv-badge pv-badge-admin" title="Admin">A</span>
+<% end %>

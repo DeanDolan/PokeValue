@@ -1,14 +1,7 @@
-<%# References for this page:
-    - Rails Guides (layouts / rendering ERB): https://guides.rubyonrails.org/layouts_and_rendering.html
-    - Bootstrap 5 docs (grid, spacing, buttons, tables): https://getbootstrap.com/docs/5.3/getting-started/introduction/
-    - W3Schools HTML tables basics: https://www.w3schools.com/html/html_tables.asp
-%>
-
 <div class="container py-3">
   <style>
-    /* main header row (title + primary button) */
     .mk-page-header{
-      margin: 12px 0 16px;
+      margin:12px 0 16px;
       display:flex;
       align-items:center;
       justify-content:space-between;
@@ -16,8 +9,6 @@
     }
     .mk-page-title{margin:0;font-size:1.4rem;line-height:1.1;}
     .mk-subtitle{margin:2px 0 0;font-size:.85rem;color:#6b7280;}
-
-    /* outer card that wraps all marketplace filters */
     .mk-filters-card{
       background:#ffffff;
       border-radius:1rem;
@@ -26,14 +17,11 @@
       box-shadow:0 10px 25px rgba(15,23,42,0.08);
       margin-bottom:18px;
     }
-
     .mk-field-label{
       font-size:.75rem;
       color:#4b5563;
       margin-bottom:3px;
     }
-
-    /* card around the listings table */
     .mk-table-card{
       position:relative;
       background:#ffffff;
@@ -42,21 +30,16 @@
       box-shadow:0 10px 25px rgba(15,23,42,0.08);
       overflow:hidden;
     }
-
-    /* handles horizontal scrolling for smaller screens */
     .mk-table-wrap{
       overflow-x:auto;
       min-height:220px;
     }
-
-    /* base marketplace table styling */
     .mk-table{
       width:100%;
       border-collapse:collapse;
       min-width:920px;
       font-size:.85rem;
     }
-
     .mk-table thead th{
       background:#f9fafb;
       font-weight:600;
@@ -67,7 +50,6 @@
       border-bottom:1px solid #e5e7eb;
       white-space:nowrap;
     }
-
     .mk-table tbody td{
       padding:10px 12px;
       border-bottom:1px solid #f1f5f9;
@@ -75,8 +57,6 @@
       vertical-align:middle;
       text-align:center;
     }
-
-    /* placeholder text when there are no marketplace listings yet */
     .mk-empty-state{
       position:absolute;
       inset:0;
@@ -88,28 +68,58 @@
       color:#6b7280;
       font-size:.85rem;
     }
+    .mk-reset-button,
+    .mk-reset-button.active,
+    .mk-reset-button.pv-tab-locked,
+    .mk-reset-button[aria-pressed="true"]{
+      background:var(--pv-button-bg) !important;
+      background-color:var(--pv-button-bg) !important;
+      color:var(--pv-button-text) !important;
+      border:1px solid var(--pv-button-border) !important;
+      box-shadow:none !important;
+      filter:none !important;
+      opacity:1 !important;
+    }
+    .mk-reset-button:hover,
+    .mk-reset-button.active:hover,
+    .mk-reset-button.pv-tab-locked:hover,
+    .mk-reset-button[aria-pressed="true"]:hover{
+      background:var(--pv-button-hover-bg) !important;
+      background-color:var(--pv-button-hover-bg) !important;
+      color:var(--pv-button-hover-text) !important;
+      border:1px solid var(--pv-button-hover-border) !important;
+      box-shadow:none !important;
+      filter:none !important;
+      opacity:1 !important;
+    }
+    .mk-reset-button *,
+    .mk-reset-button:hover *{
+      color:inherit !important;
+      background:transparent !important;
+      box-shadow:none !important;
+      filter:none !important;
+    }
   </style>
 
-  <!-- header row with page title + create listing button -->
   <div class="mk-page-header">
     <div>
       <h1 class="mk-page-title">Marketplace</h1>
       <p class="mk-subtitle mb-0">Browse listings from the community.</p>
     </div>
-    <button type="button" class="btn btn-success">
-      Create Listing
-    </button>
+
+    <% if defined?(current_user) && current_user %>
+      <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-success" %>
+    <% else %>
+      <%= link_to "Log in to Create Listing", new_session_path, class: "btn btn-outline-secondary" %>
+    <% end %>
   </div>
 
-  <!-- filters card (design only for now, no wiring to data yet) -->
   <section class="mk-filters-card">
     <div class="row g-3 mb-2">
       <div class="col-12">
         <div class="mb-2">
           <label for="mk-search" class="mk-field-label">Search</label>
-          <input id="mk-search" type="search"
-                 class="form-control"
-                 placeholder="Search product name from marketplace listings..." />
+          <input id="mk-search" type="search" class="form-control" placeholder="Search product name from marketplace listings...">
         </div>
       </div>
     </div>
@@ -128,20 +138,17 @@
           <option value="US">United States</option>
           <option value="CA">Canada</option>
           <option value="AU">Australia</option>
-          <!-- add more as needed later -->
         </select>
       </div>
 
       <div class="col-6 col-md-3 col-lg-2">
         <label for="mk-price-min" class="mk-field-label">Price Min (€)</label>
-        <input id="mk-price-min" type="number" step="0.01" min="0"
-               class="form-control" placeholder="0.00" />
+        <input id="mk-price-min" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
       </div>
 
       <div class="col-6 col-md-3 col-lg-2">
         <label for="mk-price-max" class="mk-field-label">Price Max (€)</label>
-        <input id="mk-price-max" type="number" step="0.01" min="0"
-               class="form-control" placeholder="0.00" />
+        <input id="mk-price-max" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
       </div>
 
       <div class="col-6 col-md-3 col-lg-2">
@@ -170,18 +177,12 @@
       </div>
     </div>
 
-    <!-- little button row for clearing/applying filters (visual only for now) -->
     <div class="d-flex justify-content-end gap-2 mt-3 flex-wrap">
-      <button type="button" class="btn btn-outline-secondary btn-sm">
-        Clear
-      </button>
-      <button type="button" class="btn btn-primary btn-sm">
-        Apply Filters
-      </button>
+      <button type="button" id="mk-reset-filters" class="btn btn-outline-secondary btn-sm mk-reset-button" aria-pressed="false">Reset</button>
+      <button type="button" id="mk-apply-filters" class="btn btn-primary btn-sm">Apply Filters</button>
     </div>
   </section>
 
-  <!-- main listings table section (no rows yet, just the shell) -->
   <section class="mk-table-card">
     <div class="mk-table-wrap">
       <table class="mk-table" aria-label="Marketplace Listings">
@@ -197,13 +198,195 @@
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
-          <!-- design only – rows will be populated later -->
+        <tbody id="mk-table-body">
+          <% @listings.each do |l| %>
+            <%
+              seller_name = l.seller&.respond_to?(:username) ? l.seller.username : "User ##{l.seller_id}"
+              set_text = l.set_name.presence || l.set_slug.presence || "-"
+              product_text = l.product_type_name.presence || l.route_type.presence || l.product_sku
+              condition_text = l.condition.to_s
+              price_value = l.price_cents.to_i / 100.0
+              created_value = l.created_at.to_i
+              country_code =
+                if l.respond_to?(:country_code) && l.country_code.present?
+                  l.country_code.to_s.upcase
+                elsif l.seller&.respond_to?(:country_code) && l.seller.country_code.present?
+                  l.seller.country_code.to_s.upcase
+                else
+                  ""
+                end
+            %>
+            <tr
+              data-mk-row="true"
+              data-seller="<%= seller_name.to_s.downcase %>"
+              data-set="<%= set_text.to_s.downcase %>"
+              data-product="<%= product_text.to_s.downcase %>"
+              data-condition="<%= condition_text.to_s.downcase %>"
+              data-location="<%= country_code.to_s.downcase %>"
+              data-price="<%= price_value %>"
+              data-created="<%= created_value %>"
+            >
+              <td><%= seller_name %></td>
+              <td><%= set_text %></td>
+              <td><%= product_text %></td>
+              <td><%= condition_text %></td>
+              <td><%= number_to_currency(price_value, unit: "€") %></td>
+              <td><%= l.quantity %></td>
+              <td><%= l.created_at.strftime("%d %b %Y") %></td>
+              <td class="d-flex gap-2 justify-content-center flex-wrap">
+                <%= link_to "View", marketplace_listing_path(l), class: "btn btn-sm btn-outline-primary" %>
+
+                <% if defined?(current_user) && current_user && current_user.id == l.seller_id && l.status == "active" %>
+                  <%= button_to "Cancel", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-sm btn-outline-danger" %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
         </tbody>
       </table>
     </div>
-    <div class="mk-empty-state">
+
+    <div id="mk-empty-state" class="mk-empty-state" <%= 'style="display:none;"'.html_safe if @listings.any? %>>
       No listings data yet.
     </div>
   </section>
+
+  <script>
+    (function(){
+      function initMarketplacePage(){
+        const tbody = document.getElementById("mk-table-body");
+        if(!tbody) return;
+
+        const rows = Array.from(tbody.querySelectorAll("tr[data-mk-row='true']"));
+        const emptyState = document.getElementById("mk-empty-state");
+        const searchInput = document.getElementById("mk-search");
+        const locationSelect = document.getElementById("mk-location");
+        const priceMinInput = document.getElementById("mk-price-min");
+        const priceMaxInput = document.getElementById("mk-price-max");
+        const sortSelect = document.getElementById("mk-sort");
+        const conditionSelect = document.getElementById("mk-condition");
+        const resetButton = document.getElementById("mk-reset-filters");
+        const applyButton = document.getElementById("mk-apply-filters");
+
+        function normalize(value){
+          return String(value || "").trim().toLowerCase();
+        }
+
+        function numberValue(value){
+          if(value === null || value === undefined || value === "") return null;
+          const parsed = parseFloat(value);
+          return Number.isNaN(parsed) ? null : parsed;
+        }
+
+        function unlockResetButton(){
+          if(!resetButton) return;
+          resetButton.classList.remove("active", "pv-tab-locked");
+          resetButton.setAttribute("aria-pressed", "false");
+          resetButton.style.removeProperty("background");
+          resetButton.style.removeProperty("background-color");
+          resetButton.style.removeProperty("color");
+          resetButton.style.removeProperty("border-color");
+          resetButton.style.removeProperty("box-shadow");
+          resetButton.style.removeProperty("filter");
+        }
+
+        function applyFilters(){
+          const searchValue = normalize(searchInput ? searchInput.value : "");
+          const locationValue = normalize(locationSelect ? locationSelect.value : "");
+          const minPrice = numberValue(priceMinInput ? priceMinInput.value : "");
+          const maxPrice = numberValue(priceMaxInput ? priceMaxInput.value : "");
+          const conditionValue = normalize(conditionSelect ? conditionSelect.value : "");
+          const sortValue = normalize(sortSelect ? sortSelect.value : "newest");
+
+          rows.forEach(function(row){
+            const searchBlob = [
+              row.dataset.seller,
+              row.dataset.set,
+              row.dataset.product,
+              row.dataset.condition
+            ].join(" ");
+
+            const rowLocation = normalize(row.dataset.location);
+            const rowCondition = normalize(row.dataset.condition);
+            const rowPrice = parseFloat(row.dataset.price || "0");
+
+            let visible = true;
+
+            if(searchValue && !searchBlob.includes(searchValue)) visible = false;
+            if(locationValue && rowLocation !== locationValue) visible = false;
+            if(conditionValue && rowCondition !== conditionValue) visible = false;
+            if(minPrice !== null && rowPrice < minPrice) visible = false;
+            if(maxPrice !== null && rowPrice > maxPrice) visible = false;
+
+            row.style.display = visible ? "" : "none";
+          });
+
+          rows.slice().sort(function(a, b){
+            const aPrice = parseFloat(a.dataset.price || "0");
+            const bPrice = parseFloat(b.dataset.price || "0");
+            const aCreated = parseInt(a.dataset.created || "0", 10);
+            const bCreated = parseInt(b.dataset.created || "0", 10);
+
+            if(sortValue === "oldest") return aCreated - bCreated;
+            if(sortValue === "price-asc") return aPrice - bPrice;
+            if(sortValue === "price-desc") return bPrice - aPrice;
+            return bCreated - aCreated;
+          }).forEach(function(row){
+            tbody.appendChild(row);
+          });
+
+          const visibleRows = rows.filter(function(row){
+            return row.style.display !== "none";
+          }).length;
+
+          if(emptyState){
+            emptyState.style.display = visibleRows === 0 ? "flex" : "none";
+          }
+
+          unlockResetButton();
+        }
+
+        function resetFilters(){
+          if(searchInput) searchInput.value = "";
+          if(locationSelect) locationSelect.value = "";
+          if(priceMinInput) priceMinInput.value = "";
+          if(priceMaxInput) priceMaxInput.value = "";
+          if(sortSelect) sortSelect.value = "newest";
+          if(conditionSelect) conditionSelect.value = "";
+          applyFilters();
+          unlockResetButton();
+        }
+
+        if(resetButton && resetButton.dataset.bound !== "1"){
+          resetButton.dataset.bound = "1";
+          resetButton.addEventListener("click", resetFilters);
+        }
+
+        if(applyButton && applyButton.dataset.bound !== "1"){
+          applyButton.dataset.bound = "1";
+          applyButton.addEventListener("click", applyFilters);
+        }
+
+        [searchInput, priceMinInput, priceMaxInput].forEach(function(input){
+          if(input && input.dataset.bound !== "1"){
+            input.dataset.bound = "1";
+            input.addEventListener("input", applyFilters);
+          }
+        });
+
+        [locationSelect, sortSelect, conditionSelect].forEach(function(select){
+          if(select && select.dataset.bound !== "1"){
+            select.dataset.bound = "1";
+            select.addEventListener("change", applyFilters);
+          }
+        });
+
+        applyFilters();
+        unlockResetButton();
+      }
+
+      document.addEventListener("DOMContentLoaded", initMarketplacePage);
+      document.addEventListener("turbo:load", initMarketplacePage);
+    })();
+  </script>
 </div>

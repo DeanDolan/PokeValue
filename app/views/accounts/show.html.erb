@@ -1,5 +1,13 @@
 <%
 require "json"
+require "yaml"
+
+if defined?(Auction)
+  begin
+    Auction.refresh_all_statuses!
+  rescue
+  end
+end
 
 sets_data =
   begin
@@ -23,15 +31,209 @@ type_map = {
   "mini_tin_display"         => "Mini Tin Display"
 }
 
+titleize = lambda do |s|
+  s.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
+end
+
+era_for = lambda do |slug|
+  s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
+  s ? s["era"].to_s : ""
+end
+
+set_name_for = lambda do |slug|
+  s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
+  s ? s["name"].to_s : slug.to_s
+end
+
+split_type_variant = lambda do |t|
+  s = t.to_s
+  down = s.downcase
+  idx = down.index("--v-")
+  if idx
+    base = s[0...idx].to_s
+    raw = s[(idx + 4)..-1].to_s
+    variant = raw.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
+    [base.to_s, variant.to_s]
+  else
+    [s.to_s, ""]
+  end
+end
+
+product_type_display = lambda do |obj|
+  raw =
+    if obj.respond_to?(:route_type) && obj.route_type.to_s.present?
+      obj.route_type.to_s
+    elsif obj.respond_to?(:product_type_name) && obj.product_type_name.to_s.present?
+      obj.product_type_name.to_s
+    elsif obj.respond_to?(:product_name) && obj.product_name.to_s.present?
+      obj.product_name.to_s
+    elsif obj.respond_to?(:product_sku) && obj.product_sku.to_s.present?
+      obj.product_sku.to_s
+    elsif obj.respond_to?(:sku) && obj.sku.to_s.present?
+      obj.sku.to_s
+    else
+      ""
+    end
+
+  raw = raw.split(":", 2)[1].to_s if raw.include?(":")
+  base, variant = split_type_variant.call(raw)
+  base_key = base.to_s.strip.downcase.tr(" ", "_")
+  tn = type_map[base_key].presence || titleize.call(base)
+  vn = variant.to_s.strip
+
+  if tn.to_s.downcase.include?("pokemon center") && vn.present?
+    vn = vn.gsub(/\bpokemon\s+center\b/i, " ").strip
+    vn = vn.gsub(/\s{2,}/, " ").strip
+    tokens = vn.split
+    if tokens.last && tokens.last.casecmp("o").zero?
+      tokens.pop
+      vn = tokens.join(" ").strip
+    end
+  end
+
+  vn.present? ? "#{tn} (#{vn})" : tn
+rescue
+  "-"
+end
+
+parse_debug_context = lambda do |raw|
+  return {} if raw.nil?
+  s = raw.to_s.strip
+  return {} if s.blank?
+
+  begin
+    v = JSON.parse(s)
+    return v.is_a?(Hash) ? v : {}
+  rescue
+  end
+
+  begin
+    v = YAML.safe_load(s, permitted_classes: [Time, Date], aliases: true)
+    return v.is_a?(Hash) ? v : {}
+  rescue
+  end
+
+  if s.start_with?("{") && s.include?("=>")
+    s2 = s.dup
+    s2.gsub!(/:(\w+)\s*=>/, '"\1"=>')
+    s2.gsub!("=>", ":")
+    s2.gsub!(/\bnil\b/, "null")
+    begin
+      v = JSON.parse(s2)
+      return v.is_a?(Hash) ? v : {}
+    rescue
+    end
+  end
+
+  {}
+rescue
+  {}
+end
+
+refund_note_for = lambda do |p|
+  cols = p.class.column_names rescue []
+  %w[refund_note seller_note note notes].each do |c|
+    if cols.include?(c) && p.respond_to?(c)
+      v = p.public_send(c) rescue nil
+      return v.to_s if v.present?
+    end
+  end
+
+  if cols.include?("debug_context") && p.respond_to?(:debug_context)
+    h = parse_debug_context.call(p.debug_context)
+    return h["refund_note"].to_s if h["refund_note"].present?
+    return h["note"].to_s if h["note"].present?
+    return h["notes"].to_s if h["notes"].present?
+    if h["refund"].is_a?(Hash)
+      r = h["refund"]
+      return r["refund_note"].to_s if r["refund_note"].present?
+      return r["note"].to_s if r["note"].present?
+      return r["notes"].to_s if r["notes"].present?
+    end
+  end
+
+  ""
+rescue
+  ""
+end
+
+refund_date_for = lambda do |p|
+  cols = p.class.column_names rescue []
+
+  if cols.include?("refunded_at") && p.respond_to?(:refunded_at) && p.refunded_at.present?
+    p.refunded_at
+  elsif cols.include?("debug_context") && p.respond_to?(:debug_context)
+    h = parse_debug_context.call(p.debug_context)
+    t = h["refunded_at"].presence || h["refund_at"].presence
+    if t.blank? && h["refund"].is_a?(Hash)
+      r = h["refund"]
+      t = r["refunded_at"].presence || r["refund_at"].presence || r["at"].presence
+    end
+    if t.present?
+      begin
+        Time.zone.parse(t.to_s)
+      rescue
+        p.updated_at
+      end
+    else
+      p.updated_at
+    end
+  else
+    p.updated_at
+  end
+rescue
+  p.updated_at
+end
+
+total_cents_for = lambda do |p|
+  cols = p.class.column_names rescue []
+  if cols.include?("total_cents") && p.respond_to?(:total_cents) && p.total_cents.to_i > 0
+    p.total_cents.to_i
+  elsif cols.include?("total_price_cents") && p.respond_to?(:total_price_cents) && p.total_price_cents.to_i > 0
+    p.total_price_cents.to_i
+  elsif cols.include?("unit_price_cents") && cols.include?("quantity") && p.respond_to?(:unit_price_cents) && p.respond_to?(:quantity)
+    p.unit_price_cents.to_i * p.quantity.to_i
+  elsif cols.include?("price_cents") && cols.include?("quantity") && p.respond_to?(:price_cents) && p.respond_to?(:quantity)
+    p.price_cents.to_i * p.quantity.to_i
+  else
+    0
+  end
+rescue
+  0
+end
+
+listing_status_label = lambda do |l|
+  s = l.respond_to?(:status) ? l.status.to_s : ""
+  s = "active" if s.blank?
+  down = s.downcase
+  return "Deleted" if down.include?("deleted")
+  return "Cancelled" if down.include?("cancel")
+  return "Active" if down == "active"
+  titleize.call(down)
+end
+
 images_sealed = Rails.root.join("app", "assets", "images", "sealed")
+admin_badge_asset = "badges/adminbadge.png"
+
+u = @user
+is_self = defined?(@is_self) ? !!@is_self : false
+
+tab = params[:tab].to_s.presence || (defined?(@tab) && @tab.present? ? @tab.to_s : "current")
+tab = "current" unless %w[current sold bought refunded].include?(tab)
+
+auction_tab = params[:auction_tab].to_s.presence || (defined?(@auction_tab) && @auction_tab.present? ? @auction_tab.to_s : "current")
+auction_tab = "current" unless %w[current ended sold won].include?(auction_tab)
+
+raffle_tab = params[:raffle_tab].to_s.presence || (defined?(@raffle_tab) && @raffle_tab.present? ? @raffle_tab.to_s : "current")
+raffle_tab = "current" unless %w[current ended won].include?(raffle_tab)
 
 items =
-  if defined?(@watchlist_items) && @watchlist_items
+  if is_self && defined?(@watchlist_items) && @watchlist_items
     @watchlist_items
-  elsif @user.respond_to?(:watchlist_items)
-    @user.watchlist_items
-  elsif @user.respond_to?(:watchlists)
-    @user.watchlists
+  elsif is_self && u && u.respond_to?(:watchlist_items)
+    u.watchlist_items
+  elsif is_self && u && u.respond_to?(:watchlists)
+    u.watchlists
   else
     []
   end
@@ -63,11 +265,12 @@ meta_for = lambda do |item|
   s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
   era = s ? s["era"].to_s : ""
   set_name = s ? s["name"].to_s : slug.to_s
-  product_type_name = type_map[type_code] || type_code.to_s.tr("_", " ").split.map(&:capitalize).join(" ")
+  product_type_name = type_map[type_code] || titleize.call(type_code)
 
-  prod = if s
-    Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
-  end
+  prod =
+    if s
+      Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
+    end
 
   img_base = File.basename((prod && (prod["img"] || prod[:img])).to_s) rescue nil
   img_url =
@@ -81,61 +284,1329 @@ meta_for = lambda do |item|
   label = [era.presence, set_name.presence, product_type_name.presence].compact.join(" · ")
   { sku: sku, href: href, img_url: img_url, label: label }
 end
+
+is_admin =
+  u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && !!u.admin))
+
+reviews_avg =
+  if defined?(Review) && u
+    Review.where(seller_id: u.id).average(:rating).to_f
+  else
+    0.0
+  end
+
+reviews_count =
+  if defined?(Review) && u
+    Review.where(seller_id: u.id).count
+  else
+    0
+  end
+
+stars = lambda do |avg|
+  a = avg.to_f
+  full = a.floor
+  half = ((a - full) >= 0.5) ? 1 : 0
+  empty = 5 - full - half
+  parts = []
+  full.times { parts << '<span class="acc-star-full">★</span>' }
+  if half == 1
+    parts << '<span class="acc-star-half-wrap"><span class="acc-star-empty">★</span><span class="acc-star-half">★</span></span>'
+  end
+  empty.times { parts << '<span class="acc-star-empty">★</span>' }
+  %(<span class="acc-stars">#{parts.join}</span>).html_safe
+end
+
+marketplace_review_credit_count = 0
+reviewer_review_count = 0
+
+if defined?(current_user) && current_user && !is_self && u
+  if defined?(MarketplacePurchase)
+    begin
+      purchase_cols = MarketplacePurchase.column_names
+      if purchase_cols.include?("buyer_id")
+        if purchase_cols.include?("seller_id")
+          scope = MarketplacePurchase.where(seller_id: u.id, buyer_id: current_user.id)
+          scope = scope.where(status: "sold") if purchase_cols.include?("status")
+          marketplace_review_credit_count = scope.count
+        elsif defined?(MarketplaceListing) && (purchase_cols.include?("marketplace_listing_id") || purchase_cols.include?("listing_id"))
+          ref_col = purchase_cols.include?("marketplace_listing_id") ? "marketplace_listing_id" : "listing_id"
+          seller_listing_ids = MarketplaceListing.where(seller_id: u.id).pluck(:id)
+          scope = MarketplacePurchase.where(buyer_id: current_user.id, ref_col => seller_listing_ids)
+          scope = scope.where(status: "sold") if purchase_cols.include?("status")
+          marketplace_review_credit_count = scope.count
+        end
+      end
+    rescue
+      marketplace_review_credit_count = 0
+    end
+  end
+
+  if marketplace_review_credit_count == 0 && defined?(MarketplaceListing)
+    begin
+      listing_cols = MarketplaceListing.column_names
+      if listing_cols.include?("seller_id") && listing_cols.include?("buyer_id")
+        scope = MarketplaceListing.where(seller_id: u.id, buyer_id: current_user.id)
+        scope = scope.where(status: "sold") if listing_cols.include?("status")
+        marketplace_review_credit_count = scope.count
+      end
+    rescue
+      marketplace_review_credit_count = 0
+    end
+  end
+
+  auction_review_credit_count = 0
+  if defined?(Auction)
+    begin
+      auction_cols = Auction.column_names
+      if auction_cols.include?("seller_id") && auction_cols.include?("winning_bidder_id")
+        scope = Auction.where(seller_id: u.id, winning_bidder_id: current_user.id)
+        scope = scope.where(status: "sold") if auction_cols.include?("status")
+        auction_review_credit_count = scope.count
+      end
+    rescue
+      auction_review_credit_count = 0
+    end
+  end
+
+  if defined?(Review)
+    begin
+      review_cols = Review.column_names
+      reviewer_column =
+        if review_cols.include?("buyer_id")
+          :buyer_id
+        elsif review_cols.include?("reviewer_id")
+          :reviewer_id
+        elsif review_cols.include?("user_id")
+          :user_id
+        elsif review_cols.include?("author_id")
+          :author_id
+        end
+
+      scope = Review.where(seller_id: u.id)
+      scope = scope.where(reviewer_column => current_user.id) if reviewer_column.present?
+      reviewer_review_count = scope.count
+    rescue
+      reviewer_review_count = 0
+    end
+  end
+
+  review_credit_count = marketplace_review_credit_count + auction_review_credit_count
+else
+  review_credit_count = 0
+end
+
+can_give_review = defined?(current_user) && current_user && !is_self && u && review_credit_count > 0 && reviewer_review_count == 0
+review_form_id = "acc-give-review-form-#{u&.id || 'user'}"
+
+current_listings =
+  if defined?(@current_listings)
+    @current_listings
+  elsif defined?(MarketplaceListing) && u
+    if MarketplaceListing.respond_to?(:active)
+      MarketplaceListing.active.where(seller_id: u.id).order(created_at: :desc)
+    else
+      MarketplaceListing.where(seller_id: u.id, status: "active").order(created_at: :desc)
+    end
+  else
+    []
+  end
+
+sold_listings =
+  if defined?(MarketplaceListing) && u
+    MarketplaceListing.where(seller_id: u.id, status: "sold").order(updated_at: :desc).to_a
+  else
+    []
+  end
+
+sold_offer_map = {}
+if defined?(MarketplaceOffer) && sold_listings.any?
+  begin
+    sold_offer_map =
+      MarketplaceOffer
+        .where(marketplace_listing_id: sold_listings.map(&:id))
+        .where(status: "confirmed_paid")
+        .order(updated_at: :desc)
+        .to_a
+        .group_by(&:marketplace_listing_id)
+        .transform_values(&:first)
+  rescue
+    sold_offer_map = {}
+  end
+end
+
+sold_total_cents_for = lambda do |listing|
+  offer = sold_offer_map[listing.id] rescue nil
+  if offer && offer.respond_to?(:offer_cents) && offer.offer_cents.to_i > 0
+    offer.offer_cents.to_i
+  elsif listing.respond_to?(:price_cents) && listing.respond_to?(:quantity) && listing.price_cents.to_i > 0 && listing.quantity.to_i > 0
+    listing.price_cents.to_i * listing.quantity.to_i
+  elsif listing.respond_to?(:price_cents) && listing.price_cents.to_i > 0
+    listing.price_cents.to_i
+  else
+    0
+  end
+end
+
+sold_qty_for = lambda do |listing|
+  q = listing.respond_to?(:quantity) ? listing.quantity.to_i : 0
+  q > 0 ? q : 1
+end
+
+refunds_issued = (defined?(@refunds_issued) && @refunds_issued) ? @refunds_issued : []
+refunds_received = (defined?(@refunds_received) && @refunds_received) ? @refunds_received : []
+
+bought_purchases =
+  if is_self
+    if defined?(MarketplacePurchase)
+      begin
+        purchase_cols = MarketplacePurchase.column_names
+        if purchase_cols.include?("buyer_id")
+          scope = MarketplacePurchase.where(buyer_id: u.id)
+          scope = scope.where(status: "sold") if purchase_cols.include?("status")
+          scope.order(created_at: :desc).to_a
+        else
+          []
+        end
+      rescue
+        []
+      end
+    elsif defined?(MarketplaceListing) && MarketplaceListing.column_names.include?("buyer_id")
+      MarketplaceListing.where(buyer_id: u.id, status: "sold").order(updated_at: :desc).to_a
+    else
+      []
+    end
+  else
+    []
+  end
+
+purchase_listing_ids = []
+(Array(refunds_issued) + Array(refunds_received) + Array(bought_purchases)).each do |p|
+  if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
+    purchase_listing_ids << p.marketplace_listing_id.to_i
+  elsif p.respond_to?(:listing_id) && p.listing_id.present?
+    purchase_listing_ids << p.listing_id.to_i
+  elsif defined?(MarketplaceListing) && p.is_a?(MarketplaceListing)
+    purchase_listing_ids << p.id.to_i
+  end
+end
+purchase_listing_ids.concat(sold_listings.map(&:id))
+purchase_listing_ids.uniq!
+
+listing_map = {}
+if defined?(MarketplaceListing) && purchase_listing_ids.any?
+  listing_map = MarketplaceListing.where(id: purchase_listing_ids).index_by(&:id)
+end
+
+purchase_listing_for = lambda do |p|
+  if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
+    listing_map[p.marketplace_listing_id.to_i]
+  elsif p.respond_to?(:listing_id) && p.listing_id.present?
+    listing_map[p.listing_id.to_i]
+  elsif defined?(MarketplaceListing) && p.is_a?(MarketplaceListing)
+    p
+  else
+    nil
+  end
+end
+
+purchase_slug = lambda do |p, l|
+  (p.respond_to?(:set_slug) ? p.set_slug.to_s : "").presence ||
+    (l && l.respond_to?(:set_slug) ? l.set_slug.to_s : "").presence || ""
+end
+
+purchase_set = lambda do |p, l|
+  (p.respond_to?(:set_name) ? p.set_name.to_s : "").presence ||
+    (l && l.respond_to?(:set_name) ? l.set_name.to_s : "").presence ||
+    set_name_for.call(purchase_slug.call(p, l))
+end
+
+purchase_era = lambda do |p, l|
+  (p.respond_to?(:era) ? p.era.to_s : "").presence || era_for.call(purchase_slug.call(p, l))
+end
+
+purchase_type = lambda do |p, l|
+  t = product_type_display.call(p)
+  return t if t.present? && t != "-"
+  l ? product_type_display.call(l) : "-"
+end
+
+purchase_condition = lambda do |p, l|
+  (p.respond_to?(:condition) ? p.condition.to_s : "").presence ||
+    (l && l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-"
+end
+
+account_base_path = lambda do |extra = {}|
+  extra = extra.merge(anchor: "account-work-area")
+  if is_self
+    account_path(extra)
+  elsif u
+    user_path(u.id, extra)
+  else
+    "#"
+  end
+end
+
+auction_status_key = lambda do |auction|
+  explicit_status =
+    if auction.respond_to?(:status) && auction.status.present?
+      auction.status.to_s.downcase
+    else
+      ""
+    end
+
+  end_time =
+    if auction.respond_to?(:ends_at) && auction.ends_at.present?
+      auction.ends_at
+    elsif auction.respond_to?(:end_at) && auction.end_at.present?
+      auction.end_at
+    elsif auction.respond_to?(:end_time) && auction.end_time.present?
+      auction.end_time
+    elsif auction.respond_to?(:expires_at) && auction.expires_at.present?
+      auction.expires_at
+    end
+
+  if explicit_status == "sold"
+    "sold"
+  elsif explicit_status == "ended"
+    "ended"
+  elsif end_time.present? && end_time <= Time.current
+    "ended"
+  else
+    "running"
+  end
+end
+
+auction_length_label_for = lambda do |auction|
+  label =
+    if auction.respond_to?(:auction_length_label) && auction.auction_length_label.present?
+      auction.auction_length_label.to_s
+    else
+      ""
+    end
+  return label if label.present?
+
+  seconds =
+    if auction.respond_to?(:auction_length_seconds) && auction.auction_length_seconds.present?
+      auction.auction_length_seconds.to_i
+    else
+      0
+    end
+
+  {
+    1.minute.to_i => "1 min",
+    1.hour.to_i => "1 hour",
+    3.hours.to_i => "3 hours",
+    6.hours.to_i => "6 hours",
+    12.hours.to_i => "12 hours",
+    1.day.to_i => "1 day",
+    3.days.to_i => "3 days",
+    1.week.to_i => "1 week"
+  }[seconds.to_i] || "-"
+end
+
+auction_remaining_text = lambda do |auction|
+  end_time = auction.respond_to?(:ends_at) ? auction.ends_at : nil
+  status_key = auction_status_key.call(auction)
+  return "Sold" if status_key == "sold"
+  return "0s" if status_key == "ended"
+  return "-" if end_time.blank?
+
+  diff = (end_time.to_f - Time.current.to_f).to_i
+  return "0s" if diff <= 0
+
+  days = diff / 86_400
+  hours = (diff % 86_400) / 3_600
+  minutes = (diff % 3_600) / 60
+  seconds = diff % 60
+
+  if days > 0
+    "#{days}d #{hours}h #{minutes}m"
+  elsif hours > 0
+    "#{hours}h #{minutes}m #{seconds}s"
+  elsif minutes > 0
+    "#{minutes}m #{seconds}s"
+  else
+    "#{seconds}s"
+  end
+end
+
+user_auctions =
+  if defined?(Auction) && u
+    Auction.where(seller_id: u.id).order(created_at: :desc).to_a
+  else
+    []
+  end
+
+current_auctions = user_auctions.select { |a| auction_status_key.call(a) == "running" }
+ended_auctions = user_auctions.select { |a| auction_status_key.call(a) == "ended" }
+sold_auctions = user_auctions.select { |a| auction_status_key.call(a) == "sold" }
+
+won_auctions =
+  if is_self && defined?(Auction) && u
+    begin
+      auction_cols = Auction.column_names
+      if auction_cols.include?("winning_bidder_id")
+        scope = Auction.where(winning_bidder_id: u.id)
+        scope = scope.where(status: "sold") if auction_cols.include?("status")
+        scope.order(updated_at: :desc).to_a
+      else
+        []
+      end
+    rescue
+      []
+    end
+  else
+    []
+  end
+
+selected_auctions =
+  if auction_tab == "ended"
+    ended_auctions
+  elsif auction_tab == "sold"
+    sold_auctions
+  elsif auction_tab == "won" && is_self
+    won_auctions
+  else
+    current_auctions
+  end
+
+raffle_status_key = lambda do |raffle|
+  status = raffle.respond_to?(:status) ? raffle.status.to_s.downcase : ""
+  ended_at = raffle.respond_to?(:ended_at) ? raffle.ended_at : nil
+  completed_at = raffle.respond_to?(:completed_at) ? raffle.completed_at : nil
+
+  if status.include?("complete") || status.include?("ended") || status.include?("sold") || completed_at.present? || ended_at.present?
+    "ended"
+  else
+    "current"
+  end
+end
+
+user_raffles =
+  if defined?(Raffle) && u
+    Raffle.where(host_id: u.id).order(created_at: :desc).to_a
+  else
+    []
+  end
+
+current_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "current" }
+ended_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "ended" }
+
+won_raffles =
+  if is_self && defined?(Raffle) && u
+    begin
+      raffle_cols = Raffle.column_names
+      if raffle_cols.include?("winner_user_id")
+        Raffle.where(winner_user_id: u.id).order(updated_at: :desc).to_a
+      else
+        []
+      end
+    rescue
+      []
+    end
+  else
+    []
+  end
+
+selected_raffles =
+  if raffle_tab == "ended"
+    ended_raffles
+  elsif raffle_tab == "won" && is_self
+    won_raffles
+  else
+    current_raffles
+  end
+
+raffle_kind_label = lambda do |raffle|
+  v = raffle.respond_to?(:raffle_kind) ? raffle.raffle_kind.to_s : ""
+  v.present? ? titleize.call(v) : "-"
+end
+
+raffle_status_label = lambda do |raffle|
+  s = raffle.respond_to?(:status) ? raffle.status.to_s : ""
+  s.present? ? titleize.call(s) : "Active"
+end
+
+raffle_tickets_sold = lambda do |raffle|
+  if defined?(RaffleTicket)
+    begin
+      scope = RaffleTicket.where(raffle_id: raffle.id)
+      if RaffleTicket.column_names.include?("paid")
+        scope.where(paid: true).count
+      else
+        scope.count
+      end
+    rescue
+      0
+    end
+  else
+    0
+  end
+end
+
+saved_addresses =
+  if is_self && defined?(SavedAddress) && u
+    SavedAddress.where(user_id: u.id).order(created_at: :desc)
+  else
+    []
+  end
+
+eu_countries = [
+  ["Austria", "🇦🇹"],
+  ["Belgium", "🇧🇪"],
+  ["Bulgaria", "🇧🇬"],
+  ["Croatia", "🇭🇷"],
+  ["Cyprus", "🇨🇾"],
+  ["Czech Republic", "🇨🇿"],
+  ["Denmark", "🇩🇰"],
+  ["Estonia", "🇪🇪"],
+  ["Finland", "🇫🇮"],
+  ["France", "🇫🇷"],
+  ["Germany", "🇩🇪"],
+  ["Greece", "🇬🇷"],
+  ["Hungary", "🇭🇺"],
+  ["Ireland", "🇮🇪"],
+  ["Italy", "🇮🇹"],
+  ["Latvia", "🇱🇻"],
+  ["Lithuania", "🇱🇹"],
+  ["Luxembourg", "🇱🇺"],
+  ["Malta", "🇲🇹"],
+  ["Netherlands", "🇳🇱"],
+  ["Poland", "🇵🇱"],
+  ["Portugal", "🇵🇹"],
+  ["Romania", "🇷🇴"],
+  ["Slovakia", "🇸🇰"],
+  ["Slovenia", "🇸🇮"],
+  ["Spain", "🇪🇸"],
+  ["Sweden", "🇸🇪"]
+]
 %>
 
 <div class="container py-4">
-  <h2 class="mb-3">My Account</h2>
+  <style>
+    .acc-wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+    .acc-left{flex:1;min-width:320px}
+    .acc-title{font-size:1.15rem;margin:0 0 14px}
+    .acc-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-bottom:12px;overflow:hidden}
+    .acc-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .acc-meta p{margin:0 0 6px;font-size:.85rem}
+    .acc-badges img{height:20px;width:20px;object-fit:contain;display:inline-block;vertical-align:middle}
+    .acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+    .acc-tabs a{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap}
+    .acc-tabs a.active{border-color:#111827;font-weight:900}
+    .subhead{font-size:.9rem;font-weight:900;margin:0 0 10px}
+    .mp-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+    .mp-table th{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:middle;font-size:.62rem;white-space:nowrap;overflow:hidden;text-overflow:clip}
+    .mp-table td{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:top;font-size:.62rem;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.15}
+    .mp-table th{font-weight:900;color:#111827;background:#fafafa}
+    .mp-actions{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:nowrap;white-space:nowrap}
+    .mp-actions .btn{font-size:.6rem;padding:.12rem .32rem;line-height:1.05}
+    .mp-empty{color:#6b7280;font-size:.85rem;text-align:center;padding:12px 0}
+    .w-era{width:11%}
+    .w-set{width:15%}
+    .w-type{width:20%}
+    .w-cond{width:13%}
+    .w-qty{width:6%}
+    .w-total{width:11%}
+    .w-date{width:10%}
+    .w-actions{width:8%}
+    .w-note{width:10%}
+    .w-status{width:10%}
+    .w-price{width:10%}
+    .w-seller{width:14%}
+    .w-au-desc{width:30%}
+    .w-au-bids{width:8%}
+    .w-au-length{width:12%}
+    .w-au-time{width:14%}
+    .w-au-date{width:10%}
+    .w-au-actions{width:12%}
+    .w-au-cond{width:10%}
+    .w-au-bid{width:12%}
+    .w-ra-title{width:26%}
+    .w-ra-kind{width:12%}
+    .w-ra-price{width:12%}
+    .w-ra-tickets{width:12%}
+    .w-ra-status{width:12%}
+    .w-ra-date{width:12%}
+    .w-ra-actions{width:14%}
+    .acc-au-desc{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.2;max-height:2.4em;text-align:left}
+    .acc-address-grid{display:grid;gap:10px}
+    .acc-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
+    .acc-address-line{font-size:.82rem;line-height:1.25}
+    .acc-stars{display:inline-flex;gap:1px;white-space:nowrap;vertical-align:middle}
+    .acc-star-full{color:#f59e0b}
+    .acc-star-empty{color:#d1d5db}
+    .acc-star-half-wrap{position:relative;display:inline-block;line-height:1}
+    .acc-star-half{position:absolute;left:0;top:0;width:50%;overflow:hidden;color:#f59e0b}
+  </style>
 
-  <p class="mb-1">
-    Username: <strong><%= @user.username %></strong>
-  </p>
+  <div id="account-work-area" class="acc-wrap">
+    <div class="acc-left">
+      <div class="acc-card">
+        <div class="acc-top">
+          <div class="acc-meta">
+            <div class="acc-title"><%= is_self ? "My Account" : (u&.respond_to?(:username) ? u.username : "User") %></div>
+            <p>Username: <strong><%= u&.respond_to?(:username) ? u.username : "-" %></strong></p>
 
-  <p class="mb-4">
-    Country:
-    <span style="font-size: 1.2rem; line-height: 1;" title="<%= country_name(@user.country_code) %>">
-      <%= flag_emoji(@user.country_code) %>
-    </span>
-  </p>
+            <p>
+              Country:
+              <span style="font-size:1.05rem;line-height:1;display:inline-block;position:relative;top:2px;" title="<%= (defined?(country_name) && u&.respond_to?(:country_code)) ? country_name(u.country_code) : "" %>">
+                <%= (defined?(flag_emoji) && u&.respond_to?(:country_code)) ? flag_emoji(u.country_code) : (u&.respond_to?(:country_code) ? u.country_code.to_s : "") %>
+              </span>
+            </p>
 
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h5 class="mb-0">Watchlist</h5>
-    <div class="small text-muted"><%= items.size %> item<%= items.size == 1 ? "" : "s" %></div>
-  </div>
-
-  <% if items.any? %>
-    <div class="card">
-      <div class="list-group list-group-flush">
-        <% items.each do |it| %>
-          <% m = meta_for.call(it) %>
-          <div class="list-group-item">
-            <div class="d-flex align-items-center gap-3">
-              <%= link_to m[:href], class: "d-inline-flex align-items-center text-decoration-none" do %>
-                <%= image_tag m[:img_url], alt: m[:label], style: "height:44px;width:auto;object-fit:contain;" %>
+            <p class="acc-badges">
+              Badges:
+              <% if is_admin %>
+                <span title="Admin"><%= image_tag admin_badge_asset, alt: "Admin" %></span>
+              <% else %>
+                <span class="text-muted">N/A</span>
               <% end %>
+            </p>
 
-              <div class="flex-grow-1">
-                <%= link_to m[:label], m[:href], class: "text-decoration-none text-body fw-semibold" %>
+            <p class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge bg-light text-dark border" title="<%= "#{reviews_avg.round(1)}/5 (#{reviews_count})" %>">
+                Reviews: <%= stars.call(reviews_avg) %> (<%= reviews_count %>)
+              </span>
+
+              <% if can_give_review %>
+                <button
+                  type="button"
+                  class="btn btn-outline-primary btn-sm"
+                  onclick="var wrap=document.getElementById('<%= review_form_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
+                  Give Review
+                </button>
+              <% end %>
+            </p>
+
+            <% if can_give_review %>
+              <div id="<%= review_form_id %>" style="display:none;max-width:420px;">
+                <%= form_with url: reviews_path, method: :post, local: true do %>
+                  <%= hidden_field_tag "review[seller_id]", u.id %>
+
+                  <div class="mb-2">
+                    <label class="form-label mb-1" style="font-size:.75rem;">Rating (0 to 5)</label>
+                    <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
+                  </div>
+
+                  <div class="mb-2">
+                    <label class="form-label mb-1" style="font-size:.75rem;">Comment</label>
+                    <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3 %>
+                  </div>
+
+                  <div class="d-flex justify-content-end">
+                    <%= submit_tag "Submit Review", class: "btn btn-primary btn-sm" %>
+                  </div>
+                <% end %>
               </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
 
-              <div class="d-flex align-items-center gap-2">
-                <%= link_to "View", m[:href], class: "btn btn-sm btn-outline-primary" %>
+      <% if is_self %>
+        <div class="acc-card">
+          <div class="subhead">Addresses</div>
 
-                <%= button_to "Remove",
-                              remove_watchlist_path(sku: m[:sku]),
-                              method: :delete,
-                              params: { return_to: request.fullpath },
-                              class: "btn btn-sm btn-outline-danger" %>
-              </div>
+          <% if saved_addresses.any? %>
+            <div class="acc-address-grid mb-3">
+              <% saved_addresses.each do |address| %>
+                <% edit_wrap_id = "acc-edit-address-#{address.id}" %>
+                <div class="acc-address-item">
+                  <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                      <div class="fw-semibold"><%= address.respond_to?(:display_label) ? address.display_label : (address.respond_to?(:label) && address.label.present? ? address.label : "Saved Address") %></div>
+                      <div class="acc-address-line"><%= address.respond_to?(:single_line) ? address.single_line : [address.try(:line1), address.try(:line2).presence, address.try(:city), address.try(:postcode).presence, address.try(:country_code)].compact.join(", ") %></div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        onclick="var wrap=document.getElementById('<%= edit_wrap_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
+                        Edit
+                      </button>
+                      <%= button_to "Remove", saved_address_path(address), method: :delete, class: "btn btn-sm btn-outline-danger", form: { data: { preserve_scroll: true } } %>
+                    </div>
+                  </div>
+
+                  <div id="<%= edit_wrap_id %>" style="display:none;" class="mt-3">
+                    <%= form_with url: saved_addresses_path, method: :post, local: true, data: { preserve_scroll: true } do %>
+                      <%= hidden_field_tag "saved_address[id]", address.id %>
+
+                      <div class="row g-2">
+                        <div class="col-12">
+                          <label class="form-label mb-1 small">Address Name</label>
+                          <%= text_field_tag "saved_address[label]", (address.respond_to?(:label) ? address.label.to_s : ""), class: "form-control form-control-sm", placeholder: "e.g. Home" %>
+                        </div>
+
+                        <div class="col-12">
+                          <label class="form-label mb-1 small">Address Line 1</label>
+                          <%= text_field_tag "saved_address[line1]", address.try(:line1).to_s, class: "form-control form-control-sm", required: true %>
+                        </div>
+
+                        <div class="col-12">
+                          <label class="form-label mb-1 small">Address Line 2 (Optional)</label>
+                          <%= text_field_tag "saved_address[line2]", address.try(:line2).to_s, class: "form-control form-control-sm" %>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                          <label class="form-label mb-1 small">Town/City</label>
+                          <%= text_field_tag "saved_address[city]", address.try(:city).to_s, class: "form-control form-control-sm", required: true %>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                          <label class="form-label mb-1 small">Eircode</label>
+                          <%= text_field_tag "saved_address[postcode]", address.try(:postcode).to_s, class: "form-control form-control-sm" %>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                          <label class="form-label mb-1 small">Country</label>
+                          <%= select_tag "saved_address[country_code]", options_for_select(eu_countries.map { |name, flag| ["#{flag} #{name}", name] }, address.try(:country_code).to_s.presence || "Ireland"), class: "form-select form-select-sm", required: true %>
+                        </div>
+                      </div>
+
+                      <div class="d-flex justify-content-end mt-3">
+                        <%= submit_tag "Save Changes", class: "btn btn-primary btn-sm" %>
+                      </div>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
             </div>
+          <% else %>
+            <div class="mp-empty">No saved addresses yet.</div>
+          <% end %>
+
+          <% if saved_addresses.count < 5 %>
+            <div class="d-flex justify-content-end mb-3">
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                onclick="var wrap=document.getElementById('acc-add-address-wrap'); if(!wrap){return false;} var hidden=(wrap.style.display==='none'||wrap.style.display===''); wrap.style.display=hidden?'block':'none'; this.textContent=hidden?'Hide Address Form':'Add Address';">
+                Add Address
+              </button>
+            </div>
+
+            <div id="acc-add-address-wrap" style="display:none;">
+              <%= form_with model: SavedAddress.new, url: saved_addresses_path, method: :post, local: true, data: { preserve_scroll: true } do |f| %>
+                <div class="row g-2">
+                  <div class="col-12">
+                    <label class="form-label mb-1 small">Address Name</label>
+                    <%= f.text_field :label, class: "form-control form-control-sm", placeholder: "e.g. Home" %>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label mb-1 small">Address Line 1</label>
+                    <%= f.text_field :line1, class: "form-control form-control-sm", required: true %>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label mb-1 small">Address Line 2 (Optional)</label>
+                    <%= f.text_field :line2, class: "form-control form-control-sm" %>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label mb-1 small">Town/City</label>
+                    <%= f.text_field :city, class: "form-control form-control-sm", required: true %>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label mb-1 small">Eircode</label>
+                    <%= f.text_field :postcode, class: "form-control form-control-sm" %>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label mb-1 small">Country</label>
+                    <%= f.select :country_code, options_for_select(eu_countries.map { |name, flag| ["#{flag} #{name}", name] }, "Ireland"), {}, class: "form-select form-select-sm", required: true %>
+                  </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-3">
+                  <%= f.submit "Save Address", class: "btn btn-primary btn-sm" %>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <div class="small text-muted">Maximum of 5 saved addresses reached.</div>
+          <% end %>
+        </div>
+      <% end %>
+
+      <div class="acc-card">
+        <div class="subhead">Marketplace Listings</div>
+
+        <div class="acc-tabs">
+          <%= link_to "Current Listings", account_base_path.call(tab: "current", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "current" ? "active" : nil)].compact.join(" ") %>
+          <%= link_to "Sold Listings", account_base_path.call(tab: "sold", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "sold" ? "active" : nil)].compact.join(" ") %>
+          <% if is_self %>
+            <%= link_to "Bought Listings", account_base_path.call(tab: "bought", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "bought" ? "active" : nil)].compact.join(" ") %>
+            <%= link_to "Refunded Listings", account_base_path.call(tab: "refunded", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "refunded" ? "active" : nil)].compact.join(" ") %>
+          <% end %>
+        </div>
+
+        <% if tab == "sold" %>
+          <% if sold_listings.any? %>
+            <div class="table-responsive">
+              <table class="mp-table">
+                <thead>
+                  <tr>
+                    <th class="w-era">Era</th>
+                    <th class="w-set">Set</th>
+                    <th class="w-type">Product Type</th>
+                    <th class="w-cond">Condition</th>
+                    <th class="w-qty">Qty</th>
+                    <th class="w-total">Total</th>
+                    <th class="w-date">Sale Date</th>
+                    <th class="w-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% sold_listings.each do |l| %>
+                    <% slug = (l.respond_to?(:set_slug) ? l.set_slug.to_s : "").presence || "" %>
+                    <% cents = sold_total_cents_for.call(l) %>
+                    <% qty_value = sold_qty_for.call(l) %>
+                    <tr>
+                      <td class="w-era"><%= (l.respond_to?(:era) ? l.era.to_s : "").presence || era_for.call(slug).presence || "-" %></td>
+                      <td class="w-set"><%= (l.respond_to?(:set_name) ? l.set_name.to_s : "").presence || set_name_for.call(slug).presence || "-" %></td>
+                      <td class="w-type"><%= product_type_display.call(l) %></td>
+                      <td class="w-cond"><%= (l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-" %></td>
+                      <td class="w-qty"><%= qty_value %></td>
+                      <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
+                      <td class="w-date"><%= l.respond_to?(:updated_at) && l.updated_at ? l.updated_at.strftime("%d %b %Y") : "" %></td>
+                      <td class="w-actions">
+                        <div class="mp-actions">
+                          <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="mp-empty">No sold listings.</div>
+          <% end %>
+
+        <% elsif tab == "bought" && is_self %>
+          <% if bought_purchases.any? %>
+            <div class="table-responsive">
+              <table class="mp-table">
+                <thead>
+                  <tr>
+                    <th class="w-seller">Seller</th>
+                    <th class="w-set">Set</th>
+                    <th class="w-type">Product Type</th>
+                    <th class="w-cond">Condition</th>
+                    <th class="w-qty">Qty</th>
+                    <th class="w-total">Total</th>
+                    <th class="w-date">Bought</th>
+                    <th class="w-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% bought_purchases.each do |p| %>
+                    <% l = purchase_listing_for.call(p) %>
+                    <% seller_id = (p.respond_to?(:seller_id) ? p.seller_id : nil).presence || (l && l.respond_to?(:seller_id) ? l.seller_id : nil) %>
+                    <% seller_name = if seller_id.present? && defined?(User) then (User.find_by(id: seller_id)&.username.presence || "User ##{seller_id}") else "-" end %>
+                    <% qty_value = p.respond_to?(:quantity) ? p.quantity.to_i : (l && l.respond_to?(:quantity) ? l.quantity.to_i : "-") %>
+                    <% cents = total_cents_for.call(p) %>
+                    <% cents = (l.price_cents.to_i * qty_value.to_i) if cents.to_i <= 0 && l && l.respond_to?(:price_cents) && qty_value.to_s =~ /\A\d+\z/ %>
+                    <% bought_date = if p.respond_to?(:created_at) && p.created_at then p.created_at else (l && l.respond_to?(:updated_at) ? l.updated_at : nil) end %>
+                    <tr>
+                      <td class="w-seller">
+                        <% if seller_id.present? %>
+                          <%= link_to seller_name, user_path(seller_id), class: "text-decoration-none" %>
+                        <% else %>
+                          -
+                        <% end %>
+                      </td>
+                      <td class="w-set"><%= purchase_set.call(p, l).presence || "-" %></td>
+                      <td class="w-type"><%= purchase_type.call(p, l).presence || "-" %></td>
+                      <td class="w-cond"><%= purchase_condition.call(p, l).presence || "-" %></td>
+                      <td class="w-qty"><%= qty_value %></td>
+                      <td class="w-total"><%= number_to_currency(cents.to_i / 100.0, unit: "€") %></td>
+                      <td class="w-date"><%= bought_date ? bought_date.strftime("%d %b %Y") : "" %></td>
+                      <td class="w-actions">
+                        <div class="mp-actions">
+                          <% if l %>
+                            <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
+                          <% else %>
+                            <span class="text-muted">-</span>
+                          <% end %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="mp-empty">No bought listings.</div>
+          <% end %>
+
+        <% elsif tab == "refunded" && is_self %>
+          <div class="mb-3">
+            <div class="subhead">Refunds you issued</div>
+
+            <% if refunds_issued.any? %>
+              <div class="table-responsive">
+                <table class="mp-table">
+                  <thead>
+                    <tr>
+                      <th class="w-era">Era</th>
+                      <th class="w-set">Set</th>
+                      <th class="w-type">Product Type</th>
+                      <th class="w-cond">Condition</th>
+                      <th class="w-qty">Qty</th>
+                      <th class="w-total">Total</th>
+                      <th class="w-date">Refund Date</th>
+                      <th class="w-note">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% refunds_issued.each do |p| %>
+                      <% l = purchase_listing_for.call(p) %>
+                      <% cents = total_cents_for.call(p) %>
+                      <% note = refund_note_for.call(p).to_s %>
+                      <% rdate = refund_date_for.call(p) %>
+                      <tr>
+                        <td class="w-era"><%= purchase_era.call(p, l).presence || "-" %></td>
+                        <td class="w-set"><%= purchase_set.call(p, l).presence || "-" %></td>
+                        <td class="w-type"><%= purchase_type.call(p, l).presence || "-" %></td>
+                        <td class="w-cond"><%= purchase_condition.call(p, l).presence || "-" %></td>
+                        <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
+                        <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
+                        <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
+                        <td class="w-note">
+                          <% if note.present? %>
+                            <div class="mp-actions">
+                              <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#issuedNote-<%= p.id %>">View</button>
+                            </div>
+                            <div class="modal fade" id="issuedNote-<%= p.id %>" tabindex="-1" aria-hidden="true">
+                              <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content">
+                                  <div class="modal-header">
+                                    <h5 class="modal-title">Refund Note</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                  </div>
+                                  <div class="modal-body" style="white-space:pre-wrap"><%= note %></div>
+                                </div>
+                              </div>
+                            </div>
+                          <% else %>
+                            <span class="text-muted">No note</span>
+                          <% end %>
+                        </td>
+                      </tr>
+                    <% end %>
+                  </tbody>
+                </table>
+              </div>
+            <% else %>
+              <div class="mp-empty">No refunds issued.</div>
+            <% end %>
+          </div>
+
+          <div>
+            <div class="subhead">Refunds you received</div>
+
+            <% if refunds_received.any? %>
+              <div class="table-responsive">
+                <table class="mp-table">
+                  <thead>
+                    <tr>
+                      <th class="w-era">Era</th>
+                      <th class="w-set">Set</th>
+                      <th class="w-type">Product Type</th>
+                      <th class="w-cond">Condition</th>
+                      <th class="w-qty">Qty</th>
+                      <th class="w-total">Total</th>
+                      <th class="w-date">Refund Date</th>
+                      <th class="w-note">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% refunds_received.each do |p| %>
+                      <% l = purchase_listing_for.call(p) %>
+                      <% cents = total_cents_for.call(p) %>
+                      <% note = refund_note_for.call(p).to_s %>
+                      <% rdate = refund_date_for.call(p) %>
+                      <tr>
+                        <td class="w-era"><%= purchase_era.call(p, l).presence || "-" %></td>
+                        <td class="w-set"><%= purchase_set.call(p, l).presence || "-" %></td>
+                        <td class="w-type"><%= purchase_type.call(p, l).presence || "-" %></td>
+                        <td class="w-cond"><%= purchase_condition.call(p, l).presence || "-" %></td>
+                        <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
+                        <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
+                        <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
+                        <td class="w-note">
+                          <% if note.present? %>
+                            <div class="mp-actions">
+                              <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#receivedNote-<%= p.id %>">View</button>
+                            </div>
+                            <div class="modal fade" id="receivedNote-<%= p.id %>" tabindex="-1" aria-hidden="true">
+                              <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content">
+                                  <div class="modal-header">
+                                    <h5 class="modal-title">Refund Note</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                  </div>
+                                  <div class="modal-body" style="white-space:pre-wrap"><%= note %></div>
+                                </div>
+                              </div>
+                            </div>
+                          <% else %>
+                            <span class="text-muted">No note</span>
+                          <% end %>
+                        </td>
+                      </tr>
+                    <% end %>
+                  </tbody>
+                </table>
+              </div>
+            <% else %>
+              <div class="mp-empty">No refunds received.</div>
+            <% end %>
+          </div>
+
+        <% else %>
+          <% if current_listings.any? %>
+            <div class="table-responsive">
+              <table class="mp-table">
+                <thead>
+                  <tr>
+                    <th class="w-era">Era</th>
+                    <th class="w-set">Set</th>
+                    <th class="w-type">Product Type</th>
+                    <th class="w-cond">Condition</th>
+                    <th class="w-price">Price</th>
+                    <th class="w-qty">Qty</th>
+                    <th class="w-status">Status</th>
+                    <th class="w-date">Listed</th>
+                    <th class="w-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% current_listings.each do |l| %>
+                    <% slug = (l.respond_to?(:set_slug) ? l.set_slug.to_s : "").presence || "" %>
+                    <tr>
+                      <td class="w-era"><%= (l.respond_to?(:era) ? l.era.to_s : "").presence || era_for.call(slug).presence || "-" %></td>
+                      <td class="w-set"><%= (l.respond_to?(:set_name) ? l.set_name.to_s : "").presence || set_name_for.call(slug).presence || "-" %></td>
+                      <td class="w-type"><%= product_type_display.call(l) %></td>
+                      <td class="w-cond"><%= (l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-" %></td>
+                      <td class="w-price"><%= number_to_currency(l.respond_to?(:price_cents) ? (l.price_cents.to_i / 100.0) : 0, unit: "€") %></td>
+                      <td class="w-qty"><%= l.respond_to?(:quantity) ? l.quantity.to_i : "-" %></td>
+                      <td class="w-status"><%= listing_status_label.call(l) %></td>
+                      <td class="w-date"><%= l.respond_to?(:created_at) && l.created_at ? l.created_at.strftime("%d %b %Y") : "" %></td>
+                      <td class="w-actions">
+                        <div class="mp-actions">
+                          <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
+                          <% if is_self && l.respond_to?(:status) && l.status.to_s == "active" %>
+                            <%= button_to "Cancel", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger btn-sm", form: { data: { preserve_scroll: true } } %>
+                          <% end %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="mp-empty">No active listings.</div>
+          <% end %>
+        <% end %>
+      </div>
+
+      <div class="acc-card">
+        <div class="subhead">Auctions</div>
+
+        <div class="acc-tabs">
+          <%= link_to "Current Auctions", account_base_path.call(tab: tab, auction_tab: "current", raffle_tab: raffle_tab), class: ["", (auction_tab == "current" ? "active" : nil)].compact.join(" ") %>
+          <%= link_to "Ended Auctions", account_base_path.call(tab: tab, auction_tab: "ended", raffle_tab: raffle_tab), class: ["", (auction_tab == "ended" ? "active" : nil)].compact.join(" ") %>
+          <%= link_to "Sold Auctions", account_base_path.call(tab: tab, auction_tab: "sold", raffle_tab: raffle_tab), class: ["", (auction_tab == "sold" ? "active" : nil)].compact.join(" ") %>
+          <% if is_self %>
+            <%= link_to "Auctions Won", account_base_path.call(tab: tab, auction_tab: "won", raffle_tab: raffle_tab), class: ["", (auction_tab == "won" ? "active" : nil)].compact.join(" ") %>
+          <% end %>
+        </div>
+
+        <% if auction_tab == "won" && is_self %>
+          <% if won_auctions.any? %>
+            <div class="table-responsive">
+              <table class="mp-table">
+                <thead>
+                  <tr>
+                    <th class="w-seller">Seller</th>
+                    <th class="w-au-desc">Auction Description</th>
+                    <th class="w-au-bid">Winning Bid</th>
+                    <th class="w-au-length">Length</th>
+                    <th class="w-au-date">Sold Date</th>
+                    <th class="w-au-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% won_auctions.each do |auction_item| %>
+                    <tr>
+                      <td class="w-seller">
+                        <% if auction_item.respond_to?(:seller_id) && auction_item.seller_id.present? %>
+                          <%= link_to (auction_item.seller&.respond_to?(:username) && auction_item.seller.username.present? ? auction_item.seller.username : "User ##{auction_item.seller_id}"), user_path(auction_item.seller_id), class: "text-decoration-none" %>
+                        <% else %>
+                          -
+                        <% end %>
+                      </td>
+                      <td class="w-au-desc">
+                        <div class="acc-au-desc" title="<%= auction_item.auction_description.to_s %>"><%= auction_item.auction_description.to_s %></div>
+                      </td>
+                      <td class="w-au-bid"><%= number_to_currency(auction_item.respond_to?(:winning_bid_cents) ? (auction_item.winning_bid_cents.to_i / 100.0) : 0, unit: "€") %></td>
+                      <td class="w-au-length"><%= auction_length_label_for.call(auction_item) %></td>
+                      <td class="w-au-date"><%= auction_item.updated_at ? auction_item.updated_at.strftime("%d %b %Y") : "" %></td>
+                      <td class="w-au-actions">
+                        <div class="mp-actions">
+                          <%= link_to "View", auction_listing_path(auction_item), class: "btn btn-outline-primary btn-sm" %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="mp-empty">No auctions won.</div>
+          <% end %>
+
+        <% elsif selected_auctions.any? %>
+          <div class="table-responsive">
+            <table class="mp-table">
+              <thead>
+                <tr>
+                  <th class="w-au-desc">Auction Description</th>
+                  <th class="w-au-cond">Condition</th>
+                  <th class="w-au-bids">Bids</th>
+                  <th class="w-au-length">Length</th>
+                  <th class="w-au-time">Time Remaining</th>
+                  <th class="w-au-date">Listed</th>
+                  <th class="w-au-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% selected_auctions.each do |auction_item| %>
+                  <tr>
+                    <td class="w-au-desc">
+                      <div class="acc-au-desc" title="<%= auction_item.auction_description.to_s %>"><%= auction_item.auction_description.to_s %></div>
+                    </td>
+                    <td class="w-au-cond"><%= auction_item.condition.to_s.presence || "-" %></td>
+                    <td class="w-au-bids"><%= auction_item.bids_count.to_i %></td>
+                    <td class="w-au-length"><%= auction_length_label_for.call(auction_item) %></td>
+                    <td class="w-au-time"><%= auction_remaining_text.call(auction_item) %></td>
+                    <td class="w-au-date"><%= auction_item.created_at ? auction_item.created_at.strftime("%d %b %Y") : "" %></td>
+                    <td class="w-au-actions">
+                      <div class="mp-actions">
+                        <%= link_to "View", auction_listing_path(auction_item), class: "btn btn-outline-primary btn-sm" %>
+                        <% if auction_tab == "current" && defined?(current_user) && current_user && auction_item.can_end_early_by?(current_user) %>
+                          <%= button_to "End", end_auction_path(auction_item), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline", data: { turbo_confirm: "Are you sure you want to end this auction?", preserve_scroll: true } } %>
+                        <% end %>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <% if auction_tab == "sold" && auction_item.winning_bidder.present? && defined?(current_user) && current_user && current_user.id.to_i == auction_item.seller_id.to_i %>
+                    <tr>
+                      <td colspan="7" style="text-align:left;">
+                        <strong>Winning Bidder:</strong> <%= auction_item.winning_bidder.username.to_s.presence || "User ##{auction_item.winning_bidder.id}" %>
+                        ·
+                        <strong>Send To:</strong> <%= auction_item.winning_address_text.to_s.presence || "-" %>
+                      </td>
+                    </tr>
+                  <% end %>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="mp-empty">
+            <%= auction_tab == "ended" ? "No ended auctions." : (auction_tab == "sold" ? "No sold auctions." : (auction_tab == "won" ? "No auctions won." : "No current auctions.")) %>
           </div>
         <% end %>
       </div>
-    </div>
-  <% else %>
-    <div class="card">
-      <div class="card-body text-muted">
-        No items in your watchlist yet.
+
+      <div class="acc-card">
+        <div class="subhead">Raffles</div>
+
+        <div class="acc-tabs">
+          <%= link_to "Current Raffles", account_base_path.call(tab: tab, auction_tab: auction_tab, raffle_tab: "current"), class: ["", (raffle_tab == "current" ? "active" : nil)].compact.join(" ") %>
+          <%= link_to "Ended Raffles", account_base_path.call(tab: tab, auction_tab: auction_tab, raffle_tab: "ended"), class: ["", (raffle_tab == "ended" ? "active" : nil)].compact.join(" ") %>
+          <% if is_self %>
+            <%= link_to "Raffles Won", account_base_path.call(tab: tab, auction_tab: auction_tab, raffle_tab: "won"), class: ["", (raffle_tab == "won" ? "active" : nil)].compact.join(" ") %>
+          <% end %>
+        </div>
+
+        <% if selected_raffles.any? %>
+          <div class="table-responsive">
+            <table class="mp-table">
+              <thead>
+                <tr>
+                  <% if raffle_tab == "won" && is_self %>
+                    <th class="w-seller">Host</th>
+                  <% end %>
+                  <th class="w-ra-title">Title</th>
+                  <th class="w-ra-kind">Type</th>
+                  <th class="w-ra-price">Ticket Price</th>
+                  <th class="w-ra-tickets">Tickets</th>
+                  <th class="w-ra-status">Status</th>
+                  <th class="w-ra-date"><%= raffle_tab == "current" ? "Created" : "Ended" %></th>
+                  <th class="w-ra-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% selected_raffles.each do |raffle_item| %>
+                  <% host = defined?(User) && raffle_item.respond_to?(:host_id) ? User.find_by(id: raffle_item.host_id) : nil %>
+                  <% sold_tickets = raffle_tickets_sold.call(raffle_item) %>
+                  <% total_tickets = raffle_item.respond_to?(:total_tickets) ? raffle_item.total_tickets.to_i : 0 %>
+                  <% ticket_price = raffle_item.respond_to?(:ticket_price_cents) ? raffle_item.ticket_price_cents.to_i : 0 %>
+                  <% date_value = if raffle_tab == "current" then raffle_item.created_at else (raffle_item.respond_to?(:ended_at) && raffle_item.ended_at.present? ? raffle_item.ended_at : raffle_item.updated_at) end %>
+                  <tr>
+                    <% if raffle_tab == "won" && is_self %>
+                      <td class="w-seller">
+                        <% if host %>
+                          <%= link_to host.username.to_s.presence || "User ##{host.id}", user_path(host.id), class: "text-decoration-none" %>
+                        <% elsif raffle_item.respond_to?(:host_id) && raffle_item.host_id.present? %>
+                          <%= link_to "User ##{raffle_item.host_id}", user_path(raffle_item.host_id), class: "text-decoration-none" %>
+                        <% else %>
+                          -
+                        <% end %>
+                      </td>
+                    <% end %>
+                    <td class="w-ra-title"><%= raffle_item.respond_to?(:title) ? raffle_item.title.to_s : "-" %></td>
+                    <td class="w-ra-kind"><%= raffle_kind_label.call(raffle_item) %></td>
+                    <td class="w-ra-price"><%= number_to_currency(ticket_price / 100.0, unit: "€") %></td>
+                    <td class="w-ra-tickets"><%= "#{sold_tickets}/#{total_tickets}" %></td>
+                    <td class="w-ra-status"><%= raffle_status_label.call(raffle_item) %></td>
+                    <td class="w-ra-date"><%= date_value ? date_value.strftime("%d %b %Y") : "" %></td>
+                    <td class="w-ra-actions">
+                      <div class="mp-actions">
+                        <% if respond_to?(:raffle_path) %>
+                          <%= link_to "View", raffle_path(raffle_item), class: "btn btn-outline-primary btn-sm" %>
+                        <% else %>
+                          <span class="text-muted">-</span>
+                        <% end %>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <% if raffle_tab != "current" && raffle_item.respond_to?(:winner_user_id) && raffle_item.winner_user_id.present? && defined?(current_user) && current_user && current_user.id.to_i == raffle_item.host_id.to_i %>
+                    <tr>
+                      <td colspan="<%= raffle_tab == "won" && is_self ? 8 : 7 %>" style="text-align:left;">
+                        <strong>Winner:</strong>
+                        <% winner = defined?(User) ? User.find_by(id: raffle_item.winner_user_id) : nil %>
+                        <%= winner&.username.to_s.presence || raffle_item.winner_name.to_s.presence || "User ##{raffle_item.winner_user_id}" %>
+                      </td>
+                    </tr>
+                  <% end %>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="mp-empty">
+            <%= raffle_tab == "ended" ? "No ended raffles." : (raffle_tab == "won" ? "No raffles won." : "No current raffles.") %>
+          </div>
+        <% end %>
       </div>
+
+      <% if is_self %>
+        <div class="acc-card">
+          <div class="subhead">Watchlist</div>
+
+          <% if items.any? %>
+            <div class="list-group list-group-flush">
+              <% items.each do |it| %>
+                <% m = meta_for.call(it) %>
+                <div class="list-group-item">
+                  <div class="d-flex align-items-center gap-3">
+                    <%= link_to m[:href], class: "d-inline-flex align-items-center text-decoration-none" do %>
+                      <%= image_tag m[:img_url], alt: m[:label], style: "height:44px;width:auto;object-fit:contain;" %>
+                    <% end %>
+
+                    <div class="flex-grow-1">
+                      <%= link_to m[:label], m[:href], class: "text-decoration-none text-body fw-semibold" %>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2">
+                      <%= link_to "View", m[:href], class: "btn btn-sm btn-outline-primary" %>
+                      <%= button_to "Remove", remove_watchlist_path(sku: m[:sku]), method: :delete, params: { return_to: request.fullpath }, class: "btn btn-sm btn-outline-danger", form: { data: { preserve_scroll: true } } %>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <div class="mp-empty">Your watchlist is empty.</div>
+          <% end %>
+        </div>
+      <% end %>
     </div>
-  <% end %>
+  </div>
 </div>
+
+<script>
+  (function () {
+    const key = "pokevalue_account_scroll_y";
+
+    function saveScroll() {
+      try {
+        sessionStorage.setItem(key, String(window.scrollY || window.pageYOffset || 0));
+      } catch (e) {}
+    }
+
+    function restoreScroll() {
+      let raw = null;
+
+      try {
+        raw = sessionStorage.getItem(key);
+      } catch (e) {}
+
+      if (raw === null) return;
+
+      const y = parseInt(raw, 10);
+
+      try {
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+
+      if (Number.isNaN(y)) return;
+
+      requestAnimationFrame(function () {
+        window.scrollTo(0, y);
+        setTimeout(function () { window.scrollTo(0, y); }, 25);
+        setTimeout(function () { window.scrollTo(0, y); }, 75);
+        setTimeout(function () { window.scrollTo(0, y); }, 150);
+        setTimeout(function () { window.scrollTo(0, y); }, 300);
+      });
+    }
+
+    document.addEventListener("click", function (event) {
+      const clickable = event.target.closest("a, button, input[type='submit']");
+      if (!clickable) return;
+
+      const opensModal = clickable.hasAttribute("data-bs-toggle");
+      const closesModal = clickable.hasAttribute("data-bs-dismiss");
+      const inlineButton = clickable.getAttribute("type") === "button" && clickable.getAttribute("onclick");
+
+      if (opensModal || closesModal || inlineButton) return;
+
+      saveScroll();
+    }, true);
+
+    document.addEventListener("submit", function () {
+      saveScroll();
+    }, true);
+
+    window.addEventListener("beforeunload", saveScroll);
+    window.addEventListener("pageshow", restoreScroll);
+
+    document.addEventListener("turbo:before-visit", saveScroll);
+    document.addEventListener("turbo:submit-start", saveScroll);
+    document.addEventListener("turbo:load", restoreScroll);
+    document.addEventListener("DOMContentLoaded", restoreScroll);
+  })();
+</script>

@@ -1,5 +1,6 @@
 <%
 require "json"
+require "date"
 
 sets_data =
   begin
@@ -25,14 +26,166 @@ type_map = {
 inv_type_map  = type_map.invert
 images_sealed = Rails.root.join("app", "assets", "images", "sealed")
 
-meta_for = lambda do |set_name, human_type|
+conditions_from_controller =
+  if defined?(@conditions) && @conditions.is_a?(Array) && @conditions.any?
+    @conditions.map(&:to_s)
+  else
+    []
+  end
+
+condition_order = [
+  "Mint Sealed",
+  "Loosely Sealed",
+  "Unsealed",
+  "Big Tear",
+  "Small Tear",
+  "Big Imperfections",
+  "Small Imperfections",
+  "Pressure Marks",
+  "Slightly Dented",
+  "Heavy Dented",
+  "Damaged",
+  "Box Only",
+  "Contents Only"
+].freeze
+
+conditions_ordered =
+  condition_order.select { |c| conditions_from_controller.include?(c) } +
+  (conditions_from_controller - condition_order).sort
+
+def normalize_text(s)
+  s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
+end
+
+def normalize_type(t)
+  x = t.to_s.strip.downcase
+  x = x.tr("-", "_")
+  x = x.gsub(/\s+/, "_")
+  x
+end
+
+def slugify(s)
+  normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+end
+
+def extract_variant(name)
+  m = name.to_s.match(/\(([^)]+)\)/)
+  m ? m[1].to_s.strip : nil
+end
+
+def infer_origin(type_key:, name:)
+  t = normalize_type(type_key)
+  n = normalize_text(name)
+  return "Pokemon Center" if t == "pc_etb"
+  return "Pokemon Center" if n.include?("pokemon center")
+  nil
+end
+
+def build_route_type_for_product(type_key:, name:)
+  base = normalize_type(type_key)
+  variant = extract_variant(name)
+  origin  = infer_origin(type_key: type_key, name: name)
+  out = base.dup
+  out << "--v-#{slugify(variant)}" if variant.present?
+  out << "--o-#{slugify(origin)}"  if origin.present?
+  out
+end
+
+def base_type_for_name(name)
+  n = normalize_text(name)
+  return "Pokemon Center Elite Trainer Box" if n.include?("pokemon center elite trainer box") || (n.include?("pokemon center") && n.include?("elite trainer box"))
+  return "Elite Trainer Box" if n.include?("elite trainer box")
+  return "Enhanced Booster Box" if n.include?("enhanced booster box")
+  return "Booster Box" if n.include?("booster box")
+  return "Booster Bundle Display" if n.include?("booster bundle display")
+  return "Booster Bundle" if n.include?("booster bundle")
+  return "Mini Tin Display" if n.include?("mini tin display")
+  return "Mini Tin" if n.include?("mini tin")
+  return "Ultra Premium Collection" if n.include?("ultra premium collection")
+  return "Super Premium Collection" if n.include?("super premium collection") || n.include?("special premium collection")
+  name.to_s
+end
+
+def parse_release_date(v)
+  begin
+    Date.parse(v.to_s)
+  rescue
+    nil
+  end
+end
+
+def to_decimal(v)
+  return nil if v.nil?
+  return v.to_d if v.respond_to?(:to_d)
+  BigDecimal(v.to_s)
+rescue
+  nil
+end
+
+def build_value_map_for(klass)
+  return nil unless klass
+  cols = klass.column_names
+  return nil unless cols.include?("sku")
+
+  candidates = %w[value product_value estimated_value value_eur value_cents product_value_cents estimated_value_cents]
+  val_col = (candidates & cols).first
+  return nil unless val_col
+
+  col = klass.columns_hash[val_col] rescue nil
+  cents = val_col.to_s.end_with?("_cents") || (col && col.type == :integer)
+
+  raw = klass.where.not(sku: nil).pluck(:sku, val_col.to_sym)
+  out = {}
+  raw.each do |sku, v|
+    d = to_decimal(v)
+    next if d.nil?
+    d = d / 100 if cents
+    out[sku.to_s.downcase] = d.to_f
+  end
+  out
+rescue
+  nil
+end
+
+def first_nonzero(map, keys)
+  keys.each do |k|
+    v = map[k]
+    return v if v && v.to_f > 0
+  end
+  nil
+end
+
+value_by_sku =
+  begin
+    m = nil
+    m = build_value_map_for(ProductValue) if defined?(ProductValue)
+    m = build_value_map_for(Product) if m.nil?
+    m || {}
+  rescue
+    {}
+  end
+
+meta_for = lambda do |set_name, human_product_name|
   s = sets_data.values.find { |x| x["name"].to_s == set_name.to_s }
   next nil unless s
 
-  type_code = inv_type_map[human_type] || human_type.to_s.downcase.gsub(/\s+/, "_")
-  prod = Array(s["products"] || s["sealed"]).find { |p| (p["type"] || p[:type]).to_s == type_code }
+  sealed = Array(s["products"] || s["sealed"])
+  want_name = human_product_name.to_s
 
-  img_base = File.basename((prod && (prod["img"] || prod[:img])).to_s) rescue nil
+  prod = sealed.find { |p| (p["name"] || p[:name]).to_s == want_name }
+
+  if prod.nil?
+    base = base_type_for_name(want_name)
+    type_code = inv_type_map[base] || base.to_s.downcase.gsub(/\s+/, "_")
+    prod = sealed.find { |p| normalize_type(p["type"] || p[:type]) == normalize_type(type_code) } if type_code.present?
+  end
+
+  next nil unless prod
+
+  type_code = (prod["type"] || prod[:type]).to_s
+  prod_name = (prod["name"] || prod[:name]).to_s
+
+  img_base = File.basename((prod["img"] || prod[:img]).to_s) rescue nil
   img_url =
     if img_base.present? && File.exist?(images_sealed.join(img_base))
       asset_path("sealed/#{img_base}")
@@ -40,10 +193,109 @@ meta_for = lambda do |set_name, human_type|
       asset_path("pokevaluelogo.png")
     end
 
-  href = set_product_path(slug: s["slug"], type: type_code)
+  route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
+  href = set_product_path(slug: s["slug"], type: route_type)
   { img_url: img_url, href: href }
 end
+
+sets_index =
+  sets_data.values.map do |s|
+    slug = (s["slug"] || s[:slug]).to_s
+    name = (s["name"] || s[:name]).to_s
+    era  = (s["era"]  || s[:era]).to_s
+    release_raw = (s["releaseDate"] || s["release_date"] || s["release"]).to_s
+    release_date = parse_release_date(release_raw)
+    release_iso = release_date ? release_date.strftime("%Y-%m-%d") : ""
+
+    sealed_entries =
+      Array(s["products"] || s["sealed"]).map do |p|
+        type_code = (p["type"] || p[:type]).to_s
+        prod_name = (p["name"] || p[:name]).to_s
+
+        img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
+        img_url =
+          if img_base.present? && File.exist?(images_sealed.join(img_base))
+            asset_path("sealed/#{img_base}")
+          else
+            asset_path("pokevaluelogo.png")
+          end
+
+        route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
+
+        sku_a = "#{slug}:#{type_code}".downcase
+        sku_b = "#{slug}:#{route_type}".downcase
+        sku_c = "#{slug}--#{type_code}".downcase
+        sku_d = "#{slug}--#{route_type}".downcase
+
+        val = first_nonzero(value_by_sku, [sku_b, sku_a, sku_d, sku_c])
+
+        if val.nil?
+          json_val = (p["value"] || p[:value])
+          json_val = json_val.to_f if json_val.present? rescue json_val
+          val = json_val if json_val.present? && json_val.to_f > 0
+        end
+
+        {
+          type_code: type_code,
+          type_human: (type_map[normalize_type(type_code)] || base_type_for_name(prod_name)),
+          name: prod_name,
+          variant: extract_variant(prod_name),
+          route_type: route_type,
+          img_url: img_url,
+          value: (val if val.present?)
+        }
+      end
+
+    { slug: slug, name: name, era: era, release_raw: release_raw, release_iso: release_iso, sealed: sealed_entries }
+  end
+
+era_release =
+  sets_index.group_by { |x| x[:era].to_s }.transform_values do |arr|
+    arr.map { |x| parse_release_date(x[:release_iso]) }.compact.max
+  end
+
+ordered_eras =
+  era_release.keys.sort_by do |e|
+    d = era_release[e]
+    d ? -d.jd : 0
+  end
+
+sales_total_cents =
+  if defined?(MarketplacePurchase) && current_user
+    MarketplacePurchase.where(seller_id: current_user.id).sum(:realised_pl_cents).to_i
+  else
+    0
+  end
+sales_total_eur = sales_total_cents / 100.0
+
+sales_series =
+  if defined?(MarketplacePurchase) && current_user
+    raw = MarketplacePurchase.where(seller_id: current_user.id).group("DATE(created_at)").sum(:realised_pl_cents)
+    dates = raw.keys.map(&:to_s).sort
+    running = 0
+    labels = []
+    values = []
+    dates.each do |d|
+      running += raw[d].to_i
+      labels << d
+      values << (running / 100.0)
+    end
+    { series: { realised_pl: { labels: labels, values: values } } }
+  else
+    { series: { realised_pl: { labels: [], values: [] } } }
+  end
+
+sales_rows =
+  if defined?(MarketplacePurchase) && current_user
+    MarketplacePurchase.where(seller_id: current_user.id).order(created_at: :desc).limit(500).to_a
+  else
+    []
+  end
 %>
+
+<script>
+  window.__REALIZED_PL_METRICS__ = <%= raw(sales_series.to_json) %>;
+</script>
 
 <div data-controller="portfolios-filters">
   <h4 class="mb-3">Portfolio Overview</h4>
@@ -67,7 +319,7 @@ end
     .col-type{width:120px}
     .col-condition{width:110px}
     .col-date{width:90px}
-    .col-qty{width:50px}
+    .col-qty{width:70px}
     .col-money{width:70px}
     .col-pl{width:70px}
     .col-roi{width:70px}
@@ -82,25 +334,25 @@ end
   </style>
 
   <div class="row g-3 mb-3">
-    <div class="col-12 col-md-6 col-lg-3">
+    <div class="col-12 col-md-6 col-lg">
       <div class="card h-100"><div class="card-body py-2">
         <h6 class="card-title mb-1">Total Cost</h6>
         <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:cost]) : "€0.00" %></div>
       </div></div>
     </div>
-    <div class="col-12 col-md-6 col-lg-3">
+    <div class="col-12 col-md-6 col-lg">
       <div class="card h-100"><div class="card-body py-2">
         <h6 class="card-title mb-1">Total Value</h6>
         <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:value]) : "€0.00" %></div>
       </div></div>
     </div>
-    <div class="col-12 col-md-6 col-lg-3">
+    <div class="col-12 col-md-6 col-lg">
       <div class="card h-100"><div class="card-body py-2">
         <h6 class="card-title mb-1">Unrealised P/L</h6>
         <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:pl]) : "€0.00" %></div>
       </div></div>
     </div>
-    <div class="col-12 col-md-6 col-lg-3">
+    <div class="col-12 col-md-6 col-lg">
       <div class="card h-100"><div class="card-body py-2">
         <h6 class="card-title mb-1">ROI (%)</h6>
         <div class="fs-4 text-secondary">
@@ -110,6 +362,12 @@ end
             0.00%
           <% end %>
         </div>
+      </div></div>
+    </div>
+    <div class="col-12 col-md-6 col-lg">
+      <div class="card h-100"><div class="card-body py-2">
+        <h6 class="card-title mb-1">Realised P/L</h6>
+        <div class="fs-4 text-secondary"><%= eur(sales_total_eur) %></div>
       </div></div>
     </div>
   </div>
@@ -130,7 +388,7 @@ end
       <label class="form-label mb-1">Era</label>
       <select class="form-select text-center" id="filter-era">
         <option value="">All</option>
-        <% @eras.each do |e| %>
+        <% ordered_eras.each do |e| %>
           <option value="<%= e %>"><%= e %></option>
         <% end %>
       </select>
@@ -154,7 +412,7 @@ end
       <label class="form-label mb-1">Condition</label>
       <select class="form-select text-center" id="filter-condition">
         <option value="">All</option>
-        <% @conditions.each do |c| %>
+        <% conditions_ordered.each do |c| %>
           <option value="<%= c %>"><%= c %></option>
         <% end %>
       </select>
@@ -212,7 +470,7 @@ end
               <th class="col-type">Product Type</th>
               <th class="col-condition">Condition</th>
               <th class="col-date">Purchase Date</th>
-              <th class="col-qty">Qty</th>
+              <th class="col-qty">Quantity</th>
               <th class="col-money">Cost</th>
               <th class="col-money">Total Cost</th>
               <th class="col-money">Value</th>
@@ -226,10 +484,12 @@ end
             <% if @holdings.any? %>
               <% @holdings.each do |h| %>
                 <% meta = meta_for.call(h.set_name, h.product_type) %>
+                <% base_type = base_type_for_name(h.product_type) %>
                 <tr
                   data-era="<%= h.era %>"
                   data-set="<%= h.set_name %>"
                   data-type="<%= h.product_type %>"
+                  data-type-base="<%= base_type %>"
                   data-condition="<%= h.condition %>"
                   data-date="<%= (h.purchase_date || h.created_at&.to_date)&.strftime("%Y-%m-%d") %>"
                   data-cost="<%= h.cost_per_unit.to_f %>"
@@ -282,7 +542,7 @@ end
                               <%= f.date_field :purchase_date, class: "form-control form-control-sm" %>
                             </div>
                             <div class="mb-2">
-                              <%= f.select :condition, options_for_select(@conditions, h.condition), {}, class: "form-select form-select-sm" %>
+                              <%= f.select :condition, options_for_select(conditions_ordered, h.condition), {}, class: "form-select form-select-sm" %>
                             </div>
                             <div class="d-flex gap-2">
                               <%= f.submit "Save", class: "btn btn-sm btn-primary" %>
@@ -301,6 +561,9 @@ end
                   </td>
                 </tr>
               <% end %>
+              <tr id="holdings-empty" class="d-none">
+                <td colspan="14" class="text-center text-muted py-4">No matches.</td>
+              </tr>
             <% else %>
               <tr>
                 <td colspan="14" class="text-center text-muted py-4">No products within holdings.</td>
@@ -313,7 +576,7 @@ end
   </div>
 
   <div class="mt-3 d-flex justify-content-end">
-    <%= link_to "+ Add Product", sets_path, class: "btn btn-success btn-sm" %>
+    <button class="btn btn-success btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#addHoldingModal">Add to Portfolio</button>
   </div>
 </div>
 
@@ -336,7 +599,7 @@ end
                 <th class="col-set">Set</th>
                 <th class="col-type">Product Type</th>
                 <th class="col-condition">Condition</th>
-                <th class="col-qty">Qty</th>
+                <th class="col-qty">Quantity</th>
                 <th class="col-money">Cost</th>
                 <th class="col-money">Total Cost</th>
                 <th class="col-money">Value</th>
@@ -393,42 +656,69 @@ end
                     <td><span class="badge text-bg-success">ADDED</span></td>
                     <td>
                       <div class="holdings-actions d-inline-flex flex-nowrap">
-                        <details class="summary-edit me-1">
-                          <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
-                          <div class="border rounded p-2 mt-2 bg-white" style="min-width:240px;">
-                            <%= form_with model: h, url: holding_path(h), method: :patch, local: true do |f| %>
-                              <div class="mb-2">
-                                <%= f.number_field :quantity, min: 1, step: 1, class: "form-control form-control-sm" %>
-                              </div>
-                              <div class="mb-2">
-                                <%= f.number_field :cost_per_unit, min: 0, step: "0.01", class: "form-control form-control-sm" %>
-                              </div>
-                              <div class="mb-2">
-                                <%= f.date_field :purchase_date, class: "form-control form-control-sm" %>
-                              </div>
-                              <div class="mb-2">
-                                <%= f.select :condition, options_for_select(@conditions, h.condition), {}, class: "form-select form-select-sm" %>
-                              </div>
-                              <div class="d-flex gap-2">
-                                <%= f.submit "Save", class: "btn btn-sm btn-primary" %>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('details').removeAttribute('open')">Cancel</button>
-                              </div>
-                            <% end %>
-                          </div>
-                        </details>
-
-                        <%= button_to "Remove",
+                        <%= button_to "Delete",
                                       holding_path(h),
                                       method: :delete,
-                                      form: { data: { turbo_confirm: "Remove this holding? This will also remove it from your portfolio." } },
+                                      form: { data: { turbo_confirm: "Are you sure you want to delete this added summary row?" } },
                                       class: "btn btn-sm btn-outline-danger" %>
                       </div>
                     </td>
                   </tr>
                 <% end %>
-              <% else %>
+              <% end %>
+
+              <% if sales_rows.any? %>
+                <% sales_rows.each do |p| %>
+                  <% set_name = p.set_name.presence || "" %>
+                  <% prod_name = p.product_name.presence || "" %>
+                  <% meta = meta_for.call(set_name, prod_name) if set_name.present? && prod_name.present? %>
+
+                  <% cost_u = p.seller_cost_per_unit_cents.present? ? (p.seller_cost_per_unit_cents.to_i / 100.0) : 0.0 %>
+                  <% cost_t = cost_u * p.quantity.to_i %>
+                  <% sell_u = p.unit_price_cents.to_i / 100.0 %>
+                  <% sell_t = p.total_price_cents.to_i / 100.0 %>
+                  <% pl = p.realised_pl_cents.to_i / 100.0 %>
+                  <% roi = cost_t > 0 ? (pl / cost_t) * 100.0 : 0.0 %>
+
+                  <tr>
+                    <td class="text-nowrap"><%= p.created_at&.to_date&.strftime("%d/%m/%Y") || "—" %></td>
+                    <td>
+                      <% if meta %>
+                        <%= link_to meta[:href] do %>
+                          <%= image_tag meta[:img_url], alt: prod_name, class: "product-thumb" %>
+                        <% end %>
+                      <% else %>
+                        <%= image_tag "pokevaluelogo.png", alt: prod_name, class: "product-thumb" %>
+                      <% end %>
+                    </td>
+                    <td><%= p.era.to_s %></td>
+                    <td><%= p.set_name.to_s %></td>
+                    <td><%= prod_name %></td>
+                    <td><%= p.condition.to_s %></td>
+                    <td><%= p.quantity.to_i %></td>
+                    <td><%= number_to_currency(cost_u, unit: "€") %></td>
+                    <td><%= number_to_currency(cost_t, unit: "€") %></td>
+                    <td><%= number_to_currency(sell_u, unit: "€") %></td>
+                    <td><%= number_to_currency(sell_t, unit: "€") %></td>
+                    <td class="text-nowrap"><%= number_to_currency(pl, unit: "€") %></td>
+                    <td><%= "#{number_with_precision(roi, precision: 2)}%" %></td>
+                    <td><span class="badge text-bg-danger">SOLD</span></td>
+                    <td>
+                      <div class="holdings-actions d-inline-flex flex-nowrap">
+                        <%= button_to "Delete",
+                                      sold_summary_entry_path(p),
+                                      method: :delete,
+                                      form: { data: { turbo_confirm: "Are you sure you want to delete this sold summary row?" } },
+                                      class: "btn btn-sm btn-outline-danger" %>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              <% end %>
+
+              <% if @holdings.blank? && sales_rows.blank? %>
                 <tr>
-                  <td colspan="15" class="text-center text-muted py-4">No products within holdings.</td>
+                  <td colspan="15" class="text-center text-muted py-4">No summary entries yet.</td>
                 </tr>
               <% end %>
             </tbody>
@@ -448,13 +738,14 @@ end
       </div>
 
       <div class="modal-body">
-        <div class="small text-muted mb-2" data-metrics-target="status"></div>
+        <div class="d-none" data-metrics-target="status"></div>
 
         <div class="d-flex flex-wrap gap-2 mb-3">
           <button class="btn btn-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="cost">Total Cost</button>
           <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="value">Total Value</button>
           <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="pl">Unrealised P/L</button>
           <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="roi">ROI (%)</button>
+          <button class="btn btn-outline-primary btn-sm" data-action="click->metrics#select" data-metrics-key-param="realised_pl">Realised P/L</button>
         </div>
 
         <div class="card">
@@ -487,6 +778,13 @@ end
               </div>
             </div>
 
+            <div class="d-none" data-metrics-target="panel" data-key="realised_pl">
+              <div class="fw-semibold mb-2">Realised P/L</div>
+              <div style="height:360px;">
+                <canvas data-key="realised_pl"></canvas>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -494,3 +792,361 @@ end
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="addHoldingModal" tabindex="-1" aria-labelledby="addHoldingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addHoldingModalLabel">Add to Portfolio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <%= form_with url: holdings_path, scope: :holding, method: :post, local: true do %>
+          <%= hidden_field_tag "holding[set_slug]", "", id: "portfolio_holding_set_slug" %>
+          <%= hidden_field_tag "holding[type_code]", "", id: "portfolio_holding_type_code" %>
+          <%= hidden_field_tag "holding[image_url]", "", id: "portfolio_holding_image_url" %>
+          <%= hidden_field_tag "holding[era]", "", id: "portfolio_holding_era" %>
+          <%= hidden_field_tag "holding[set_name]", "", id: "portfolio_holding_set_name" %>
+          <%= hidden_field_tag "holding[product_type]", "", id: "portfolio_holding_product_type" %>
+          <%= hidden_field_tag "holding[value]", "", id: "portfolio_holding_value" %>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_add_era">Era</label>
+            <select class="form-select" id="portfolio_add_era" required>
+              <option value="">Select era</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_add_set">Set</label>
+            <select class="form-select" id="portfolio_add_set" required disabled>
+              <option value="">Select set</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_add_product">Product</label>
+            <select class="form-select" id="portfolio_add_product" required disabled>
+              <option value="">Select product</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Estimated value / unit (€)</label>
+            <input type="text" class="form-control" id="portfolio_add_estimated_value_display" value="€0.00" disabled>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_holding_quantity">Quantity</label>
+            <%= number_field_tag "holding[quantity]", 1, min: 1, class: "form-control", id: "portfolio_holding_quantity", required: true %>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_holding_cost_per_unit">Cost per unit (€)</label>
+            <%= number_field_tag "holding[cost_per_unit]", 0, step: "0.01", min: 0, class: "form-control", id: "portfolio_holding_cost_per_unit", required: true %>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_holding_purchase_date">Purchase date</label>
+            <%= date_field_tag "holding[purchase_date]", Date.today, class: "form-control", id: "portfolio_holding_purchase_date" %>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="portfolio_holding_condition">Condition</label>
+            <%= select_tag "holding[condition]",
+                           options_for_select(conditions_ordered),
+                           include_blank: "Select condition",
+                           class: "form-select",
+                           id: "portfolio_holding_condition" %>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success">Save to Portfolio</button>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const SETS_INDEX = <%= raw(sets_index.to_json) %>;
+
+    function toNum(v){
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function uniq(arr){
+      return Array.from(new Set(arr));
+    }
+
+    function money(v){
+      const n = parseFloat(v || 0);
+      return "€" + (Number.isFinite(n) ? n : 0).toFixed(2);
+    }
+
+    function applyFilters(){
+      const body = document.getElementById("holdings-body");
+      if(!body) return;
+
+      const rows = Array.from(body.querySelectorAll("tr")).filter(r => r.id !== "holdings-empty");
+      const emptyRow = document.getElementById("holdings-empty");
+
+      const q = (document.getElementById("filter-q")?.value || "").trim().toLowerCase();
+      const era = document.getElementById("filter-era")?.value || "";
+      const setName = document.getElementById("filter-set")?.value || "";
+      const typeBase = document.getElementById("filter-type")?.value || "";
+      const condition = document.getElementById("filter-condition")?.value || "";
+
+      const costMin = toNum(document.getElementById("filter-cost-min")?.value);
+      const costMax = toNum(document.getElementById("filter-cost-max")?.value);
+      const valueMin = toNum(document.getElementById("filter-value-min")?.value);
+      const valueMax = toNum(document.getElementById("filter-value-max")?.value);
+      const plMin = toNum(document.getElementById("filter-pl-min")?.value);
+      const plMax = toNum(document.getElementById("filter-pl-max")?.value);
+      const roiMin = toNum(document.getElementById("filter-roi-min")?.value);
+      const roiMax = toNum(document.getElementById("filter-roi-max")?.value);
+
+      const dStart = document.getElementById("filter-date-start")?.value || "";
+      const dEnd = document.getElementById("filter-date-end")?.value || "";
+
+      let shown = 0;
+
+      rows.forEach(tr => {
+        const ds = tr.dataset || {};
+        if(!ds.search) return;
+
+        const matchesQ = q ? (ds.search || "").includes(q) : true;
+        const matchesEra = era ? (ds.era === era) : true;
+        const matchesSet = setName ? (ds.set === setName) : true;
+        const matchesType = typeBase ? ((ds.typeBase || ds.type) === typeBase) : true;
+        const matchesCondition = condition ? (ds.condition === condition) : true;
+
+        const cost = toNum(ds.cost);
+        const value = toNum(ds.value);
+        const pl = toNum(ds.pl);
+        const roi = toNum(ds.roi);
+        const date = (ds.date || "");
+
+        const matchesCostMin = costMin != null ? (cost != null && cost >= costMin) : true;
+        const matchesCostMax = costMax != null ? (cost != null && cost <= costMax) : true;
+        const matchesValueMin = valueMin != null ? (value != null && value >= valueMin) : true;
+        const matchesValueMax = valueMax != null ? (value != null && value <= valueMax) : true;
+        const matchesPlMin = plMin != null ? (pl != null && pl >= plMin) : true;
+        const matchesPlMax = plMax != null ? (pl != null && pl <= plMax) : true;
+        const matchesRoiMin = roiMin != null ? (roi != null && roi >= roiMin) : true;
+        const matchesRoiMax = roiMax != null ? (roi != null && roi <= roiMax) : true;
+
+        const matchesDateStart = dStart ? (date && date >= dStart) : true;
+        const matchesDateEnd = dEnd ? (date && date <= dEnd) : true;
+
+        const ok =
+          matchesQ &&
+          matchesEra &&
+          matchesSet &&
+          matchesType &&
+          matchesCondition &&
+          matchesCostMin &&
+          matchesCostMax &&
+          matchesValueMin &&
+          matchesValueMax &&
+          matchesPlMin &&
+          matchesPlMax &&
+          matchesRoiMin &&
+          matchesRoiMax &&
+          matchesDateStart &&
+          matchesDateEnd;
+
+        tr.classList.toggle("d-none", !ok);
+        if(ok) shown += 1;
+      });
+
+      if(emptyRow){
+        emptyRow.classList.toggle("d-none", shown !== 0);
+      }
+    }
+
+    function rebuildSetFilterOptions(){
+      const eraSel = document.getElementById("filter-era");
+      const setSel = document.getElementById("filter-set");
+      const body = document.getElementById("holdings-body");
+      if(!eraSel || !setSel || !body) return;
+
+      const selectedEra = eraSel.value || "";
+      const allRows = Array.from(body.querySelectorAll("tr")).filter(r => r.dataset && r.dataset.set && r.dataset.era);
+
+      let sets = allRows.map(r => ({ era: r.dataset.era, set: r.dataset.set }));
+      if(selectedEra){
+        sets = sets.filter(x => x.era === selectedEra);
+      }
+
+      const names = uniq(sets.map(x => x.set)).sort((a,b)=>a.localeCompare(b));
+      const prev = setSel.value || "";
+
+      setSel.innerHTML = "";
+      const optAll = document.createElement("option");
+      optAll.value = "";
+      optAll.textContent = "All";
+      setSel.appendChild(optAll);
+
+      names.forEach(n => {
+        const opt = document.createElement("option");
+        opt.value = n;
+        opt.textContent = n;
+        setSel.appendChild(opt);
+      });
+
+      if(prev && names.includes(prev)){
+        setSel.value = prev;
+      }else{
+        setSel.value = "";
+      }
+    }
+
+    function wireFilters(){
+      const ids = [
+        "filter-q","filter-era","filter-set","filter-type","filter-condition",
+        "filter-cost-min","filter-cost-max","filter-value-min","filter-value-max",
+        "filter-pl-min","filter-pl-max","filter-roi-min","filter-roi-max",
+        "filter-date-start","filter-date-end"
+      ];
+
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if(!el) return;
+        el.addEventListener("input", () => {
+          if(id === "filter-era"){
+            rebuildSetFilterOptions();
+          }
+          applyFilters();
+        });
+        el.addEventListener("change", () => {
+          if(id === "filter-era"){
+            rebuildSetFilterOptions();
+          }
+          applyFilters();
+        });
+      });
+
+      rebuildSetFilterOptions();
+      applyFilters();
+    }
+
+    function resetSelect(select, label){
+      if(!select) return;
+      select.innerHTML = "";
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = label;
+      select.appendChild(option);
+    }
+
+    function addOption(select, value, text, dataset){
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      if(dataset){
+        Object.keys(dataset).forEach(key => option.dataset[key] = dataset[key]);
+      }
+      select.appendChild(option);
+    }
+
+    function selectedSet(){
+      const setSelect = document.getElementById("portfolio_add_set");
+      const slug = setSelect ? setSelect.value : "";
+      return SETS_INDEX.find(s => s.slug === slug) || null;
+    }
+
+    function selectedProduct(){
+      const productSelect = document.getElementById("portfolio_add_product");
+      const index = productSelect ? parseInt(productSelect.value || "-1", 10) : -1;
+      const set = selectedSet();
+      if(!set || index < 0) return null;
+      return set.sealed[index] || null;
+    }
+
+    function syncHiddenAddHoldingFields(){
+      const set = selectedSet();
+      const product = selectedProduct();
+
+      const setSlugInput = document.getElementById("portfolio_holding_set_slug");
+      const typeCodeInput = document.getElementById("portfolio_holding_type_code");
+      const imageInput = document.getElementById("portfolio_holding_image_url");
+      const eraInput = document.getElementById("portfolio_holding_era");
+      const setNameInput = document.getElementById("portfolio_holding_set_name");
+      const productTypeInput = document.getElementById("portfolio_holding_product_type");
+      const valueInput = document.getElementById("portfolio_holding_value");
+      const costInput = document.getElementById("portfolio_holding_cost_per_unit");
+      const valueDisplay = document.getElementById("portfolio_add_estimated_value_display");
+
+      const value = product && product.value ? parseFloat(product.value) : 0;
+
+      if(setSlugInput) setSlugInput.value = set ? set.slug : "";
+      if(typeCodeInput) typeCodeInput.value = product ? product.route_type : "";
+      if(imageInput) imageInput.value = product ? product.img_url : "";
+      if(eraInput) eraInput.value = set ? set.era : "";
+      if(setNameInput) setNameInput.value = set ? set.name : "";
+      if(productTypeInput) productTypeInput.value = product ? product.name : "";
+      if(valueInput) valueInput.value = value.toFixed(2);
+      if(costInput && product) costInput.value = value.toFixed(2);
+      if(valueDisplay) valueDisplay.value = money(value);
+    }
+
+    function initAddHoldingModal(){
+      const eraSelect = document.getElementById("portfolio_add_era");
+      const setSelect = document.getElementById("portfolio_add_set");
+      const productSelect = document.getElementById("portfolio_add_product");
+
+      if(!eraSelect || !setSelect || !productSelect) return;
+
+      resetSelect(eraSelect, "Select era");
+      resetSelect(setSelect, "Select set");
+      resetSelect(productSelect, "Select product");
+
+      const eras = uniq(SETS_INDEX.map(s => s.era).filter(Boolean)).sort((a,b) => a.localeCompare(b));
+      eras.forEach(era => addOption(eraSelect, era, era));
+
+      eraSelect.addEventListener("change", function(){
+        resetSelect(setSelect, "Select set");
+        resetSelect(productSelect, "Select product");
+        setSelect.disabled = !eraSelect.value;
+        productSelect.disabled = true;
+
+        SETS_INDEX.filter(s => s.era === eraSelect.value)
+          .sort((a,b) => a.name.localeCompare(b.name))
+          .forEach(s => addOption(setSelect, s.slug, s.name));
+
+        syncHiddenAddHoldingFields();
+      });
+
+      setSelect.addEventListener("change", function(){
+        resetSelect(productSelect, "Select product");
+        const set = selectedSet();
+        productSelect.disabled = !set;
+
+        if(set){
+          set.sealed.forEach((product, index) => {
+            addOption(productSelect, String(index), product.name);
+          });
+        }
+
+        syncHiddenAddHoldingFields();
+      });
+
+      productSelect.addEventListener("change", syncHiddenAddHoldingFields);
+      syncHiddenAddHoldingFields();
+    }
+
+    function init(){
+      wireFilters();
+      initAddHoldingModal();
+    }
+
+    document.addEventListener("turbo:load", init);
+    document.addEventListener("DOMContentLoaded", init);
+  })();
+</script>

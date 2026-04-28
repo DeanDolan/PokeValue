@@ -1,0 +1,390 @@
+<%
+require "json"
+
+sets_data =
+  begin
+    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
+    JSON.parse(raw)
+  rescue
+    {}
+  end
+
+type_map = {
+  "etb" => "Elite Trainer Box",
+  "pc_etb" => "Pokemon Center Elite Trainer Box",
+  "booster_box" => "Booster Box",
+  "booster_bundle" => "Booster Bundle",
+  "booster_bundle_display" => "Booster Bundle Display",
+  "enhanced_booster_box" => "Enhanced Booster Box",
+  "ultra_premium_collection" => "Ultra Premium Collection",
+  "upc" => "Ultra Premium Collection",
+  "spc" => "Super Premium Collection",
+  "mini_tin" => "Mini Tin",
+  "mini_tin_display" => "Mini Tin Display"
+}
+
+titleize = lambda do |s|
+  s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
+end
+
+split_type_variant = lambda do |t|
+  s = t.to_s
+  down = s.downcase
+  idx = down.index("--v-")
+  if idx
+    base = s[0...idx].to_s
+    raw = s[(idx + 4)..-1].to_s
+    variant = raw.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
+    [base.to_s, variant.to_s]
+  else
+    [s.to_s, ""]
+  end
+end
+
+stars = lambda do |avg|
+  a = avg.to_f
+  full = a.floor
+  half = ((a - full) >= 0.5) ? 1 : 0
+  empty = 5 - full - half
+  ("★" * full) + (half == 1 ? "½" : "") + ("☆" * empty)
+end
+
+eu = [
+  ["Austria", "AT"], ["Belgium", "BE"], ["Bulgaria", "BG"], ["Croatia", "HR"], ["Cyprus", "CY"],
+  ["Czechia", "CZ"], ["Denmark", "DK"], ["Estonia", "EE"], ["Finland", "FI"], ["France", "FR"],
+  ["Germany", "DE"], ["Greece", "GR"], ["Hungary", "HU"], ["Ireland", "IE"], ["Italy", "IT"],
+  ["Latvia", "LV"], ["Lithuania", "LT"], ["Luxembourg", "LU"], ["Malta", "MT"], ["Netherlands", "NL"],
+  ["Poland", "PL"], ["Portugal", "PT"], ["Romania", "RO"], ["Slovakia", "SK"], ["Slovenia", "SI"],
+  ["Spain", "ES"], ["Sweden", "SE"]
+]
+
+country_code_from = lambda do |addr|
+  v =
+    if addr.respond_to?(:country_code) && addr.country_code.present?
+      addr.country_code
+    elsif addr.respond_to?(:address_country_code) && addr.address_country_code.present?
+      addr.address_country_code
+    elsif addr.respond_to?(:shipping_country_code) && addr.shipping_country_code.present?
+      addr.shipping_country_code
+    elsif addr.respond_to?(:country) && addr.country.present?
+      addr.country
+    elsif addr.respond_to?(:country_name) && addr.country_name.present?
+      addr.country_name
+    else
+      ""
+    end
+
+  t = v.to_s.strip
+  u = t.upcase
+
+  if u.length == 2
+    u
+  else
+    found = eu.find { |name, code| name.to_s.downcase == t.downcase }
+    found ? found[1].to_s : ""
+  end
+rescue
+  ""
+end
+
+address = defined?(@address) && @address.is_a?(Hash) ? @address : {}
+
+l = @listing
+qty = (@quantity || 1).to_i
+qty = 1 if qty <= 0
+
+slug = l.set_slug.to_s
+s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
+era = s ? s["era"].to_s : ""
+set_name = s ? s["name"].to_s : (l.set_name.to_s.presence || slug)
+
+base, variant = split_type_variant.call(l.route_type.to_s.presence || l.product_type_name.to_s)
+base_key = base.to_s.downcase
+tn = type_map[base_key].presence || titleize.call(base)
+vn = variant.to_s.strip
+display_product = vn.present? ? "#{tn} (#{vn})" : tn
+subtitle_product = tn
+
+stats = @seller_stats || { avg: 0.0, count: 0 }
+saved_addresses = defined?(@saved_addresses) && @saved_addresses.is_a?(Array) ? @saved_addresses : []
+unit_cents = l.price_cents.to_i
+total_cents = unit_cents * qty
+
+seller_obj = (l.respond_to?(:seller) ? l.seller : nil) rescue nil
+seller_is_admin =
+  begin
+    if seller_obj && seller_obj.respond_to?(:admin?)
+      seller_obj.admin?
+    elsif seller_obj && seller_obj.respond_to?(:admin)
+      !!seller_obj.admin
+    else
+      false
+    end
+  rescue
+    false
+  end
+
+admin_badge_asset = "badges/adminbadge.png"
+%>
+
+<div class="container py-4">
+  <style>
+    .co-wrap{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+    .co-left{flex:1;min-width:320px}
+    .co-right{width:420px;max-width:100%}
+    .co-block{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .co-title{font-size:1.2rem;margin:0 0 6px}
+    .co-sub{color:#6b7280;font-size:.85rem;margin:0 0 14px}
+    .co-line{font-size:.88rem;margin:6px 0}
+    .co-line strong{font-weight:700}
+    .co-flag{font-size:1.2rem;line-height:1;display:inline-block;position:relative;top:3px}
+    .co-actions{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .co-saved{display:flex;flex-direction:column;gap:10px}
+    .co-saved-card{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
+    .co-saved-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .co-saved-actions{display:flex;gap:6px;flex-wrap:nowrap;white-space:nowrap;align-items:stretch}
+    .co-saved-actions > *{flex:0 0 auto}
+    .co-saved-actions form,.co-saved-actions .button_to{display:inline-flex;align-items:stretch;margin:0}
+    .co-saved-actions .button_to > div{display:inline-flex;align-items:stretch;margin:0}
+    .co-saved-actions .btn{height:28px;padding:0 .45rem;font-size:.70rem;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+    .form-control-sm,.form-select-sm{font-size:.85rem}
+  </style>
+
+  <div class="mb-3">
+    <%= link_to "← Back to Listing", marketplace_listing_path(l), class: "btn btn-link p-0" %>
+  </div>
+
+  <div class="co-wrap">
+    <div class="co-left">
+      <div class="co-block mb-3">
+        <div class="h5 m-0">Checkout</div>
+
+        <div class="co-line mt-2"><strong>Listing Information:</strong></div>
+        <div class="co-line"><%= display_product %></div>
+        <div class="co-sub"><%= [era.presence, set_name.presence, subtitle_product.presence].compact.join(" · ") %></div>
+
+        <div class="co-line"><strong>Seller:</strong> <%= link_to (l.seller&.respond_to?(:username) ? l.seller.username : "User ##{l.seller_id}"), user_path(l.seller_id), class: "text-decoration-none" %></div>
+        <div class="co-line"><strong>Location:</strong> <span class="co-flag" title="<%= country_name(l.country_code) %>"><%= flag_emoji(l.country_code) %></span></div>
+        <div class="co-line"><strong>Reviews:</strong> <span title="<%= "#{stats[:avg].round(1)}/5 (#{stats[:count]})" %>"><%= stars.call(stats[:avg]) %></span></div>
+        <div class="co-line">
+          <strong>Badges:</strong>
+          <% if seller_is_admin %>
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+              <%= image_tag admin_badge_asset, alt: "Admin", title: "Admin", style: "height:18px;width:18px;object-fit:contain;display:inline-block;vertical-align:middle;" %>
+            </span>
+          <% else %>
+            <span class="text-muted">None</span>
+          <% end %>
+        </div>
+
+        <div class="co-line"><strong>Condition:</strong> <%= l.condition %></div>
+        <div class="co-line"><strong>Unit Price:</strong> <%= number_to_currency(unit_cents / 100.0, unit: "€") %></div>
+        <div class="co-line"><strong>Quantity:</strong> <%= qty %></div>
+        <div class="co-line"><strong>Total:</strong> <%= number_to_currency(total_cents / 100.0, unit: "€") %></div>
+      </div>
+
+      <div class="co-block">
+        <div class="fw-semibold mb-2">Shipping Address</div>
+
+        <%= form_with url: buy_marketplace_listing_path(l), method: :post, local: true, html: { id: "buyForm" } do %>
+          <%= hidden_field_tag :quantity, qty %>
+          <%= hidden_field_tag :saved_address_id, "", id: "saved_address_id" %>
+
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small mb-1">Full Name</label>
+              <%= text_field_tag "address[name]", address[:name].to_s, class: "form-control form-control-sm", id: "addr_name", required: true %>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small mb-1">Address Line 1</label>
+              <%= text_field_tag "address[line1]", address[:line1].to_s, class: "form-control form-control-sm", id: "addr_line1", required: true %>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small mb-1">Address Line 2 (Optional)</label>
+              <%= text_field_tag "address[line2]", address[:line2].to_s, class: "form-control form-control-sm", id: "addr_line2" %>
+            </div>
+
+            <div class="col-6">
+              <label class="form-label small mb-1">City/Town</label>
+              <%= text_field_tag "address[city]", address[:city].to_s, class: "form-control form-control-sm", id: "addr_city", required: true %>
+            </div>
+
+            <div class="col-6">
+              <label class="form-label small mb-1">County/State</label>
+              <%= text_field_tag "address[county]", address[:county].to_s, class: "form-control form-control-sm", id: "addr_county", required: true %>
+            </div>
+
+            <div class="col-6">
+              <label class="form-label small mb-1">Eircode</label>
+              <%= text_field_tag "address[postcode]", address[:postcode].to_s, class: "form-control form-control-sm", id: "addr_postcode", required: true %>
+            </div>
+
+            <div class="col-6">
+              <label class="form-label small mb-1">Country</label>
+              <select name="address[country_code]" class="form-select form-select-sm" id="addr_country" required>
+                <option value=""></option>
+                <% eu.each do |name, code| %>
+                  <option value="<%= code %>" <%= "selected" if address[:country_code].to_s == code %>><%= "#{flag_emoji(code)} #{name}" %></option>
+                <% end %>
+              </select>
+            </div>
+
+            <div class="col-12 mt-1" id="saveAddressWrap">
+              <div class="form-check">
+                <%= check_box_tag :save_address, "1", params[:save_address].to_s == "1", class: "form-check-input", id: "save_address" %>
+                <label class="form-check-label" for="save_address">Save address to my account</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="co-actions">
+            <%= submit_tag "Confirm Purchase", class: "btn btn-primary btn-sm" %>
+            <%= link_to "Cancel", marketplace_listing_path(l), class: "btn btn-outline-secondary btn-sm" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="co-right">
+      <div class="co-block">
+        <div class="fw-semibold mb-2">Saved Addresses</div>
+
+        <% if saved_addresses.any? %>
+          <div class="co-saved" id="savedList">
+            <% saved_addresses.each do |a| %>
+              <% name = a.respond_to?(:name) ? a.name.to_s : "" %>
+              <% line1 = a.respond_to?(:line1) ? a.line1.to_s : "" %>
+              <% line2 = a.respond_to?(:line2) ? a.line2.to_s : "" %>
+              <% city = a.respond_to?(:city) ? a.city.to_s : "" %>
+              <% county = a.respond_to?(:county) ? a.county.to_s : "" %>
+              <% postcode = a.respond_to?(:postcode) ? a.postcode.to_s : "" %>
+              <% cc = country_code_from.call(a) %>
+
+              <div class="co-saved-card"
+                   data-id="<%= a.id %>"
+                   data-name="<%= name %>"
+                   data-line1="<%= line1 %>"
+                   data-line2="<%= line2 %>"
+                   data-city="<%= city %>"
+                   data-county="<%= county %>"
+                   data-postcode="<%= postcode %>"
+                   data-country="<%= cc %>">
+                <div class="co-saved-top">
+                  <div>
+                    <div class="fw-semibold" style="font-size:.85rem;"><%= name.presence || "Saved Address" %></div>
+                    <div class="text-muted" style="font-size:.78rem;">
+                      <div><%= line1 %><%= line2.present? ? ", #{line2}" : "" %></div>
+                      <div><%= [city, county, postcode].reject(&:blank?).join(", ") %></div>
+                      <div><%= cc.present? ? "#{flag_emoji(cc)} #{country_name(cc)}" : "" %></div>
+                    </div>
+                  </div>
+
+                  <div class="co-saved-actions">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-use-saved="1">Use</button>
+                    <%= button_to "Delete", saved_address_path(a), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline" } %>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="text-muted" style="font-size:.85rem;">No saved addresses yet.</div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      function initSavedUse(){
+        const form = document.getElementById("buyForm");
+        const savedList = document.getElementById("savedList");
+        const savedId = document.getElementById("saved_address_id");
+        if(!form || !savedList || !savedId) return;
+        if(savedList.dataset.bound === "1") return;
+        savedList.dataset.bound = "1";
+
+        const fields = {
+          name: document.getElementById("addr_name"),
+          line1: document.getElementById("addr_line1"),
+          line2: document.getElementById("addr_line2"),
+          city: document.getElementById("addr_city"),
+          county: document.getElementById("addr_county"),
+          postcode: document.getElementById("addr_postcode"),
+          country: document.getElementById("addr_country")
+        };
+
+        function lockField(el){
+          if(!el) return;
+          const type = (el.tagName || "").toLowerCase();
+          if(type === "select"){
+            el.disabled = true;
+            const hid = document.createElement("input");
+            hid.type = "hidden";
+            hid.name = el.name;
+            hid.value = el.value;
+            hid.dataset.lockMirror = "1";
+            form.appendChild(hid);
+          }else{
+            el.readOnly = true;
+          }
+          el.dataset.locked = "1";
+          el.classList.add("bg-light");
+        }
+
+        function lockAll(){
+          document.querySelectorAll("[data-lock-mirror='1']").forEach((n) => n.remove());
+          Object.values(fields).forEach((el) => lockField(el));
+
+          const cb = document.getElementById("save_address");
+          const wrap = document.getElementById("saveAddressWrap");
+
+          if(cb){
+            cb.checked = false;
+            cb.disabled = true;
+          }
+
+          if(wrap){
+            wrap.style.display = "none";
+          }
+        }
+
+        function fillFromCard(card){
+          if(!card) return;
+          if(fields.name) fields.name.value = card.dataset.name || "";
+          if(fields.line1) fields.line1.value = card.dataset.line1 || "";
+          if(fields.line2) fields.line2.value = card.dataset.line2 || "";
+          if(fields.city) fields.city.value = card.dataset.city || "";
+          if(fields.county) fields.county.value = card.dataset.county || "";
+          if(fields.postcode) fields.postcode.value = card.dataset.postcode || "";
+          if(fields.country){
+            fields.country.value = (card.dataset.country || "").toUpperCase();
+            try{ fields.country.dispatchEvent(new Event("change", { bubbles: true })); }catch(_){}
+          }
+          savedId.value = card.dataset.id || "";
+          lockAll();
+        }
+
+        savedList.addEventListener("click", (e) => {
+          const btn = e.target.closest("button[data-use-saved='1']");
+          if(!btn) return;
+          const card = btn.closest(".co-saved-card");
+          if(!card) return;
+          fillFromCard(card);
+        });
+
+        form.addEventListener("submit", () => {
+          document.querySelectorAll("select[data-locked='1']").forEach((sel) => {
+            const existing = form.querySelector(`input[type="hidden"][name="${sel.name}"][data-lock-mirror="1"]`);
+            if(existing) existing.value = sel.value;
+          });
+        });
+      }
+
+      document.addEventListener("DOMContentLoaded", initSavedUse);
+      document.addEventListener("turbo:load", initSavedUse);
+    })();
+  </script>
+</div>

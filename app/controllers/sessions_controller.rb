@@ -1,8 +1,10 @@
 class SessionsController < ApplicationController
+  # Gives this controller access to current_user and other auth helper methods
   include Authentication
 
   def new; end
 
+  # Checks username and password, then starts either a normal or admin MFA session
   def create
     u = User.find_by("lower(username) = ?", params[:username].to_s.strip.downcase)
 
@@ -33,6 +35,7 @@ class SessionsController < ApplicationController
     end
   end
 
+  # Clears all session data and logs the user out
   def destroy
     reset_session
     redirect_to portfolio_path, notice: "Logged out.", status: :see_other

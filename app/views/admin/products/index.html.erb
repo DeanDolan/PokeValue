@@ -9,6 +9,7 @@
     .col-listings{width:90px}
     .col-value{width:160px}
     .product-thumb{height:42px;width:auto;object-fit:contain}
+    .admin-update-values-wrap{padding-top:1rem;margin-bottom:1.5rem}
   </style>
 
   <% @groups.each do |type_name, rows| %>
@@ -55,7 +56,7 @@
     </div>
   <% end %>
 
-  <div class="d-flex justify-content-end mb-4">
+  <div class="d-flex justify-content-end admin-update-values-wrap">
     <button type="submit" class="btn btn-primary">Update Values</button>
   </div>
 <% end %>

@@ -20,7 +20,18 @@ class PagesController < ApplicationController
   def marketplace; end
   def auction; end
   def raffle; end
-  def showcase; end
+
+  def community
+    @community_channels = CommunityPost::CHANNELS.map { |channel| [ CommunityPost.channel_label(channel), channel ] }
+    requested_channel = params[:channel].to_s
+    @selected_channel = CommunityPost::CHANNELS.include?(requested_channel) ? requested_channel : CommunityPost::CHANNELS.first
+    @community_post = CommunityPost.new(channel: @selected_channel)
+    @community_posts = CommunityPost.includes(:user, :community_reactions, { community_comments: :user }, { images_attachments: :blob }).where(channel: @selected_channel).order(created_at: :desc)
+  end
+
+  def showcase
+    redirect_to community_path
+  end
 
   def sets
     data        = load_sets_data
@@ -469,7 +480,78 @@ class PagesController < ApplicationController
 
   def load_sets_data
     path = Rails.root.join("config", "sets.json")
-    JSON.parse(File.read(path, encoding: "bom|utf-8"))
+    data = JSON.parse(File.read(path, encoding: "bom|utf-8"))
+    manual_extra_sets_data.merge(data)
+  end
+
+  def manual_extra_sets_data
+    {
+      "perfectorder" => {
+        "slug" => "perfectorder",
+        "name" => "Perfect Order",
+        "era" => "Mega Evolution",
+        "releaseDate" => "March 27 2026",
+        "totalValue" => nil,
+        "totalCards" => 203,
+        "cards" => 203,
+        "secretCards" => 0,
+        "logo" => "images/sets/perfectorderlogo.png",
+        "boxImage" => "images/sets/perfectorder.png",
+        "pokedataUrl" => "https://www.pokedata.io/sets#ENGLISH",
+        "sealed" => [
+          {
+            "type" => "etb",
+            "name" => "Elite Trainer Box",
+            "img" => "images/sealed/perfectorder_etb.png"
+          },
+          {
+            "type" => "pc_etb",
+            "name" => "Pokemon Center Elite Trainer Box",
+            "img" => "images/sealed/perfectorder_pcetb.png"
+          },
+          {
+            "type" => "booster_box",
+            "name" => "Booster Box",
+            "img" => "images/sealed/perfectorder_boosterbox.png"
+          },
+          {
+            "type" => "booster_bundle",
+            "name" => "Booster Bundle",
+            "img" => "images/sealed/perfectorder_boosterbundle.png"
+          }
+        ]
+      },
+      "ascendedheroes" => {
+        "slug" => "ascendedheroes",
+        "name" => "Ascended Heroes",
+        "era" => "Mega Evolution",
+        "releaseDate" => "January 30 2026",
+        "totalValue" => nil,
+        "totalCards" => 615,
+        "cards" => 615,
+        "secretCards" => 0,
+        "logo" => "images/sets/ascendedheroeslogo.png",
+        "boxImage" => "images/sets/ascendedheroes.png",
+        "pokedataUrl" => "https://www.pokedata.io/sets#ENGLISH",
+        "sealed" => [
+          {
+            "type" => "etb",
+            "name" => "Elite Trainer Box",
+            "img" => "images/sealed/ascendedheroes_etb.png"
+          },
+          {
+            "type" => "pc_etb",
+            "name" => "Pokemon Center Elite Trainer Box",
+            "img" => "images/sealed/ascendedheroes_pcetb.png"
+          },
+          {
+            "type" => "booster_bundle",
+            "name" => "Booster Bundle",
+            "img" => "images/sealed/ascendedheroes_boosterbundle.png"
+          }
+        ]
+      }
+    }
   end
 
   def set_logo_override_filename(slug:)

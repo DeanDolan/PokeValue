@@ -1,9 +1,33 @@
 <footer class="website footer">
+  <style>
+    .pv-footer-logo{
+      height:100px;
+      width:auto;
+      display:block;
+      margin:0 auto;
+    }
+
+    .pv-logo-dark{
+      display:none;
+    }
+
+    html[data-pv-theme="dark"] .pv-logo-light{
+      display:none;
+    }
+
+    html[data-pv-theme="dark"] .pv-logo-dark{
+      display:block;
+    }
+  </style>
+
   <div class="footer-inner container py-4 text-center">
     <%= link_to portfolio_path, class: "logo d-inline-block mb-2" do %>
-      <%= image_tag "pokevaluelogo.png",
+      <%= image_tag "logos/pokevaluelogolightmode.png",
                     alt: "PokeValue logo",
-                    height: 100 %>
+                    class: "pv-footer-logo pv-logo-light" %>
+      <%= image_tag "logos/pokevaluelogodarkmode.png",
+                    alt: "PokeValue logo",
+                    class: "pv-footer-logo pv-logo-dark" %>
     <% end %>
     <p class="footer-tagline mb-1">Pokemon investing since 2025.</p>
     <div class="text-muted small">© <%= Time.current.year %> PokeValue</div>

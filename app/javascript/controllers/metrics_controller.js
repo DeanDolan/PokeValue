@@ -13,7 +13,8 @@ export default class extends Controller {
       cost: "Total Cost (€)",
       value: "Total Value (€)",
       pl: "Unrealised P/L (€)",
-      roi: "ROI (%)"
+      roi: "ROI (%)",
+      realised_pl: "Realised P/L (€)"
     }
     this.charts = {}
     this.activeKey = "cost"
@@ -67,9 +68,7 @@ export default class extends Controller {
       const m = await import("chart.js/auto")
       this.Chart = m.default || m.Chart || window.Chart
       if (this.Chart) return { ok: true }
-    } catch (e) {
-      this.Chart = null
-    }
+    } catch (_) {}
 
     try {
       const m = await import("chart.js")
@@ -138,12 +137,21 @@ export default class extends Controller {
 
     this.series = series
     this.labels = series.map(p => this.ddmmyyyy(p.date))
-    this.dataByKey = {
-      cost: series.map(p => p.total_cost),
-      value: series.map(p => p.total_value),
-      pl: series.map(p => p.pl),
-      roi: series.map(p => p.roi)
+
+    const pick = (p, keys) => {
+      for (const k of keys) {
+        if (p && Object.prototype.hasOwnProperty.call(p, k) && p[k] != null) return p[k]
+      }
+      return null
     }
+
+    const cost = series.map(p => pick(p, ["total_cost", "cost", "cost_total"]))
+    const value = series.map(p => pick(p, ["total_value", "value", "value_total"]))
+    const pl = series.map(p => pick(p, ["pl", "unrealised_pl", "unrealized_pl"]))
+    const roi = series.map(p => pick(p, ["roi", "roi_pct", "roi_percent"]))
+    const realised = series.map(p => pick(p, ["realised_pl", "realized_pl", "realised", "realized"]))
+
+    this.dataByKey = { cost, value, pl, roi, realised_pl: realised }
 
     return { ok: true, debug: json.debug }
   }
@@ -194,12 +202,16 @@ export default class extends Controller {
       delete this.charts[key]
     }
 
+    const dataset = {
+      label: this.labelByKey[key] || key,
+      data,
+      tension: 0.25,
+      pointRadius: 2
+    }
+
     this.charts[key] = new this.Chart(canvas.getContext("2d"), {
       type: "line",
-      data: {
-        labels: this.labels,
-        datasets: [{ label: this.labelByKey[key], data, tension: 0.25, pointRadius: 2 }]
-      },
+      data: { labels: this.labels, datasets: [dataset] },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -210,7 +222,7 @@ export default class extends Controller {
   }
 
   ddmmyyyy(iso) {
-    const d = new Date(iso + "T00:00:00")
+    const d = new Date(String(iso) + "T00:00:00")
     const dd = String(d.getDate()).padStart(2, "0")
     const mm = String(d.getMonth() + 1).padStart(2, "0")
     const yyyy = d.getFullYear()

@@ -1,0 +1,1769 @@
+<% 
+is_host = current_user && @raffle.host_id.to_i == current_user.id.to_i
+is_completed = @raffle.completed?
+is_active = @raffle.active?
+auto_spin = params[:auto_spin].to_s == "1" || params[:reveal].to_s == "1"
+max_name_length = 24
+ticket_items = @tickets.sort_by(&:ticket_number).map do |ticket|
+  short_name = ticket.display_name.to_s[0, max_name_length]
+  {
+    number: ticket.ticket_number.to_i,
+    name: short_name,
+    label: "##{ticket.ticket_number} #{short_name}",
+    user_id: ticket.user_id.to_i
+  }
+end
+user_ticket_numbers =
+  if current_user
+    @tickets.select { |ticket| ticket.user_id.to_i == current_user.id.to_i }.map(&:ticket_number).sort
+  else
+    []
+  end
+available_numbers = @available_numbers || []
+my_paid_all = @my_tickets.any? && @my_tickets.all?(&:paid?)
+winning_name = @winning_ticket&.display_name.to_s
+winning_number = @winning_ticket&.ticket_number.to_i
+entrant_viewer = current_user.present? && @tickets.any? { |ticket| ticket.user_id.to_i == current_user.id.to_i }
+my_revolut_tag = current_user&.revolut_tag.to_s
+host_revolut_tag = @raffle.revolut_tag.to_s
+assignment_reason_options = ["Mini Raffle", "Free Ticket(s)"]
+%>
+
+<div class="container-fluid py-3">
+  <style>
+    .rf-page-stack{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .rf-card{
+      background:#ffffff;
+      border-radius:1rem;
+      border:1px solid #d4d4d8;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      padding:16px;
+    }
+    .rf-title{
+      margin:0;
+      font-size:1.45rem;
+      font-weight:700;
+    }
+    .rf-sub{
+      color:#6b7280;
+      font-size:.88rem;
+      margin-top:4px;
+    }
+    .rf-stat-grid{
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:10px;
+      margin-top:14px;
+    }
+    .rf-stat{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:12px;
+      text-align:center;
+      background:#fafafa;
+    }
+    .rf-stat-label{
+      font-size:.72rem;
+      color:#6b7280;
+      margin-bottom:4px;
+    }
+    .rf-stat-value{
+      font-size:1rem;
+      font-weight:700;
+      color:#111827;
+    }
+    .rf-gallery{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+      margin-top:14px;
+    }
+    .rf-gallery img{
+      width:100%;
+      height:220px;
+      object-fit:cover;
+      border-radius:12px;
+      border:1px solid #e5e7eb;
+    }
+    .rf-table-wrap{
+      overflow-x:auto;
+    }
+    .rf-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:1120px;
+      font-size:.8rem;
+    }
+    .rf-table thead th{
+      background:#f9fafb;
+      font-weight:700;
+      text-align:center;
+      font-size:.75rem;
+      color:#374151;
+      padding:9px 10px;
+      border-bottom:1px solid #e5e7eb;
+      white-space:nowrap;
+    }
+    .rf-table tbody td{
+      padding:9px 10px;
+      border-bottom:1px solid #f1f5f9;
+      text-align:center;
+      vertical-align:middle;
+      color:#111827;
+    }
+    .rf-row-self{
+      background:#eff6ff;
+    }
+    .rf-name-self{
+      font-weight:700;
+      color:#1d4ed8;
+    }
+    .rf-muted{
+      color:#6b7280;
+    }
+    .rf-ticket-box{
+      max-height:240px;
+      overflow:auto;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:10px;
+      background:#fafafa;
+    }
+    .rf-number-chip{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:48px;
+      padding:.35rem .6rem;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      font-size:.72rem;
+      margin:0 6px 6px 0;
+      font-weight:700;
+      color:#111827;
+    }
+    .rf-number-chip-self{
+      background:#dbeafe;
+      border-color:#93c5fd;
+      color:#1d4ed8;
+    }
+    .rf-form-note{
+      color:#6b7280;
+      font-size:.78rem;
+      margin-top:4px;
+    }
+    .rf-purchase-grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+    }
+    .rf-purchase-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .rf-winner-box{
+      border:1px solid #dcfce7;
+      background:#f0fdf4;
+      color:#166534;
+      border-radius:12px;
+      padding:12px;
+      font-weight:700;
+    }
+    .rf-ended-box{
+      border:1px solid #fee2e2;
+      background:#fef2f2;
+      color:#991b1b;
+      border-radius:12px;
+      padding:12px;
+      font-weight:700;
+    }
+    .rf-blackout{
+      display:inline-block;
+      background:#111827;
+      color:#111827;
+      border-radius:6px;
+      padding:.15rem .45rem;
+      min-width:130px;
+      user-select:none;
+    }
+    .rf-wheel-card{
+      display:flex;
+      flex-direction:column;
+    }
+    .rf-wheel-controls{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .rf-wheel-tools{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .rf-wheel-stage{
+      position:relative;
+      width:50%;
+      max-width:50%;
+      aspect-ratio:1 / 1;
+      margin:0 auto;
+      border-radius:16px;
+      border:1px solid #d1d5db;
+      background:#f8fafc;
+      overflow:hidden;
+    }
+    .rf-wheel-canvas{
+      width:100%;
+      height:100%;
+      display:block;
+      cursor:grab;
+      background:#ffffff;
+    }
+    .rf-wheel-canvas.rf-dragging{
+      cursor:grabbing;
+    }
+    .rf-wheel-pointer{
+      position:absolute;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      width:0;
+      height:0;
+      border-left:18px solid transparent;
+      border-right:18px solid transparent;
+      border-top:32px solid #dc2626;
+      z-index:6;
+      filter:drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+    }
+    .rf-wheel-countdown{
+      position:absolute;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      font-size:5rem;
+      font-weight:800;
+      color:#111827;
+      background:rgba(255,255,255,0.72);
+      z-index:7;
+    }
+    .rf-wheel-reveal{
+      margin-top:12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:center;
+      text-align:center;
+    }
+    .rf-wheel-result{
+      font-weight:800;
+      font-size:1.02rem;
+      color:#111827;
+    }
+    .rf-wheel-result-number{
+      color:#111827;
+      font-weight:800;
+    }
+    .rf-winner-overlay{
+      position:absolute;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:8;
+      pointer-events:none;
+    }
+    .rf-winner-overlay-box{
+      background:rgba(17,24,39,0.92);
+      color:#ffffff;
+      border-radius:16px;
+      padding:20px 24px;
+      text-align:center;
+      box-shadow:0 18px 40px rgba(0,0,0,0.25);
+      min-width:300px;
+      max-width:80%;
+    }
+    .rf-winner-overlay-title{
+      font-size:1rem;
+      margin-bottom:8px;
+      opacity:.95;
+    }
+    .rf-winner-overlay-main{
+      font-size:1.7rem;
+      font-weight:800;
+      line-height:1.2;
+      word-break:break-word;
+    }
+    .rf-confetti{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      z-index:9;
+      background:transparent !important;
+      background-color:transparent !important;
+    }
+    #raffleConfetti{
+      background:transparent !important;
+      background-color:transparent !important;
+    }
+    .rf-ticket-select{
+      width:100%;
+      min-height:220px;
+      border:1px solid #d1d5db;
+      border-radius:12px;
+      background:#fff;
+      overflow:auto;
+      padding:10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-content:flex-start;
+    }
+    .rf-ticket-option{
+      position:relative;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:64px;
+      padding:.48rem .7rem;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#ffffff;
+      color:#000000;
+      font-size:.76rem;
+      font-weight:700;
+      cursor:pointer;
+      user-select:none;
+      transition:all .12s ease;
+    }
+    .rf-ticket-option span{
+      color:inherit !important;
+      background:transparent !important;
+    }
+    .rf-ticket-option:hover{
+      background:#000000 !important;
+      background-color:#000000 !important;
+      border-color:#000000 !important;
+      color:#ffffff !important;
+      box-shadow:none !important;
+    }
+    .rf-ticket-option:hover span{
+      color:#ffffff !important;
+      background:transparent !important;
+    }
+    .rf-ticket-option input{
+      position:absolute;
+      opacity:0;
+      pointer-events:none;
+    }
+    .rf-ticket-option.is-selected{
+      background:#ffffff;
+      border-color:#000000;
+      color:#000000;
+      box-shadow:0 0 0 1px rgba(0,0,0,0.12) inset;
+    }
+    .rf-ticket-option.is-selected:hover{
+      background:#000000 !important;
+      background-color:#000000 !important;
+      border-color:#000000 !important;
+      color:#ffffff !important;
+      box-shadow:none !important;
+    }
+    .rf-ticket-option.is-selected:hover span{
+      color:#ffffff !important;
+      background:transparent !important;
+    }
+    .rf-icon-btn{
+      width:34px;
+      height:34px;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#ffffff;
+      color:#111827;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      font-size:1.15rem;
+      font-weight:800;
+      line-height:1;
+      cursor:pointer;
+      transition:all .12s ease;
+    }
+    .rf-icon-btn:hover{
+      background:#f3f4f6;
+      border-color:#9ca3af;
+    }
+    .rf-confirm-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,0.45);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:2000;
+      padding:16px;
+    }
+    .rf-confirm-box{
+      width:100%;
+      max-width:430px;
+      background:#ffffff;
+      border-radius:18px;
+      border:1px solid #d1d5db;
+      box-shadow:0 24px 60px rgba(15,23,42,0.28);
+      padding:20px;
+      text-align:center;
+    }
+    .rf-confirm-title{
+      font-size:1.1rem;
+      font-weight:800;
+      color:#111827;
+      margin-bottom:10px;
+    }
+    .rf-confirm-text{
+      color:#4b5563;
+      font-size:.92rem;
+      margin-bottom:16px;
+    }
+    .rf-confirm-actions{
+      display:flex;
+      gap:10px;
+      justify-content:center;
+      flex-wrap:wrap;
+    }
+    .rf-tag-card{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:14px;
+      background:#fafafa;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .rf-tag-label{
+      font-size:.78rem;
+      color:#6b7280;
+      font-weight:700;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .rf-tag-value{
+      font-size:1rem;
+      font-weight:800;
+      color:#111827;
+    }
+    .rf-tag-hidden{
+      display:inline-block;
+      background:#111827;
+      color:#111827;
+      border-radius:6px;
+      padding:.18rem .55rem;
+      min-width:170px;
+      user-select:none;
+    }
+    .rf-verified-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:.25rem .55rem;
+      border-radius:999px;
+      background:#2563eb;
+      border:1px solid #1d4ed8;
+      color:#ffffff;
+      font-size:.68rem;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    .rf-paid-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:.25rem .55rem;
+      border-radius:999px;
+      background:#f0fdf4;
+      border:1px solid #86efac;
+      color:#166534;
+      font-size:.68rem;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    :root[data-pv-theme="dark"] .rf-wheel-stage{
+      background:#000000 !important;
+      background-color:#000000 !important;
+      border-color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-wheel-canvas{
+      background:#000000 !important;
+      background-color:#000000 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-confetti,
+    :root[data-pv-theme="dark"] #raffleConfetti{
+      background:transparent !important;
+      background-color:transparent !important;
+    }
+    :root[data-pv-theme="dark"] .rf-wheel-pointer{
+      top:10px !important;
+      left:50% !important;
+      transform:translateX(-50%) !important;
+      width:0 !important;
+      height:0 !important;
+      background:transparent !important;
+      background-color:transparent !important;
+      border-left:18px solid transparent !important;
+      border-right:18px solid transparent !important;
+      border-top:32px solid #d4af37 !important;
+      border-bottom:0 !important;
+      border-radius:0 !important;
+      filter:drop-shadow(0 2px 3px rgba(212,175,55,0.35)) !important;
+    }
+    :root[data-pv-theme="dark"] .rf-wheel-pointer::after{
+      display:none !important;
+      content:none !important;
+    }
+    :root[data-pv-theme="dark"] .rf-wheel-countdown{
+      color:#d4af37 !important;
+      background:rgba(42,42,42,0.84) !important;
+      background-color:rgba(42,42,42,0.84) !important;
+    }
+    :root[data-pv-theme="dark"] .rf-winner-overlay-box{
+      background:rgba(0,0,0,0.94) !important;
+      color:#d4af37 !important;
+      border:1px solid #d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-winner-overlay-box *{
+      color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-ticket-select{
+      background:#000000 !important;
+      background-color:#000000 !important;
+      border-color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option{
+      background:#d4af37 !important;
+      background-color:#d4af37 !important;
+      color:#000000 !important;
+      border-color:#d4af37 !important;
+      box-shadow:none !important;
+    }
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option span{
+      color:#000000 !important;
+      background:transparent !important;
+    }
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:not(.is-selected):hover,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:hover,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:focus,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:active,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:hover,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:focus,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:active{
+      background:#000000 !important;
+      background-color:#000000 !important;
+      color:#d4af37 !important;
+      border-color:#d4af37 !important;
+      box-shadow:none !important;
+      filter:none !important;
+    }
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:not(.is-selected):hover span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:hover span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:focus span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:active span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:hover span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:focus span,
+    :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option.is-selected:active span{
+      color:#d4af37 !important;
+      background:transparent !important;
+    }
+    @media (max-width: 992px){
+      .rf-stat-grid{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+      }
+      .rf-wheel-stage{
+        width:90%;
+        max-width:90%;
+      }
+    }
+  </style>
+
+  <div class="rf-page-stack">
+    <section class="rf-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+          <h1 class="rf-title"><%= @raffle.title %></h1>
+          <div class="rf-sub">
+            <%= @raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %>
+            <% if @raffle.raffle_kind == "mini" && @raffle.main_raffle.present? %>
+              · Main Raffle: <%= @raffle.main_raffle.title %>
+            <% end %>
+            · Hosted by <%= @raffle.host.username %>
+            · Created <%= time_ago_in_words(@raffle.created_at) %> ago
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <%= link_to "Back", raffles_path, class: "btn btn-outline-secondary btn-sm" %>
+
+          <% if is_host && is_active %>
+            <%= button_to "End Raffle", end_raffle_raffle_path(@raffle), method: :post, class: "btn btn-outline-danger btn-sm", form: { data: { turbo_confirm: "Are you sure you want to end this raffle?" } } %>
+          <% end %>
+
+          <% if is_host && is_active && @raffle.sold_out? %>
+            <%= button_to "Run Raffle", run_raffle_raffle_path(@raffle), method: :post, class: "btn btn-success btn-sm", form: { class: "rf-run-raffle-form" } %>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="rf-stat-grid">
+        <div class="rf-stat">
+          <div class="rf-stat-label">Ticket Price</div>
+          <div class="rf-stat-value"><%= number_to_currency(@raffle.ticket_price_eur, unit: "€") %></div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Sold</div>
+          <div class="rf-stat-value"><%= @raffle.sold_tickets_count %> / <%= @raffle.total_tickets %></div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Tickets Left</div>
+          <div class="rf-stat-value"><%= @raffle.tickets_left %></div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Amount Paid</div>
+          <div class="rf-stat-value"><%= number_to_currency(@paid_amount_cents.to_i / 100.0, unit: "€") %></div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Status</div>
+          <div class="rf-stat-value"><%= @raffle.status.capitalize %></div>
+        </div>
+      </div>
+
+      <% if @raffle.photos.attached? %>
+        <div class="rf-gallery">
+          <% @raffle.photos.first(4).each do |photo| %>
+            <%= image_tag url_for(photo), alt: "" %>
+          <% end %>
+        </div>
+      <% end %>
+    </section>
+
+    <section class="rf-card">
+      <h2 class="h5 mb-3">Participants</h2>
+      <div class="rf-table-wrap">
+        <table class="rf-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Tickets</th>
+              <th>Numbers</th>
+              <% if is_host %>
+                <th>Reason</th>
+              <% end %>
+              <th>Paid</th>
+              <th>Verified</th>
+              <th>Paid Amount</th>
+              <th>Total Amount</th>
+              <% if is_host %>
+                <th>Revolut Tag</th>
+                <th>Actions</th>
+              <% elsif is_active %>
+                <th>Actions</th>
+              <% end %>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @participant_rows.any? %>
+              <% @participant_rows.each do |row| %>
+                <% is_self_row = current_user && row[:user_id].to_i == current_user.id.to_i %>
+                <tr class="<%= 'rf-row-self' if is_self_row %>">
+                  <td class="<%= 'rf-name-self' if is_self_row %>"><%= row[:display_name] %></td>
+                  <td><%= row[:ticket_count] %></td>
+                  <td><%= row[:ticket_numbers].map { |n| "##{n}" }.join(", ") %></td>
+
+                  <% if is_host %>
+                    <td><%= row[:assignment_reason].presence || "-" %></td>
+                  <% end %>
+
+                  <td>
+                    <% if row[:paid_all] %>
+                      <span class="rf-paid-badge">Paid</span>
+                    <% else %>
+                      <span class="rf-muted">No</span>
+                    <% end %>
+                  </td>
+                  <td>
+                    <% if row[:verified_all] %>
+                      <span class="rf-verified-badge">Verified</span>
+                    <% else %>
+                      <span class="rf-muted">No</span>
+                    <% end %>
+                  </td>
+                  <td><%= number_to_currency(row[:paid_amount_cents].to_i / 100.0, unit: "€") %></td>
+                  <td><%= number_to_currency(row[:total_amount_cents].to_i / 100.0, unit: "€") %></td>
+
+                  <% if is_host %>
+                    <td>
+                      <% if row[:revolut_tag].present? %>
+                        <div class="rf-tag-label mb-1">Revolut Tag</div>
+                        <div>
+                          <span class="rf-tag-hidden" id="entrant_tag_hidden_<%= "#{row[:user_id]}_#{row[:display_name].parameterize}" %>">Hidden</span>
+                          <span class="rf-tag-value" id="entrant_tag_value_<%= "#{row[:user_id]}_#{row[:display_name].parameterize}" %>" style="display:none;"><%= row[:revolut_tag] %></span>
+                        </div>
+                      <% else %>
+                        <span class="rf-muted">None</span>
+                      <% end %>
+                    </td>
+                    <td class="d-flex gap-2 justify-content-center flex-wrap">
+                      <% if row[:revolut_tag].present? %>
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline-dark rf-reveal-entrant-tag-btn"
+                          data-hidden-id="entrant_tag_hidden_<%= "#{row[:user_id]}_#{row[:display_name].parameterize}" %>"
+                          data-value-id="entrant_tag_value_<%= "#{row[:user_id]}_#{row[:display_name].parameterize}" %>">
+                          Reveal
+                        </button>
+                      <% end %>
+
+                      <%= button_to(row[:verified_all] ? "Unverify" : "Verify",
+                            verify_payment_raffle_path(@raffle),
+                            method: :post,
+                            params: { user_id: row[:user_id], display_name: row[:display_name] },
+                            class: "btn btn-sm #{row[:verified_all] ? 'btn-outline-secondary' : 'btn-primary'}") %>
+                    </td>
+                  <% elsif is_active %>
+                    <td>
+                      <% if is_self_row %>
+                        <span class="rf-muted">Use the payment section below</span>
+                      <% else %>
+                        <span class="rf-muted">-</span>
+                      <% end %>
+                    </td>
+                  <% end %>
+                </tr>
+              <% end %>
+            <% else %>
+              <tr>
+                <td colspan="<%= is_host ? 10 : (is_active ? 8 : 7) %>" class="rf-muted">No participants yet.</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="rf-card">
+      <h2 class="h5 mb-3">All Ticket Numbers</h2>
+      <div class="rf-ticket-box">
+        <% if @tickets.any? %>
+          <% @tickets.sort_by(&:ticket_number).each do |ticket| %>
+            <span class="rf-number-chip <%= 'rf-number-chip-self' if current_user && ticket.user_id.to_i == current_user.id.to_i %>">#<%= ticket.ticket_number %> <%= ticket.display_name.to_s[0, max_name_length] %></span>
+          <% end %>
+        <% else %>
+          <div class="rf-muted">No tickets assigned yet.</div>
+        <% end %>
+      </div>
+    </section>
+
+    <% if current_user && is_active %>
+      <section class="rf-card">
+        <h2 class="h5 mb-3"><%= is_host ? "Assign Ticket(s)" : "Buy Ticket(s)" %></h2>
+
+        <% if available_numbers.any? %>
+          <%= form_with url: purchase_tickets_raffle_path(@raffle), method: :post, local: true do %>
+            <div class="rf-purchase-grid">
+              <% if is_host %>
+                <div>
+                  <label class="form-label">Assign Name</label>
+                  <%= text_field_tag :assigned_name, nil, class: "form-control", placeholder: "Type any name" %>
+                  <div class="rf-form-note">A name is always required when assigning tickets. Hosts cannot assign tickets to themselves.</div>
+                </div>
+
+                <div>
+                  <label class="form-label">Reason:</label>
+                  <%= select_tag :assignment_reason,
+                        options_for_select([["", ""]] + assignment_reason_options.map { |reason| [reason, reason] }),
+                        class: "form-select",
+                        required: true %>
+                </div>
+              <% end %>
+
+              <div>
+                <label class="form-label">Choose Ticket Numbers</label>
+                <div class="rf-ticket-select" id="availableTicketPicker">
+                  <% available_numbers.each do |number| %>
+                    <label class="rf-ticket-option" data-ticket-option>
+                      <input type="checkbox" name="ticket_numbers[]" value="<%= number %>">
+                      <span>#<%= number %></span>
+                    </label>
+                  <% end %>
+                </div>
+                <div class="rf-form-note">You can click individual numbers, drag across numbers, or mix both methods.</div>
+              </div>
+
+              <div>
+                <label class="form-label">Or Random Quantity</label>
+                <%= number_field_tag :random_quantity, nil, min: 1, max: @raffle.tickets_left, class: "form-control", placeholder: "e.g. 3" %>
+                <div class="rf-form-note">Optional. Leave blank if choosing exact numbers or buying all remaining tickets.</div>
+              </div>
+
+              <div class="rf-purchase-actions">
+                <%= submit_tag((is_host ? "Assign Ticket(s)" : "Buy Ticket(s)"), class: "btn btn-primary btn-sm") %>
+                <%= button_tag((is_host ? "Assign All Available" : "Buy All Available"), type: "submit", name: "buy_all_available", value: "1", class: "btn btn-outline-primary btn-sm") %>
+              </div>
+            </div>
+          <% end %>
+        <% else %>
+          <div class="rf-muted">No tickets left to buy.</div>
+        <% end %>
+      </section>
+    <% end %>
+
+    <% if current_user && user_ticket_numbers.any? && is_active %>
+      <section class="rf-card">
+        <h2 class="h5 mb-3">Your Tickets</h2>
+        <div class="mb-3">
+          <% user_ticket_numbers.each do |number| %>
+            <span class="rf-number-chip rf-number-chip-self">#<%= number %></span>
+          <% end %>
+        </div>
+
+        <%= form_with url: return_tickets_raffle_path(@raffle), method: :post, local: true do %>
+          <div class="mb-3">
+            <label class="form-label">Return Selected Tickets</label>
+            <%= select_tag "ticket_numbers[]",
+                  options_for_select(user_ticket_numbers.map { |number| ["##{number}", number] }),
+                  multiple: true,
+                  size: [ user_ticket_numbers.size, 8 ].min,
+                  class: "form-select" %>
+          </div>
+          <%= submit_tag("Return Tickets", class: "btn btn-outline-danger btn-sm") %>
+        <% end %>
+      </section>
+
+      <% unless is_host %>
+        <section class="rf-card">
+          <h2 class="h5 mb-3">Pay For Tickets</h2>
+
+          <div class="rf-tag-card mb-3">
+            <div class="rf-tag-label">Host Revolut Tag</div>
+            <div>
+              <span class="rf-tag-hidden" id="host_tag_hidden">Revolut Tag Hidden</span>
+              <span class="rf-tag-value" id="host_tag_value" style="display:none;"><%= host_revolut_tag %></span>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              <button type="button" class="btn btn-sm btn-outline-dark" id="revealHostTagButton" <%= "disabled" if host_revolut_tag.blank? %>>Pay For Tickets</button>
+            </div>
+          </div>
+
+          <%= form_with url: toggle_paid_raffle_path(@raffle), method: :post, local: true do %>
+            <div class="mb-3">
+              <label class="form-label">Your Revolut Tag</label>
+              <%= text_field_tag :revolut_tag,
+                    my_revolut_tag.presence,
+                    class: "form-control",
+                    placeholder: "@yourtag",
+                    maxlength: 80,
+                    required: true,
+                    readonly: true %>
+              <div class="rf-form-note">This Revolut Tag is taken from your account and cannot be changed here.</div>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+              <%= submit_tag(my_paid_all ? "Mark All Unpaid" : "Mark All Paid", class: "btn btn-sm #{my_paid_all ? 'btn-outline-secondary' : 'btn-success'}") %>
+            </div>
+          <% end %>
+        </section>
+      <% end %>
+    <% end %>
+
+    <% if is_completed %>
+      <section class="rf-card">
+        <h2 class="h5 mb-3">Winner</h2>
+        <div class="rf-winner-box">
+          <% if entrant_viewer %>
+            <div id="winnerBoxMasked">
+              Winner:
+              <span class="rf-blackout">#<%= winning_number %> <%= winning_name.to_s[0, max_name_length] %></span>
+            </div>
+            <div id="winnerBoxRevealed" style="display:none;">
+              Winner: #<%= winning_number %> - <%= winning_name %>
+            </div>
+          <% else %>
+            <div id="winnerBoxMasked" style="display:none;"></div>
+            <div id="winnerBoxRevealed">
+              Winner: #<%= winning_number %> - <%= winning_name %>
+            </div>
+          <% end %>
+        </div>
+      </section>
+    <% elsif @raffle.incompleted? %>
+      <section class="rf-card">
+        <h2 class="h5 mb-3">Raffle Ended</h2>
+        <div class="rf-ended-box">
+          This raffle ended without completion.
+        </div>
+      </section>
+    <% end %>
+
+    <section class="rf-card rf-wheel-card" id="raffleWheelCard">
+      <div class="rf-wheel-controls">
+        <h2 class="h5 mb-0">Wheel</h2>
+        <div class="rf-wheel-tools">
+          <button type="button" class="rf-icon-btn" id="focusWinnerButton" title="Show Winner Position" aria-label="Show Winner Position">◎</button>
+          <button type="button" class="rf-icon-btn" id="wheelReset" title="Reset" aria-label="Reset">↺</button>
+        </div>
+      </div>
+
+      <div class="rf-wheel-stage" id="raffleWheelStage">
+        <div class="rf-wheel-pointer"></div>
+        <canvas id="raffleWheelCanvas" class="rf-wheel-canvas"></canvas>
+        <div class="rf-wheel-countdown" id="raffleWheelCountdown"></div>
+        <canvas id="raffleConfetti" class="rf-confetti"></canvas>
+        <div class="rf-winner-overlay" id="raffleWinnerOverlay">
+          <div class="rf-winner-overlay-box">
+            <div class="rf-winner-overlay-title">Winner</div>
+            <div class="rf-winner-overlay-main" id="raffleWinnerOverlayText"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rf-wheel-reveal">
+        <% if is_completed && entrant_viewer %>
+          <button type="button" class="btn btn-primary btn-sm" id="revealWinnerButton">Reveal Winner</button>
+        <% end %>
+
+        <% if is_completed && entrant_viewer %>
+          <div class="rf-wheel-result" id="winnerResultMasked">
+            Winning Ticket:
+            <span class="rf-blackout">#<%= winning_number %> <%= winning_name.to_s[0, max_name_length] %></span>
+          </div>
+
+          <div class="rf-wheel-result" id="winnerResultRevealed" style="display:none;">
+            Winning Ticket:
+            <span class="rf-wheel-result-number">#<%= winning_number %></span>
+            -
+            <span><%= winning_name %></span>
+          </div>
+        <% elsif is_completed %>
+          <div class="rf-wheel-result" id="winnerResultMasked" style="display:none;"></div>
+          <div class="rf-wheel-result" id="winnerResultRevealed">
+            Winning Ticket:
+            <span class="rf-wheel-result-number">#<%= winning_number %></span>
+            -
+            <span><%= winning_name %></span>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  </div>
+
+  <div class="rf-confirm-overlay" id="runRaffleConfirm">
+    <div class="rf-confirm-box">
+      <div class="rf-confirm-title">Run Raffle</div>
+      <div class="rf-confirm-text">Have you made sure to collect all the money?</div>
+      <div class="rf-confirm-actions">
+        <button type="button" class="btn btn-outline-secondary" id="runRaffleCancel">No - Cancel</button>
+        <button type="button" class="btn btn-success" id="runRaffleConfirmBtn">Yes - Run Raffle!</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    ;(function () {
+      const data = {
+        raffleId: <%= @raffle.id %>,
+        tickets: <%= raw(ticket_items.to_json) %>,
+        winningNumber: <%= raw(winning_number.to_json) %>,
+        winningName: <%= raw(winning_name.to_json) %>,
+        completed: <%= is_completed ? "true" : "false" %>,
+        active: <%= is_active ? "true" : "false" %>,
+        autoSpin: <%= auto_spin ? "true" : "false" %>,
+        entrantViewer: <%= entrant_viewer ? "true" : "false" %>
+      }
+
+      const wheelCanvas = document.getElementById("raffleWheelCanvas")
+      const wheelCtx = wheelCanvas.getContext("2d")
+      const stage = document.getElementById("raffleWheelStage")
+      const countdownEl = document.getElementById("raffleWheelCountdown")
+      const revealButton = document.getElementById("revealWinnerButton")
+      const winnerResultMasked = document.getElementById("winnerResultMasked")
+      const winnerResultRevealed = document.getElementById("winnerResultRevealed")
+      const winnerBoxMasked = document.getElementById("winnerBoxMasked")
+      const winnerBoxRevealed = document.getElementById("winnerBoxRevealed")
+      const overlay = document.getElementById("raffleWinnerOverlay")
+      const overlayText = document.getElementById("raffleWinnerOverlayText")
+      const confettiCanvas = document.getElementById("raffleConfetti")
+      const resetButton = document.getElementById("wheelReset")
+      const focusWinnerButton = document.getElementById("focusWinnerButton")
+      const wheelCard = document.getElementById("raffleWheelCard")
+      const confirmOverlay = document.getElementById("runRaffleConfirm")
+      const confirmCancel = document.getElementById("runRaffleCancel")
+      const confirmRun = document.getElementById("runRaffleConfirmBtn")
+      const runForm = document.querySelector(".rf-run-raffle-form")
+      const revealHostTagButton = document.getElementById("revealHostTagButton")
+      const hostTagHidden = document.getElementById("host_tag_hidden")
+      const hostTagValue = document.getElementById("host_tag_value")
+      const revealedKey = "raffle_revealed_" + data.raffleId
+      const autoSpinKey = "raffle_auto_spin_done_" + data.raffleId
+
+      let audioContext = null
+      let masterGain = null
+
+      const tickets = Array.isArray(data.tickets) ? data.tickets : []
+      const ticketCount = tickets.length
+      const winningIndex = tickets.findIndex(function (ticket) {
+        return Number(ticket.number) === Number(data.winningNumber)
+      })
+
+      const world = {
+        size: 30000,
+        center: 15000,
+        outer: 12000,
+        inner: 10800
+      }
+
+      const anglePer = ticketCount > 0 ? ((Math.PI * 2) / ticketCount) : (Math.PI * 2)
+      const desiredRotation = winningIndex >= 0 ? -((winningIndex * anglePer) + (anglePer / 2)) : 0
+
+      let currentRotation = 0
+      let spinning = false
+      let spinSoundStop = null
+
+      const view = {
+        x: 0,
+        y: 0,
+        w: world.size,
+        h: world.size
+      }
+
+      function isDarkTheme() {
+        return document.documentElement.getAttribute("data-pv-theme") === "dark"
+      }
+
+      function resizeCanvases() {
+        const rect = stage.getBoundingClientRect()
+        const dpr = window.devicePixelRatio || 1
+
+        wheelCanvas.width = Math.max(1, Math.floor(rect.width * dpr))
+        wheelCanvas.height = Math.max(1, Math.floor(rect.height * dpr))
+        wheelCanvas.style.width = rect.width + "px"
+        wheelCanvas.style.height = rect.height + "px"
+
+        confettiCanvas.width = Math.max(1, Math.floor(rect.width * dpr))
+        confettiCanvas.height = Math.max(1, Math.floor(rect.height * dpr))
+        confettiCanvas.style.width = rect.width + "px"
+        confettiCanvas.style.height = rect.height + "px"
+        confettiCanvas.style.background = "transparent"
+        confettiCanvas.style.backgroundColor = "transparent"
+
+        renderWheel(currentRotation)
+      }
+
+      function applyWorldTransform(ctx) {
+        const sx = wheelCanvas.width / view.w
+        const sy = wheelCanvas.height / view.h
+        ctx.setTransform(sx, 0, 0, sy, -view.x * sx, -view.y * sy)
+      }
+
+      function resetView() {
+        view.x = 0
+        view.y = 0
+        view.w = world.size
+        view.h = world.size
+        renderWheel(currentRotation)
+      }
+
+      function clampView() {
+        if (view.x < 0) view.x = 0
+        if (view.y < 0) view.y = 0
+        if (view.x + view.w > world.size) view.x = world.size - view.w
+        if (view.y + view.h > world.size) view.y = world.size - view.h
+      }
+
+      function zoomAt(factor, clientX, clientY) {
+        const rect = stage.getBoundingClientRect()
+        const px = rect.width ? ((clientX - rect.left) / rect.width) : 0.5
+        const py = rect.height ? ((clientY - rect.top) / rect.height) : 0.5
+
+        const worldX = view.x + (view.w * px)
+        const worldY = view.y + (view.h * py)
+
+        const nextW = Math.max(world.size * 0.02, Math.min(world.size, view.w * factor))
+        const nextH = Math.max(world.size * 0.02, Math.min(world.size, view.h * factor))
+
+        view.x = worldX - (nextW * px)
+        view.y = worldY - (nextH * py)
+        view.w = nextW
+        view.h = nextH
+        clampView()
+        renderWheel(currentRotation)
+      }
+
+      function focusWinnerSlice() {
+        if (winningIndex < 0) return
+        const mid = (-Math.PI / 2) + (winningIndex * anglePer) + (anglePer / 2) + currentRotation
+        const radius = world.inner + ((world.outer - world.inner) * 0.5)
+        const pointX = world.center + Math.cos(mid) * radius
+        const pointY = world.center + Math.sin(mid) * radius
+        const size = Math.max(world.size * 0.08, Math.min(world.size * 0.18, 3600))
+        view.w = size
+        view.h = size
+        view.x = pointX - (size / 2)
+        view.y = pointY - (size / 2)
+        clampView()
+        renderWheel(currentRotation)
+      }
+
+      function ensureAudioUnlocked() {
+        if (!window.AudioContext && !window.webkitAudioContext) return null
+
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)()
+          masterGain = audioContext.createGain()
+          masterGain.gain.value = 0.18
+          masterGain.connect(audioContext.destination)
+        }
+
+        if (audioContext.state === "suspended") {
+          audioContext.resume()
+        }
+
+        const silent = audioContext.createOscillator()
+        const gain = audioContext.createGain()
+        gain.gain.value = 0.00001
+        silent.connect(gain)
+        gain.connect(masterGain)
+        silent.start()
+        silent.stop(audioContext.currentTime + 0.02)
+
+        return audioContext
+      }
+
+      function playSpinSound() {
+        const ctx = ensureAudioUnlocked()
+        if (!ctx || !masterGain) return function () {}
+
+        const oscillator = ctx.createOscillator()
+        const gain = ctx.createGain()
+
+        oscillator.type = "sawtooth"
+        oscillator.frequency.setValueAtTime(240, ctx.currentTime)
+        oscillator.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 7)
+
+        gain.gain.setValueAtTime(0.00001, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.05)
+        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 7)
+
+        oscillator.connect(gain)
+        gain.connect(masterGain)
+
+        oscillator.start(ctx.currentTime)
+        oscillator.stop(ctx.currentTime + 7.02)
+
+        return function () {
+          try {
+            gain.gain.cancelScheduledValues(ctx.currentTime)
+            gain.gain.setValueAtTime(0.00001, ctx.currentTime)
+          } catch (e) {
+          }
+        }
+      }
+
+      function playWinSound() {
+        const ctx = ensureAudioUnlocked()
+        if (!ctx || !masterGain) return
+
+        ;[
+          { t: 0.00, f: 880 },
+          { t: 0.07, f: 1100 },
+          { t: 0.14, f: 1320 },
+          { t: 0.21, f: 1760 }
+        ].forEach(function (note) {
+          const oscillator = ctx.createOscillator()
+          const gain = ctx.createGain()
+
+          oscillator.type = "square"
+          oscillator.frequency.setValueAtTime(note.f, ctx.currentTime + note.t)
+
+          gain.gain.setValueAtTime(0.00001, ctx.currentTime + note.t)
+          gain.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + note.t + 0.02)
+          gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + note.t + 0.22)
+
+          oscillator.connect(gain)
+          gain.connect(masterGain)
+
+          oscillator.start(ctx.currentTime + note.t)
+          oscillator.stop(ctx.currentTime + note.t + 0.24)
+        })
+      }
+
+      function showWinnerInfoImmediate() {
+        if (!data.entrantViewer) return
+        localStorage.setItem(revealedKey, "1")
+        if (revealButton) revealButton.style.display = "none"
+        if (winnerResultMasked) winnerResultMasked.style.display = "none"
+        if (winnerResultRevealed) winnerResultRevealed.style.display = ""
+        if (winnerBoxMasked) winnerBoxMasked.style.display = "none"
+        if (winnerBoxRevealed) winnerBoxRevealed.style.display = ""
+      }
+
+      function hideWinnerInfo() {
+        if (!data.entrantViewer) return
+        if (revealButton && data.completed) revealButton.style.display = ""
+        if (winnerResultMasked && data.completed) winnerResultMasked.style.display = ""
+        if (winnerResultRevealed) winnerResultRevealed.style.display = "none"
+        if (winnerBoxMasked) winnerBoxMasked.style.display = ""
+        if (winnerBoxRevealed) winnerBoxRevealed.style.display = "none"
+      }
+
+      function revealTemporarily(hiddenEl, valueEl) {
+        if (!hiddenEl || !valueEl) return
+        hiddenEl.style.display = "none"
+        valueEl.style.display = ""
+        setTimeout(function () {
+          hiddenEl.style.display = ""
+          valueEl.style.display = "none"
+        }, 10000)
+      }
+
+      function runConfetti() {
+        const ctx = confettiCanvas.getContext("2d")
+        const width = confettiCanvas.width
+        const height = confettiCanvas.height
+
+        const pieces = []
+        for (let i = 0; i < 180; i += 1) {
+          pieces.push({
+            x: width / 2,
+            y: height * 0.28,
+            vx: (Math.random() - 0.5) * 18,
+            vy: (Math.random() * -14) - 5,
+            size: (Math.random() * 10) + 5,
+            rotation: Math.random() * Math.PI,
+            vr: (Math.random() - 0.5) * 0.35,
+            life: 120 + Math.random() * 35,
+            color: ["#ef4444", "#22c55e", "#3b82f6", "#eab308", "#a855f7", "#ec4899"][Math.floor(Math.random() * 6)]
+          })
+        }
+
+        let frame = 0
+
+        function step() {
+          frame += 1
+          ctx.clearRect(0, 0, width, height)
+
+          pieces.forEach(function (piece) {
+            piece.x += piece.vx
+            piece.y += piece.vy
+            piece.vy += 0.24
+            piece.rotation += piece.vr
+            piece.life -= 1
+
+            ctx.save()
+            ctx.translate(piece.x, piece.y)
+            ctx.rotate(piece.rotation)
+            ctx.fillStyle = piece.color
+            ctx.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size * 0.6)
+            ctx.restore()
+          })
+
+          for (let i = pieces.length - 1; i >= 0; i -= 1) {
+            if (pieces[i].life <= 0 || pieces[i].y > height + 40) {
+              pieces.splice(i, 1)
+            }
+          }
+
+          if (frame < 180 && pieces.length) {
+            requestAnimationFrame(step)
+          } else {
+            ctx.clearRect(0, 0, width, height)
+          }
+        }
+
+        step()
+        playWinSound()
+      }
+
+      function showWinnerOverlay() {
+        if (!overlay || !overlayText) return
+        overlayText.textContent = "#" + data.winningNumber + " " + data.winningName
+        overlay.style.display = "flex"
+        setTimeout(function () {
+          overlay.style.display = "none"
+        }, 5000)
+      }
+
+      function scrollToWheel() {
+        if (!wheelCard) return
+        wheelCard.scrollIntoView({ behavior: "smooth", block: "start" })
+      }
+
+      function beginCountdown(seconds) {
+        return new Promise(function (resolve) {
+          let remaining = seconds
+          countdownEl.style.display = "flex"
+          countdownEl.textContent = String(remaining)
+
+          const timer = setInterval(function () {
+            remaining -= 1
+            if (remaining > 0) {
+              countdownEl.textContent = String(remaining)
+            } else {
+              clearInterval(timer)
+              countdownEl.style.display = "none"
+              resolve()
+            }
+          }, 1000)
+        })
+      }
+
+      function measureLabelWidth(text, fontSize) {
+        wheelCtx.save()
+        wheelCtx.font = "900 " + fontSize + "px Arial"
+        const width = wheelCtx.measureText(text).width
+        wheelCtx.restore()
+        return width
+      }
+
+      function fitSliceFontSize(text, radialSpace, tangentialSpace) {
+        const maxRadial = Math.max(120, radialSpace * 0.9)
+        const maxTangential = Math.max(80, tangentialSpace * 0.82)
+        let low = 12
+        let high = Math.floor(Math.min(520, maxTangential, maxRadial))
+        let best = 12
+
+        while (low <= high) {
+          const mid = Math.floor((low + high) / 2)
+          const width = measureLabelWidth(text, mid)
+          if (width <= maxRadial && mid <= maxTangential) {
+            best = mid
+            low = mid + 1
+          } else {
+            high = mid - 1
+          }
+        }
+
+        return Math.max(12, best)
+      }
+
+      function renderWheel(rotation) {
+        const darkTheme = isDarkTheme()
+        const backgroundColor = darkTheme ? "#000000" : "#ffffff"
+        const emptyFillColor = darkTheme ? "#000000" : "#f8fafc"
+        const borderColor = darkTheme ? "#d4af37" : "#d1d5db"
+        const sliceStrokeColor = darkTheme ? "#000000" : "#ffffff"
+        const sliceTextColor = "#000000"
+        const sliceTextStrokeColor = darkTheme ? "#000000" : "#ffffff"
+        const centerFillColor = "#000000"
+        const centerStrokeColor = darkTheme ? "#d4af37" : "#ffffff"
+        const centerTextColor = darkTheme ? "#d4af37" : "#ffffff"
+
+        wheelCtx.save()
+        wheelCtx.setTransform(1, 0, 0, 1, 0, 0)
+        wheelCtx.clearRect(0, 0, wheelCanvas.width, wheelCanvas.height)
+        wheelCtx.restore()
+
+        applyWorldTransform(wheelCtx)
+
+        wheelCtx.fillStyle = backgroundColor
+        wheelCtx.fillRect(0, 0, world.size, world.size)
+
+        if (!ticketCount) {
+          wheelCtx.beginPath()
+          wheelCtx.arc(world.center, world.center, 7000, 0, Math.PI * 2)
+          wheelCtx.fillStyle = emptyFillColor
+          wheelCtx.fill()
+          wheelCtx.strokeStyle = borderColor
+          wheelCtx.lineWidth = 60
+          wheelCtx.stroke()
+
+          wheelCtx.fillStyle = darkTheme ? "#d4af37" : "#111827"
+          wheelCtx.font = "700 800px Arial"
+          wheelCtx.textAlign = "center"
+          wheelCtx.textBaseline = "middle"
+          wheelCtx.fillText("No tickets yet", world.center, world.center)
+          return
+        }
+
+        const colors = darkTheme ? [
+          "#d4af37"
+        ] : [
+          "#dbeafe",
+          "#dcfce7",
+          "#fee2e2",
+          "#fef3c7",
+          "#ede9fe",
+          "#fce7f3",
+          "#cffafe",
+          "#e5e7eb"
+        ]
+
+        const inset = Math.min(anglePer * 0.04, 0.04)
+        const bandThickness = world.outer - world.inner
+
+        tickets.forEach(function (ticket, index) {
+          const start = (-Math.PI / 2) + (index * anglePer) + inset + rotation
+          const end = (-Math.PI / 2) + ((index + 1) * anglePer) - inset + rotation
+          const mid = (start + end) / 2
+          const midRadius = world.inner + (bandThickness * 0.5)
+          const tangentialSpace = Math.max(30, (end - start) * midRadius)
+          const radialSpace = Math.max(120, bandThickness - 110)
+          const fontSize = fitSliceFontSize(ticket.label, radialSpace, tangentialSpace)
+          const centerRadius = world.inner + (bandThickness * 0.5)
+
+          wheelCtx.beginPath()
+          wheelCtx.moveTo(world.center + Math.cos(start) * world.inner, world.center + Math.sin(start) * world.inner)
+          wheelCtx.arc(world.center, world.center, world.outer, start, end)
+          wheelCtx.lineTo(world.center + Math.cos(end) * world.inner, world.center + Math.sin(end) * world.inner)
+          wheelCtx.arc(world.center, world.center, world.inner, end, start, true)
+          wheelCtx.closePath()
+
+          wheelCtx.fillStyle = colors[index % colors.length]
+          wheelCtx.fill()
+          wheelCtx.strokeStyle = sliceStrokeColor
+          wheelCtx.lineWidth = darkTheme ? 34 : 24
+          wheelCtx.stroke()
+
+          wheelCtx.save()
+          wheelCtx.beginPath()
+          wheelCtx.moveTo(world.center + Math.cos(start) * world.inner, world.center + Math.sin(start) * world.inner)
+          wheelCtx.arc(world.center, world.center, world.outer, start, end)
+          wheelCtx.lineTo(world.center + Math.cos(end) * world.inner, world.center + Math.sin(end) * world.inner)
+          wheelCtx.arc(world.center, world.center, world.inner, end, start, true)
+          wheelCtx.closePath()
+          wheelCtx.clip()
+
+          wheelCtx.translate(world.center, world.center)
+          wheelCtx.rotate(mid)
+          wheelCtx.fillStyle = sliceTextColor
+          wheelCtx.strokeStyle = sliceTextStrokeColor
+          wheelCtx.lineWidth = Math.max(2, fontSize * 0.035)
+          wheelCtx.font = "900 " + fontSize + "px Arial"
+          wheelCtx.textAlign = "center"
+          wheelCtx.textBaseline = "middle"
+          wheelCtx.strokeText(ticket.label, centerRadius, 0)
+          wheelCtx.fillText(ticket.label, centerRadius, 0)
+          wheelCtx.restore()
+        })
+
+        wheelCtx.beginPath()
+        wheelCtx.arc(world.center, world.center, world.inner, 0, Math.PI * 2)
+        wheelCtx.fillStyle = centerFillColor
+        wheelCtx.fill()
+        wheelCtx.strokeStyle = centerStrokeColor
+        wheelCtx.lineWidth = 80
+        wheelCtx.stroke()
+
+        wheelCtx.fillStyle = centerTextColor
+        wheelCtx.font = "800 1500px Arial"
+        wheelCtx.textAlign = "center"
+        wheelCtx.textBaseline = "middle"
+        wheelCtx.fillText("RAFFLE", world.center, world.center)
+      }
+
+      function easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3)
+      }
+
+      function spinToWinner() {
+        if (!data.completed || winningIndex < 0 || spinning) return
+        spinning = true
+        scrollToWheel()
+        ensureAudioUnlocked()
+
+        beginCountdown(5).then(function () {
+          spinSoundStop = playSpinSound()
+
+          const extraTurns = 10
+          const startRotation = currentRotation
+          const endRotation = desiredRotation + ((Math.PI * 2) * extraTurns)
+          const duration = 7000
+          const startTime = performance.now()
+
+          function animate(now) {
+            const elapsed = now - startTime
+            const progress = Math.min(1, elapsed / duration)
+            const eased = easeOutCubic(progress)
+            currentRotation = startRotation + ((endRotation - startRotation) * eased)
+            renderWheel(currentRotation)
+
+            if (progress < 1) {
+              requestAnimationFrame(animate)
+            } else {
+              currentRotation = desiredRotation
+              renderWheel(currentRotation)
+              spinning = false
+              if (typeof spinSoundStop === "function") spinSoundStop()
+              if (data.entrantViewer) {
+                showWinnerInfoImmediate()
+              }
+              showWinnerOverlay()
+              runConfetti()
+            }
+          }
+
+          requestAnimationFrame(animate)
+        })
+      }
+
+      function initializeCompletedState() {
+        const alreadyRevealed = localStorage.getItem(revealedKey) === "1"
+
+        if (alreadyRevealed) {
+          currentRotation = desiredRotation
+          renderWheel(currentRotation)
+          if (data.entrantViewer) {
+            showWinnerInfoImmediate()
+          }
+        } else {
+          currentRotation = 0
+          renderWheel(currentRotation)
+          if (data.entrantViewer) {
+            hideWinnerInfo()
+          }
+        }
+
+        if (data.autoSpin) {
+          history.replaceState({}, document.title, window.location.pathname)
+          if (sessionStorage.getItem(autoSpinKey) !== "1") {
+            sessionStorage.setItem(autoSpinKey, "1")
+            setTimeout(function () {
+              spinToWinner()
+            }, 0)
+          }
+        }
+      }
+
+      function initializeActiveState() {
+        currentRotation = 0
+        renderWheel(currentRotation)
+      }
+
+      function wireZoomPan() {
+        if (resetButton) {
+          resetButton.addEventListener("click", function () {
+            resetView()
+          })
+        }
+
+        if (focusWinnerButton) {
+          focusWinnerButton.addEventListener("click", function () {
+            focusWinnerSlice()
+          })
+        }
+
+        wheelCanvas.addEventListener("wheel", function (event) {
+          event.preventDefault()
+          const factor = event.deltaY < 0 ? 0.88 : 1.14
+          zoomAt(factor, event.clientX, event.clientY)
+        }, { passive: false })
+
+        wheelCanvas.addEventListener("click", function (event) {
+          if (spinning) return
+          zoomAt(0.65, event.clientX, event.clientY)
+        })
+
+        let dragging = false
+        let dragStart = null
+        let dragOrigin = null
+
+        wheelCanvas.addEventListener("mousedown", function (event) {
+          dragging = true
+          wheelCanvas.classList.add("rf-dragging")
+          dragStart = { x: event.clientX, y: event.clientY }
+          dragOrigin = { x: view.x, y: view.y }
+        })
+
+        window.addEventListener("mousemove", function (event) {
+          if (!dragging) return
+          const rect = stage.getBoundingClientRect()
+          const dx = ((event.clientX - dragStart.x) / rect.width) * view.w
+          const dy = ((event.clientY - dragStart.y) / rect.height) * view.h
+          view.x = dragOrigin.x - dx
+          view.y = dragOrigin.y - dy
+          clampView()
+          renderWheel(currentRotation)
+        })
+
+        window.addEventListener("mouseup", function () {
+          dragging = false
+          wheelCanvas.classList.remove("rf-dragging")
+        })
+      }
+
+      function wireReveal() {
+        if (!revealButton) return
+        revealButton.addEventListener("click", function () {
+          if (spinning) return
+          ensureAudioUnlocked()
+          localStorage.removeItem(revealedKey)
+          sessionStorage.removeItem(autoSpinKey)
+          hideWinnerInfo()
+          currentRotation = 0
+          renderWheel(currentRotation)
+          spinToWinner()
+        })
+      }
+
+      function wireRunConfirm() {
+        if (!runForm || !confirmOverlay || !confirmCancel || !confirmRun) return
+
+        runForm.addEventListener("submit", function (event) {
+          event.preventDefault()
+          confirmOverlay.style.display = "flex"
+        })
+
+        confirmCancel.addEventListener("click", function () {
+          confirmOverlay.style.display = "none"
+        })
+
+        confirmRun.addEventListener("click", function () {
+          ensureAudioUnlocked()
+          confirmOverlay.style.display = "none"
+
+          const token = document.querySelector('meta[name="csrf-token"]')?.content
+
+          fetch(runForm.action, {
+            method: "POST",
+            headers: {
+              "X-CSRF-Token": token,
+              "Accept": "application/json"
+            },
+            credentials: "same-origin"
+          })
+            .then(function (response) {
+              return response.json()
+            })
+            .then(function (json) {
+              if (!json.ok) {
+                alert(json.message || "Unable to run raffle.")
+                return
+              }
+
+              data.completed = true
+              data.winningNumber = json.winning_number
+              data.winningName = json.winning_name
+              spinToWinner()
+
+              setTimeout(function () {
+                window.location.href = json.redirect_url
+              }, 12050)
+            })
+            .catch(function () {
+              alert("Unable to run raffle.")
+            })
+        })
+
+        confirmOverlay.addEventListener("click", function (event) {
+          if (event.target === confirmOverlay) {
+            confirmOverlay.style.display = "none"
+          }
+        })
+      }
+
+      function wireHostAndEntrantTagReveal() {
+        if (revealHostTagButton && hostTagHidden && hostTagValue) {
+          revealHostTagButton.addEventListener("click", function () {
+            revealTemporarily(hostTagHidden, hostTagValue)
+          })
+        }
+
+        document.querySelectorAll(".rf-reveal-entrant-tag-btn").forEach(function (button) {
+          button.addEventListener("click", function () {
+            const hiddenId = button.getAttribute("data-hidden-id")
+            const valueId = button.getAttribute("data-value-id")
+            const hiddenEl = document.getElementById(hiddenId)
+            const valueEl = document.getElementById(valueId)
+            revealTemporarily(hiddenEl, valueEl)
+          })
+        })
+      }
+
+      function wireTicketPicker() {
+        const picker = document.getElementById("availableTicketPicker")
+        if (!picker) return
+
+        let pointerDown = false
+
+        function syncVisual(label) {
+          const input = label.querySelector("input[type='checkbox']")
+          if (!input) return
+          if (input.checked) {
+            label.classList.add("is-selected")
+          } else {
+            label.classList.remove("is-selected")
+          }
+        }
+
+        picker.querySelectorAll("[data-ticket-option]").forEach(function (label) {
+          const input = label.querySelector("input[type='checkbox']")
+          syncVisual(label)
+
+          label.addEventListener("mousedown", function () {
+            pointerDown = true
+            input.checked = !input.checked
+            syncVisual(label)
+          })
+
+          label.addEventListener("mouseenter", function () {
+            if (!pointerDown) return
+            input.checked = true
+            syncVisual(label)
+          })
+
+          label.addEventListener("click", function (event) {
+            event.preventDefault()
+          })
+
+          input.addEventListener("change", function () {
+            syncVisual(label)
+          })
+        })
+
+        window.addEventListener("mouseup", function () {
+          pointerDown = false
+        })
+      }
+
+      document.addEventListener("click", function () {
+        ensureAudioUnlocked()
+      }, { once: true })
+
+      document.addEventListener("pointerdown", function () {
+        ensureAudioUnlocked()
+      }, { once: true })
+
+      window.addEventListener("resize", resizeCanvases)
+
+      const themeObserver = new MutationObserver(function () {
+        renderWheel(currentRotation)
+      })
+
+      themeObserver.observe(document.documentElement, {
+        attributes:true,
+        attributeFilter:["data-pv-theme"]
+      })
+
+      wireZoomPan()
+      wireReveal()
+      wireRunConfirm()
+      wireHostAndEntrantTagReveal()
+      wireTicketPicker()
+      resizeCanvases()
+      resetView()
+
+      if (data.completed) {
+        initializeCompletedState()
+      } else {
+        initializeActiveState()
+      }
+    })()
+  </script>
+</div>

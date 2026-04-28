@@ -1,0 +1,148 @@
+<%
+  comment_reaction_counts = community_comment_reaction_counts(comment)
+  total_comment_reactions = comment_reaction_counts.values.sum
+  current_comment_reaction = current_user ? comment.community_comment_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
+  replies = comment.replies.sort_by(&:created_at)
+  reactions_modal_id = "communityCommentReactionsModal-#{comment.id}"
+  reply_form_id = "communityReplyForm-#{comment.id}"
+%>
+
+<div class="community-comment-thread depth-<%= [depth, 2].min %> <%= "d-none" if hidden %>" data-community-hidden-comment="<%= hidden ? "true" : "false" %>">
+  <style>
+    .community-comment-react-btn{position:relative}
+    .community-comment-react-btn:hover::after{
+      content:attr(data-comment-reaction-label);
+      position:absolute;
+      left:50%;
+      bottom:calc(100% + 8px);
+      transform:translateX(-50%);
+      background:#111827;
+      color:#fff;
+      padding:.32rem .55rem;
+      border-radius:.55rem;
+      font-size:.72rem;
+      font-weight:700;
+      line-height:1;
+      white-space:nowrap;
+      pointer-events:none;
+      z-index:20
+    }
+  </style>
+
+  <div class="community-comment-card">
+    <div class="community-comment-line">
+      <span class="community-comment-user"><%= comment.user.username %></span>
+
+      <% comment_flag = community_flag_emoji(comment.user.country_code) %>
+      <% if comment_flag.present? %>
+        <span class="community-flag"><%= comment_flag %></span>
+      <% end %>
+
+      <% community_user_badges(comment.user).each do |badge| %>
+        <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
+      <% end %>
+
+      <span class="community-comment-time"><%= time_ago_in_words(comment.created_at) %> ago</span>
+    </div>
+
+    <div class="community-comment-body">
+      <%= simple_format(h(comment.body), {}, wrapper_tag: "div") %>
+    </div>
+
+    <div class="community-comment-social">
+      <button type="button" class="community-comment-summary-link" data-community-comment-total-reactions data-comment-id="<%= comment.id %>" data-bs-toggle="modal" data-bs-target="#<%= reactions_modal_id %>">
+        👍 <%= total_comment_reactions %>
+      </button>
+
+      <button type="button" class="community-comment-summary-link" data-bs-toggle="collapse" data-bs-target="#<%= reply_form_id %>" aria-expanded="false" aria-controls="<%= reply_form_id %>">
+        Reply
+      </button>
+    </div>
+
+    <div class="community-comment-reactions-row">
+      <% CommunityCommentReaction::KINDS.each do |kind| %>
+        <%= form_with url: react_community_post_community_comment_path(post, comment), method: :post, local: true, html: { class: "community-comment-react-form", data: { turbo: false, community_comment_id: comment.id } } do %>
+          <%= hidden_field_tag :kind, kind %>
+          <%= hidden_field_tag :channel, selected_channel %>
+          <button
+            type="submit"
+            class="community-comment-react-btn <%= "active" if current_comment_reaction&.kind == kind %>"
+            data-comment-reaction-kind="<%= kind %>"
+            data-comment-reaction-emoji="<%= CommunityCommentReaction.emoji_for(kind) %>"
+            data-comment-reaction-label="<%= CommunityCommentReaction.label_for(kind) %>"
+            title="<%= CommunityCommentReaction.label_for(kind) %>">
+            <span><%= CommunityCommentReaction.emoji_for(kind) %></span>
+            <span data-comment-reaction-count><%= comment_reaction_counts[kind].to_i.positive? ? comment_reaction_counts[kind].to_i : "" %></span>
+          </button>
+        <% end %>
+      <% end %>
+    </div>
+
+    <% if current_user %>
+      <div class="collapse community-reply-form-wrap" id="<%= reply_form_id %>">
+        <%= form_with model: [post, CommunityComment.new], url: community_post_community_comments_path(post), local: true, class: "community-comment-form" do |f| %>
+          <%= hidden_field_tag :channel, selected_channel %>
+          <%= f.hidden_field :parent_comment_id, value: comment.id %>
+          <%= f.text_field :body, class: "form-control community-comment-input", placeholder: "Write a reply...", maxlength: CommunityComment::MAX_BODY_LENGTH %>
+          <%= f.submit "Reply", class: "btn btn-sm btn-dark" %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if replies.any? %>
+      <div class="community-replies-wrap">
+        <% replies.each do |reply| %>
+          <%= render "community_comments/comment", comment: reply, post: post, selected_channel: selected_channel, depth: depth + 1, hidden: false %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<div class="modal fade" id="<%= reactions_modal_id %>" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5">Comment Reactions</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body community-reactions-modal-body" data-community-comment-id="<%= comment.id %>">
+        <div class="community-reactions-filter-row">
+          <button type="button" class="community-reactions-filter active" data-kind="all">All (<%= total_comment_reactions %>)</button>
+          <% CommunityCommentReaction::KINDS.each do |kind| %>
+            <button type="button" class="community-reactions-filter" data-kind="<%= kind %>" data-emoji="<%= CommunityCommentReaction.emoji_for(kind) %>"><%= CommunityCommentReaction.emoji_for(kind) %> <%= comment_reaction_counts[kind].to_i %></button>
+          <% end %>
+        </div>
+
+        <div class="community-reaction-people" data-community-comment-reactor-list>
+          <% if comment.community_comment_reactions.any? %>
+            <% comment.community_comment_reactions.order(created_at: :desc).each do |reaction| %>
+              <div class="community-reaction-person" data-kind="<%= reaction.kind %>">
+                <div class="community-reaction-person-left">
+                  <span class="community-reaction-person-name"><%= reaction.user.username %></span>
+
+                  <% reaction_flag = community_flag_emoji(reaction.user.country_code) %>
+                  <% if reaction_flag.present? %>
+                    <span class="community-flag"><%= reaction_flag %></span>
+                  <% end %>
+
+                  <% community_user_badges(reaction.user).each do |badge| %>
+                    <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
+                  <% end %>
+                </div>
+
+                <div class="community-reaction-kind">
+                  <span><%= CommunityCommentReaction.emoji_for(reaction.kind) %></span>
+                  <span><%= CommunityCommentReaction.label_for(reaction.kind) %></span>
+                </div>
+              </div>
+            <% end %>
+            <div class="community-reactions-empty-filter">No reactions for this filter.</div>
+          <% else %>
+            <div class="text-muted">No reactions yet.</div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

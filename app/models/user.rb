@@ -1,13 +1,25 @@
 class User < ApplicationRecord
+  # Adds password hashing and password authentication through password_digest
   has_secure_password
+
+  # Connects the user to their portfolio, marketplace and community records
   has_many :holdings, dependent: :destroy
   has_many :watchlists, dependent: :destroy
+  has_many :community_posts, dependent: :destroy
+  has_many :community_comments, dependent: :destroy
+  has_many :community_reactions, dependent: :destroy
+  has_many :community_comment_reactions, dependent: :destroy
+  has_many :hosted_raffles, class_name: "Raffle", foreign_key: :host_id, dependent: :destroy
+  has_many :raffle_tickets, dependent: :nullify
+  has_many :won_raffles, class_name: "Raffle", foreign_key: :winner_user_id, dependent: :nullify
 
+  # Account security rules
   USERNAME_MIN = 4
   PASSWORD_MIN = 12
   LOCK_LIMIT = 5
   LOCK_WINDOW = 15.minutes
 
+  # MFA settings based on 6-digit TOTP codes that refresh every 30 seconds
   MFA_STEP_SECONDS = 30
   MFA_DIGITS = 6
   MFA_DRIFT_STEPS = 1
@@ -15,43 +27,74 @@ class User < ApplicationRecord
   MFA_LOCK_WINDOW = 15.minutes
   MFA_RECOVERY_CODES_COUNT = 10
 
+  # Basic account validation rules
   validates :username, presence: true, uniqueness: true, length: { minimum: USERNAME_MIN }
   validates :country_code, presence: true
+  validate :revolut_tag_required_on_create, on: :create
+  validate :revolut_tag_format, if: -> { revolut_tag.present? }
   validate :password_complexity, if: :password
   validate :password_not_include_username, if: :password
 
+  # Decrypts the stored Revolut tag when it is needed by the app
+  def revolut_tag
+    return nil if revolut_tag_encrypted.blank?
+    self.class.revolut_tag_encryptor.decrypt_and_verify(revolut_tag_encrypted)
+  rescue ActiveSupport::MessageEncryptor::InvalidMessage
+    nil
+  end
+
+  # Normalises and encrypts the Revolut tag before saving it
+  def revolut_tag=(plain)
+    cleaned = plain.to_s.strip
+
+    if cleaned.present?
+      cleaned = "@#{cleaned}" unless cleaned.start_with?("@")
+      self.revolut_tag_encrypted = self.class.revolut_tag_encryptor.encrypt_and_sign(cleaned)
+    else
+      self.revolut_tag_encrypted = nil
+    end
+  end
+
+  # Stores the recovery answer as a BCrypt digest instead of plain text
   def recovery_answer=(plain)
     self.recovery_answer_digest = BCrypt::Password.create(plain) if plain.present?
   end
 
+  # Checks a submitted recovery answer against the saved digest
   def recovery_answer_matches?(plain)
     return false if recovery_answer_digest.blank? || plain.blank?
     BCrypt::Password.new(recovery_answer_digest) == plain
   end
 
+  # Returns true while the login lockout window is still active
   def locked?
     locked_at.present? && locked_at > LOCK_WINDOW.ago
   end
 
+  # Tracks failed login attempts and locks the account after too many failures
   def register_failed_login!
     n = (failed_attempts || 0) + 1
     update!(failed_attempts: n, locked_at: (n >= LOCK_LIMIT ? Time.current : locked_at))
   end
 
+  # Clears failed login attempts after a successful login
   def reset_failed_logins!
     update!(failed_attempts: 0, locked_at: nil)
   end
 
+  # Returns true while the MFA lockout window is still active
   def mfa_locked?
     mfa_locked_at.present? && mfa_locked_at > MFA_LOCK_WINDOW.ago
   end
 
+  # Creates an MFA secret if the user does not already have one
   def ensure_mfa_secret!
     return if mfa_secret.present?
     self.mfa_secret = self.class.generate_mfa_secret
     save!
   end
 
+  # Decrypts the MFA secret used to verify authenticator app codes
   def mfa_secret
     return nil if mfa_secret_encrypted.blank?
     self.class.mfa_encryptor.decrypt_and_verify(mfa_secret_encrypted)
@@ -59,6 +102,7 @@ class User < ApplicationRecord
     nil
   end
 
+  # Encrypts the MFA secret before storing it in the database
   def mfa_secret=(plain)
     if plain.present?
       self.mfa_secret_encrypted = self.class.mfa_encryptor.encrypt_and_sign(plain)
@@ -67,6 +111,7 @@ class User < ApplicationRecord
     end
   end
 
+  # Builds the QR-code URI used by Google Authenticator and similar apps
   def mfa_provisioning_uri(issuer: "PokeValueApp")
     s = mfa_secret
     return nil if s.blank?
@@ -74,6 +119,7 @@ class User < ApplicationRecord
     "otpauth://totp/#{CGI.escape(label)}?secret=#{s}&issuer=#{CGI.escape(issuer)}&algorithm=SHA1&digits=#{MFA_DIGITS}&period=#{MFA_STEP_SECONDS}"
   end
 
+  # Verifies a submitted MFA code and prevents reusing an old time-step code
   def verify_mfa_code!(code)
     return false if mfa_locked?
     c = code.to_s.gsub(/\s+/, "")
@@ -100,6 +146,7 @@ class User < ApplicationRecord
     end
   end
 
+  # Turns MFA on only after the first authenticator code is verified
   def enable_mfa!(code)
     ensure_mfa_secret!
     return nil unless verify_mfa_code!(code)
@@ -107,6 +154,7 @@ class User < ApplicationRecord
     generate_mfa_recovery_codes!
   end
 
+  # Reads saved MFA recovery code digests from JSON
   def mfa_recovery_codes_digests
     raw = mfa_recovery_codes_digest.to_s
     return [] if raw.blank?
@@ -115,6 +163,7 @@ class User < ApplicationRecord
     []
   end
 
+  # Generates one-time recovery codes and stores only their BCrypt digests
   def generate_mfa_recovery_codes!
     codes = Array.new(MFA_RECOVERY_CODES_COUNT) { self.class.generate_recovery_code }
     digests = codes.map { |c| BCrypt::Password.create(c) }
@@ -122,6 +171,7 @@ class User < ApplicationRecord
     codes
   end
 
+  # Uses and removes a recovery code after it has been successfully matched
   def consume_mfa_recovery_code!(code)
     c = code.to_s.strip.upcase
     return false if c.blank?
@@ -140,23 +190,34 @@ class User < ApplicationRecord
     true
   end
 
+  # Clears MFA failed attempts and unlocks MFA entry
   def reset_mfa_lock!
     update!(mfa_failed_attempts: 0, mfa_locked_at: nil)
   end
 
+  # Creates the encryptor used for Revolut tag storage
+  def self.revolut_tag_encryptor
+    key = ActiveSupport::KeyGenerator.new(Rails.application.secret_key_base).generate_key("revolut_tag_v1", 32)
+    ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm")
+  end
+
+  # Creates the encryptor used for MFA secret storage
   def self.mfa_encryptor
     key = ActiveSupport::KeyGenerator.new(Rails.application.secret_key_base).generate_key("mfa_secret_v1", 32)
     ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm")
   end
 
+  # Generates a Base32 secret for authenticator apps
   def self.generate_mfa_secret
     base32_encode(SecureRandom.random_bytes(20))
   end
 
+  # Generates a readable one-time recovery code
   def self.generate_recovery_code
     SecureRandom.hex(5).upcase
   end
 
+  # Creates the expected 6-digit TOTP code for a given secret and time step
   def self.totp_for_secret(secret_base32, step)
     return nil if secret_base32.blank?
     key = base32_decode(secret_base32)
@@ -169,6 +230,7 @@ class User < ApplicationRecord
     (bin % (10**MFA_DIGITS)).to_s.rjust(MFA_DIGITS, "0")
   end
 
+  # Converts random bytes into the Base32 format expected by authenticator apps
   def self.base32_encode(data)
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     buffer = 0
@@ -188,6 +250,7 @@ class User < ApplicationRecord
     out
   end
 
+  # Converts a Base32 authenticator secret back into bytes for HMAC checking
   def self.base32_decode(str)
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     map = {}
@@ -210,12 +273,26 @@ class User < ApplicationRecord
 
   private
 
+  # Tracks failed MFA attempts and locks MFA after too many failures
   def register_mfa_failure!
     n = (mfa_failed_attempts || 0) + 1
     update!(mfa_failed_attempts: n, mfa_locked_at: (n >= MFA_LOCK_LIMIT ? Time.current : mfa_locked_at))
     true
   end
 
+  # Requires a Revolut tag when creating a new account
+  def revolut_tag_required_on_create
+    errors.add(:revolut_tag, "is required") if revolut_tag.blank?
+  end
+
+  # Keeps Revolut tags in a consistent @username format
+  def revolut_tag_format
+    unless revolut_tag.match?(/\A@[A-Za-z0-9._-]{3,30}\z/)
+      errors.add(:revolut_tag, "must start with @ and contain 3-30 letters, numbers, dots, underscores or dashes")
+    end
+  end
+
+  # Enforces stronger password rules than the Rails default
   def password_complexity
     return if password.blank?
     too_short = password.length < PASSWORD_MIN
@@ -227,6 +304,7 @@ class User < ApplicationRecord
     errors.add(:password, "must include upper, lower, digit, symbol") if no_upper || no_lower || no_digit || no_symbol
   end
 
+  # Stops users from putting their username inside their password
   def password_not_include_username
     return if password.blank? || username.blank?
     errors.add(:password, "cannot contain your username") if password.downcase.include?(username.downcase)

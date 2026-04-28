@@ -1,0 +1,91 @@
+<%
+auction = @auction
+existing_bid = @existing_bid
+selected_address = @selected_address
+first_bid_on_this_auction = existing_bid.blank?
+can_submit = !first_bid_on_this_auction || @saved_addresses.any?
+current_highest = auction.current_bid_cents_value.to_i / 100.0
+minimum_bid = [@minimum_bid_eur.to_f, 0.01].max
+%>
+
+<div class="container py-4">
+  <style>
+    .ab-wrap{max-width:760px;margin:0 auto}
+    .ab-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .ab-title{font-size:1.15rem;margin:0 0 10px}
+    .ab-muted{font-size:.85rem;color:#6b7280}
+    .ab-address-list{display:grid;gap:10px}
+    .ab-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
+    .ab-address-item label{display:block;cursor:pointer}
+    .ab-address-line{font-size:.85rem;line-height:1.25}
+  </style>
+
+  <div class="ab-wrap">
+    <div class="mb-3">
+      <%= link_to "← Back to Auction", auction_listing_path(auction), class: "btn btn-link p-0" %>
+    </div>
+
+    <div class="ab-card">
+      <div class="ab-title">Place Bid</div>
+      <div class="ab-muted mb-3">
+        Current highest bid: <strong><%= number_to_currency(current_highest, unit: "€") %></strong>
+        · Your bid must be higher than the previous bid.
+      </div>
+
+      <%= form_with url: place_auction_bid_path(auction), method: :post, local: true do %>
+        <% if first_bid_on_this_auction %>
+          <div class="mb-3">
+            <label class="form-label">Choose Address</label>
+
+            <% if @saved_addresses.any? %>
+              <div class="ab-address-list">
+                <% @saved_addresses.each do |address| %>
+                  <div class="ab-address-item">
+                    <label>
+                      <input type="radio" name="saved_address_id" value="<%= address.id %>" <%= "checked" if params[:saved_address_id].to_s == address.id.to_s %>>
+                      <div class="fw-semibold"><%= address.respond_to?(:display_label) ? address.display_label : (address.respond_to?(:label) && address.label.present? ? address.label : "Saved Address") %></div>
+                      <div class="ab-address-line"><%= address.respond_to?(:single_line) ? address.single_line : [address.try(:line1), address.try(:line2).presence, address.try(:city), address.try(:county).presence, address.try(:postcode).presence, address.try(:country_code)].compact.join(", ") %></div>
+                    </label>
+                  </div>
+                <% end %>
+              </div>
+            <% else %>
+              <div class="alert alert-warning mb-0">
+                You need at least 1 saved address before your first bid on this auction.
+                <%= link_to "Go to My Account", account_path %>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="mb-3">
+            <label class="form-label">Saved Address For This Auction</label>
+            <div class="border rounded p-3 bg-light">
+              <div class="fw-semibold"><%= selected_address&.respond_to?(:display_label) ? selected_address.display_label : "Saved Address" %></div>
+              <div class="ab-address-line"><%= selected_address&.respond_to?(:single_line) ? selected_address.single_line : "-" %></div>
+            </div>
+          </div>
+        <% end %>
+
+        <div class="mb-3">
+          <label class="form-label">Bid Amount (€)</label>
+          <input type="number" name="bid_amount" class="form-control" min="<%= minimum_bid %>" step="0.01" value="<%= params[:bid_amount] %>" placeholder="<%= minimum_bid %>">
+          <div class="form-text">Minimum bid: <%= number_to_currency(minimum_bid, unit: "€") %></div>
+        </div>
+
+        <% if defined?(@auction_bid) && @auction_bid&.errors&.any? %>
+          <div class="alert alert-danger">
+            <%= @auction_bid.errors.full_messages.to_sentence %>
+          </div>
+        <% end %>
+
+        <div class="d-flex justify-content-end">
+          <% if can_submit %>
+            <button type="submit" class="btn btn-primary">Place Bid</button>
+          <% else %>
+            <button type="button" class="btn btn-secondary" disabled>Place Bid</button>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

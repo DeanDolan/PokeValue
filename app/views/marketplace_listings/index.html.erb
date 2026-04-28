@@ -1,0 +1,426 @@
+<%
+require "json"
+
+sets_data =
+  begin
+    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
+    JSON.parse(raw)
+  rescue
+    {}
+  end
+
+type_map = {
+  "etb" => "Elite Trainer Box",
+  "pc_etb" => "Pokemon Center Elite Trainer Box",
+  "booster_box" => "Booster Box",
+  "booster_bundle" => "Booster Bundle",
+  "booster_bundle_display" => "Booster Bundle Display",
+  "enhanced_booster_box" => "Enhanced Booster Box",
+  "ultra_premium_collection" => "Ultra Premium Collection",
+  "upc" => "Ultra Premium Collection",
+  "spc" => "Super Premium Collection",
+  "mini_tin" => "Mini Tin",
+  "mini_tin_display" => "Mini Tin Display"
+}
+
+titleize = lambda do |s|
+  s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
+end
+
+split_type_variant = lambda do |t|
+  s = t.to_s
+  down = s.downcase
+  idx = down.index("--v-")
+  if idx
+    base = s[0...idx].to_s
+    raw = s[(idx + 4)..-1].to_s
+    variant = raw.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
+    [base.to_s, variant.to_s]
+  else
+    [s.to_s, ""]
+  end
+end
+
+display_type = lambda do |listing|
+  src = listing.respond_to?(:route_type) ? listing.route_type.to_s : ""
+  src = listing.respond_to?(:product_type_name) ? listing.product_type_name.to_s : src if src.blank?
+  base, variant = split_type_variant.call(src)
+  base_key = base.to_s.downcase
+  base_name = type_map[base_key].presence || titleize.call(base)
+  variant = variant.to_s.strip
+  variant.present? ? "#{base_name} (#{variant})" : base_name
+end
+
+era_for_slug = lambda do |slug|
+  s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
+  s ? s["era"].to_s : ""
+end
+
+eu = [
+  ["Austria", "AT"], ["Belgium", "BE"], ["Bulgaria", "BG"], ["Croatia", "HR"], ["Cyprus", "CY"],
+  ["Czechia", "CZ"], ["Denmark", "DK"], ["Estonia", "EE"], ["Finland", "FI"], ["France", "FR"],
+  ["Germany", "DE"], ["Greece", "GR"], ["Hungary", "HU"], ["Ireland", "IE"], ["Italy", "IT"],
+  ["Latvia", "LV"], ["Lithuania", "LT"], ["Luxembourg", "LU"], ["Malta", "MT"], ["Netherlands", "NL"],
+  ["Poland", "PL"], ["Portugal", "PT"], ["Romania", "RO"], ["Slovakia", "SK"], ["Slovenia", "SI"],
+  ["Spain", "ES"], ["Sweden", "SE"]
+]
+
+eras = (defined?(@eras) && @eras.is_a?(Array)) ? @eras : sets_data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq
+selected_era = params[:era].to_s.strip
+sets_for_era = (defined?(@sets_for_era) && @sets_for_era.is_a?(Array)) ? @sets_for_era : []
+
+product_type_keys = type_map.keys.sort
+country = params[:country].to_s.strip
+set_slug = params[:set_slug].to_s.strip
+product_type = params[:product_type].to_s.strip
+condition = params[:condition].to_s.strip
+q = params[:q].to_s
+min_price = params[:min_price].to_s
+max_price = params[:max_price].to_s
+sort = params[:sort].to_s
+tab = defined?(@tab) && @tab.present? ? @tab.to_s : "current"
+
+badge_imgs_for = lambda do |u|
+  out = []
+  if u && u.respond_to?(:admin) && !!u.admin
+    out << "badges/adminbadge.png"
+  end
+  out
+end
+
+stars = lambda do |avg|
+  rounded = ((avg.to_f * 2).round / 2.0)
+  parts = []
+
+  5.times do |i|
+    fill =
+      if rounded >= (i + 1)
+        "100%"
+      elsif rounded >= (i + 0.5)
+        "50%"
+      else
+        "0%"
+      end
+
+    parts << %(
+      <span class="mp-star">
+        <span class="mp-star-base">★</span>
+        <span class="mp-star-fill" style="width: #{fill};">★</span>
+      </span>
+    )
+  end
+
+  %(<span class="mp-stars">#{parts.join}</span>).html_safe
+end
+
+admin_can_delete = defined?(@admin_can_delete) ? !!@admin_can_delete : false
+condition_options = defined?(@condition_options) && @condition_options.is_a?(Array) ? @condition_options : []
+
+sold_listing_for = lambda do |row|
+  if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
+    (@sold_listing_map || {})[row.marketplace_listing_id.to_i]
+  elsif row.respond_to?(:listing_id) && row.listing_id.present?
+    (@sold_listing_map || {})[row.listing_id.to_i]
+  elsif row.is_a?(MarketplaceListing)
+    row
+  else
+    nil
+  end
+end
+%>
+
+<div class="container py-4">
+  <style>
+    .mp-filters{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;box-shadow:0 10px 25px rgba(15,23,42,.06)}
+    .mp-table{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,.06)}
+    .mp-table table{margin:0}
+    .mp-table th,.mp-table td{font-size:.72rem;text-align:center;vertical-align:middle}
+    .mp-badges img{height:16px;width:16px;object-fit:contain;display:inline-block}
+    .mp-actions{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:nowrap;white-space:nowrap}
+    .mp-actions .btn{padding:.12rem .35rem;font-size:.70rem;line-height:1.2}
+    .form-control-sm,.form-select-sm{font-size:.78rem}
+    .mp-tab-links{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+    .mp-tab-link{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap;background:#fff}
+    .mp-tab-link.active{border-color:#111827;font-weight:900}
+    .mp-stars{display:inline-flex;align-items:center;gap:1px;white-space:nowrap;vertical-align:middle;line-height:1}
+    .mp-star{position:relative;display:inline-block;width:.95em;height:1em;line-height:1;vertical-align:middle}
+    .mp-star-base{position:absolute;left:0;top:0;color:#d1d5db;line-height:1}
+    .mp-star-fill{position:absolute;left:0;top:0;overflow:hidden;color:#d4a017;line-height:1;white-space:nowrap}
+  </style>
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div class="h4 m-0">Marketplace</div>
+    <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-primary btn-sm" %>
+  </div>
+
+  <div class="mp-tab-links">
+    <%= link_to "Current Listings", marketplace_path(tab: "current"), class: ["mp-tab-link", (tab == "current" ? "active" : nil)].compact.join(" ") %>
+    <%= link_to "Sold Listings", marketplace_path(tab: "sold"), class: ["mp-tab-link", (tab == "sold" ? "active" : nil)].compact.join(" ") %>
+  </div>
+
+  <%= form_with url: marketplace_path, method: :get, local: true, class: "mp-filters mb-3" do %>
+    <%= hidden_field_tag :tab, tab %>
+
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-lg-5">
+        <label class="form-label small mb-1">Search</label>
+        <%= text_field_tag :q, q, class: "form-control form-control-sm", placeholder: "Search seller, era, set, product type..." %>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Location</label>
+        <select name="country" class="form-select form-select-sm">
+          <option value="">All EU Countries</option>
+          <% eu.each do |name, code| %>
+            <option value="<%= code %>" <%= code == country ? "selected" : "" %>><%= "#{flag_emoji(code)} #{name}" %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Era</label>
+        <select name="era" class="form-select form-select-sm" id="mp-era">
+          <option value=""></option>
+          <% eras.each do |e| %>
+            <option value="<%= e %>" <%= e == selected_era ? "selected" : "" %>><%= e %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="col-6 col-lg-3">
+        <label class="form-label small mb-1">Set</label>
+        <select name="set_slug" class="form-select form-select-sm" id="mp-set" <%= selected_era.present? ? "" : "disabled" %>>
+          <option value=""></option>
+          <% sets_for_era.each do |s| %>
+            <% slug = s["slug"].to_s %>
+            <% name = s["name"].to_s %>
+            <option value="<%= slug %>" <%= slug == set_slug ? "selected" : "" %>><%= name %></option>
+          <% end %>
+        </select>
+      </div>
+    </div>
+
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Product Type</label>
+        <select name="product_type" class="form-select form-select-sm">
+          <option value=""></option>
+          <% product_type_keys.each do |k| %>
+            <option value="<%= k %>" <%= k == product_type ? "selected" : "" %>><%= type_map[k] %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Condition</label>
+        <select name="condition" class="form-select form-select-sm">
+          <option value=""></option>
+          <% condition_options.each do |c| %>
+            <option value="<%= c %>" <%= c == condition ? "selected" : "" %>><%= c %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Min (€)</label>
+        <%= text_field_tag :min_price, min_price, class: "form-control form-control-sm", inputmode: "decimal" %>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Max (€)</label>
+        <%= text_field_tag :max_price, max_price, class: "form-control form-control-sm", inputmode: "decimal" %>
+      </div>
+
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Sort</label>
+        <select name="sort" class="form-select form-select-sm">
+          <option value="" <%= sort.blank? ? "selected" : "" %>>Newest</option>
+          <option value="oldest" <%= sort == "oldest" ? "selected" : "" %>>Oldest</option>
+          <option value="price-asc" <%= sort == "price-asc" ? "selected" : "" %>>Price (Low → High)</option>
+          <option value="price-desc" <%= sort == "price-desc" ? "selected" : "" %>>Price (High → Low)</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-lg-2 d-flex gap-2 justify-content-end">
+        <%= submit_tag "Apply", class: "btn btn-primary btn-sm" %>
+        <%= link_to "Reset", marketplace_path(tab: tab), class: "btn btn-outline-secondary btn-sm" %>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="mp-table">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <% if tab == "current" %>
+          <thead class="table-light">
+            <tr>
+              <th>Seller</th>
+              <th>Location</th>
+              <th>Reviews</th>
+              <th>Badges</th>
+              <th>Era</th>
+              <th>Set</th>
+              <th>Product Type</th>
+              <th>Condition</th>
+              <th>Price</th>
+              <th>Quantity</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @listings.present? && @listings.any? %>
+              <% @listings.each do |l| %>
+                <% seller = l.seller %>
+                <% stats = (@review_stats && seller) ? (@review_stats[seller.id] || { avg: 0.0, count: 0 }) : { avg: 0.0, count: 0 } %>
+                <% era = era_for_slug.call(l.set_slug).presence || "-" %>
+                <tr>
+                  <td>
+                    <%= link_to (seller&.respond_to?(:username) ? seller.username : "User ##{l.seller_id}"), user_path(l.seller_id), class: "text-decoration-none" %>
+                  </td>
+                  <td title="<%= country_name(l.country_code) %>"><%= flag_emoji(l.country_code) %></td>
+                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= stars.call(stats[:avg]) %> (<%= stats[:count] %>)</td>
+                  <td class="mp-badges">
+                    <% badge_imgs_for.call(seller).each do |img| %>
+                      <%= image_tag img, alt: "" %>
+                    <% end %>
+                  </td>
+                  <td><%= era %></td>
+                  <td><%= l.set_name.presence || "-" %></td>
+                  <td><%= display_type.call(l) %></td>
+                  <td><%= l.condition %></td>
+                  <td><%= number_to_currency(l.price_cents.to_i / 100.0, unit: "€") %></td>
+                  <td><%= l.quantity %></td>
+                  <td>
+                    <div class="mp-actions">
+                      <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
+                      <% if current_user && current_user.id == l.seller_id && l.status.to_s == "active" %>
+                        <%= button_to "Cancel", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline" } %>
+                      <% end %>
+                      <% if admin_can_delete %>
+                        <%= button_to "Delete", marketplace_listing_path(l), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline" }, data: { turbo_confirm: "Are you sure you want to delete this listing?" } %>
+                      <% end %>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            <% else %>
+              <tr>
+                <td colspan="11" class="text-center text-muted py-4">No listings found.</td>
+              </tr>
+            <% end %>
+          </tbody>
+        <% else %>
+          <thead class="table-light">
+            <tr>
+              <th>Seller</th>
+              <th>Location</th>
+              <th>Reviews</th>
+              <th>Badges</th>
+              <th>Era</th>
+              <th>Set</th>
+              <th>Product Type</th>
+              <th>Condition</th>
+              <th>Price</th>
+              <th>Quantity Sold</th>
+              <th>Sale Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @sold_rows.present? && @sold_rows.any? %>
+              <% @sold_rows.each do |row| %>
+                <% listing = sold_listing_for.call(row) %>
+                <% seller_id = if row.respond_to?(:seller_id) && row.seller_id.present? then row.seller_id else listing&.seller_id end %>
+                <% seller = if listing&.respond_to?(:seller) && listing.seller.present? then listing.seller elsif seller_id.present? then User.find_by(id: seller_id) else nil end %>
+                <% stats = seller_id.present? ? (@review_stats[seller_id] || { avg: 0.0, count: 0 }) : { avg: 0.0, count: 0 } %>
+                <% slug = if row.respond_to?(:set_slug) && row.set_slug.present? then row.set_slug.to_s elsif listing&.respond_to?(:set_slug) then listing.set_slug.to_s else "" end %>
+                <% set_name = if row.respond_to?(:set_name) && row.set_name.present? then row.set_name.to_s elsif listing&.respond_to?(:set_name) && listing.set_name.present? then listing.set_name.to_s else "-" end %>
+                <% type_obj = listing || row %>
+                <% cond = if row.respond_to?(:condition) && row.condition.present? then row.condition.to_s elsif listing&.respond_to?(:condition) then listing.condition.to_s else "-" end %>
+                <% unit_cents =
+                    if row.respond_to?(:unit_price_cents) && row.unit_price_cents.to_i > 0
+                      row.unit_price_cents.to_i
+                    elsif row.respond_to?(:price_cents) && row.price_cents.to_i > 0
+                      row.price_cents.to_i
+                    elsif listing&.respond_to?(:price_cents)
+                      listing.price_cents.to_i
+                    else
+                      0
+                    end %>
+                <% qty =
+                    if row.respond_to?(:quantity) && row.quantity.present?
+                      row.quantity.to_i
+                    elsif listing&.respond_to?(:quantity)
+                      listing.quantity.to_i
+                    else
+                      "-"
+                    end %>
+                <% sale_date =
+                    if row.respond_to?(:created_at) && row.created_at.present?
+                      row.created_at
+                    elsif row.respond_to?(:updated_at) && row.updated_at.present?
+                      row.updated_at
+                    elsif listing&.respond_to?(:updated_at)
+                      listing.updated_at
+                    end %>
+                <% country_code =
+                    if row.respond_to?(:country_code) && row.country_code.present?
+                      row.country_code.to_s
+                    elsif listing&.respond_to?(:country_code)
+                      listing.country_code.to_s
+                    else
+                      ""
+                    end %>
+                <tr>
+                  <td>
+                    <% if seller_id.present? %>
+                      <%= link_to (seller&.respond_to?(:username) ? seller.username : "User ##{seller_id}"), user_path(seller_id), class: "text-decoration-none" %>
+                    <% else %>
+                      -
+                    <% end %>
+                  </td>
+                  <td title="<%= country_code.present? ? country_name(country_code) : "" %>"><%= country_code.present? ? flag_emoji(country_code) : "-" %></td>
+                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= stars.call(stats[:avg]) %> (<%= stats[:count] %>)</td>
+                  <td class="mp-badges">
+                    <% badge_imgs_for.call(seller).each do |img| %>
+                      <%= image_tag img, alt: "" %>
+                    <% end %>
+                  </td>
+                  <td><%= era_for_slug.call(slug).presence || "-" %></td>
+                  <td><%= set_name %></td>
+                  <td><%= display_type.call(type_obj) %></td>
+                  <td><%= cond.presence || "-" %></td>
+                  <td><%= number_to_currency(unit_cents / 100.0, unit: "€") %></td>
+                  <td><%= qty %></td>
+                  <td><%= sale_date ? sale_date.strftime("%d %b %Y") : "" %></td>
+                  <td>
+                    <div class="mp-actions">
+                      <% if listing %>
+                        <%= link_to "View", marketplace_listing_path(listing), class: "btn btn-outline-primary btn-sm" %>
+                      <% else %>
+                        <span class="text-muted">-</span>
+                      <% end %>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            <% else %>
+              <tr>
+                <td colspan="12" class="text-center text-muted py-4">No sold listings found.</td>
+              </tr>
+            <% end %>
+          </tbody>
+        <% end %>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    const eraSel = document.getElementById("mp-era");
+    eraSel?.addEventListener("change", () => {
+      const form = eraSel.closest("form");
+      if (!form) return;
+      form.submit();
+    });
+  </script>
+</div>

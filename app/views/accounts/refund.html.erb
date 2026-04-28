@@ -1,0 +1,79 @@
+<%
+p = @purchase
+l = @listing
+buyer = @buyer
+addr = @address || {}
+%>
+
+<div class="container py-4">
+  <style>
+    .rf-wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+    .rf-left{flex:1;min-width:320px}
+    .rf-right{width:420px;max-width:100%}
+    .rf-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-bottom:12px}
+    .rf-title{font-size:1.15rem;margin:0 0 10px}
+    .rf-sub{color:#6b7280;font-size:.85rem;margin:0 0 10px}
+    .rf-line{font-size:.9rem;margin:6px 0}
+    .rf-line strong{font-weight:800}
+  </style>
+
+  <div class="mb-3">
+    <%= link_to "← Back", account_path(tab: "sold"), class: "btn btn-link p-0" %>
+  </div>
+
+  <div class="rf-wrap">
+    <div class="rf-left">
+      <div class="rf-card">
+        <div class="rf-title">Refund Sale</div>
+        <% if @already_refunded %>
+          <div class="alert alert-warning mb-0">This sale is already marked as refunded.</div>
+        <% end %>
+      </div>
+
+      <div class="rf-card">
+        <div class="rf-title">Listing Details</div>
+
+        <div class="rf-line"><strong>Buyer:</strong> <%= buyer&.respond_to?(:username) ? buyer.username : (p.respond_to?(:buyer_id) ? "User ##{p.buyer_id}" : "") %></div>
+
+        <% if l %>
+          <div class="rf-line"><strong>Seller:</strong> <%= l.seller&.respond_to?(:username) ? l.seller.username : "User ##{l.seller_id}" %></div>
+          <div class="rf-line"><strong>Location:</strong> <%= defined?(flag_emoji) ? flag_emoji(l.country_code) : l.country_code.to_s %></div>
+          <div class="rf-line"><strong>Condition:</strong> <%= l.condition %></div>
+          <div class="rf-line"><strong>Unit Price:</strong> <%= number_to_currency(l.price_cents.to_i / 100.0, unit: "€") %></div>
+        <% end %>
+
+        <div class="rf-line"><strong>Quantity:</strong> <%= p.respond_to?(:quantity) ? p.quantity.to_i : "" %></div>
+        <div class="rf-line"><strong>Refund Amount:</strong> <%= number_to_currency(@amount_eur.to_f, unit: "€") %></div>
+      </div>
+
+      <div class="rf-card">
+        <div class="rf-title">Buyer Address</div>
+        <div class="rf-line"><strong>Name:</strong> <%= addr[:name] %></div>
+        <div class="rf-line"><strong>Address Line 1:</strong> <%= addr[:line1] %></div>
+        <div class="rf-line"><strong>Address Line 2:</strong> <%= addr[:line2] %></div>
+        <div class="rf-line"><strong>City/Town:</strong> <%= addr[:city] %></div>
+        <div class="rf-line"><strong>County/State:</strong> <%= addr[:county] %></div>
+        <div class="rf-line"><strong>Eircode:</strong> <%= addr[:postcode] %></div>
+        <div class="rf-line"><strong>Country:</strong> <%= addr[:country_code] %></div>
+      </div>
+    </div>
+
+    <div class="rf-right">
+      <div class="rf-card">
+        <div class="rf-title">Confirm Refund</div>
+        <div class="rf-sub">This will transfer funds from your balance to the buyer.</div>
+
+        <%= form_with url: account_marketplace_process_refund_path(p.id), method: :post, local: true do %>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Add Note</label>
+            <textarea class="form-control" name="note" rows="5" placeholder="Optional note..."></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-danger w-100" <%= @already_refunded ? "disabled" : "" %>>
+            Refund
+          </button>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,28 +1,15 @@
-<!-- app/views/shared/_navbar.html.erb -->
-<%# References:
-    - Rails view helpers (link_to, image_tag, current_page?):
-      https://guides.rubyonrails.org/action_view_helpers.html
-    - Bootstrap navbar + responsive layout:
-      https://getbootstrap.com/docs/5.3/components/navbar/
-    - Fetch API and DOM methods (querySelector, addEventListener, etc.):
-      https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
-      https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector
-%>
-
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
   <div class="container-fluid">
-    <%# Brand link back to home with a slightly larger logo %>
     <%= link_to "/", class: "navbar-brand d-flex align-items-center gap-2" do %>
-      <%= image_tag "pokevaluelogo.png", alt: "PokeValue", class: "pv-navbar-logo" %>
+      <%= image_tag "logos/pokevaluelogolightmode.png", alt: "PokeValue", class: "pv-navbar-logo pv-logo-light" %>
+      <%= image_tag "logos/pokevaluelogodarkmode.png", alt: "PokeValue", class: "pv-navbar-logo pv-logo-dark" %>
     <% end %>
 
-    <%# Mobile toggle button for collapsing/expanding nav items %>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
 
     <div class="collapse navbar-collapse" id="mainNav">
-      <%# Main navigation links, with current page highlighted %>
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
         <li class="nav-item">
           <%= link_to "Portfolio", "/", class: ["nav-link", (current_page?("/") ? "fw-bold text-dark" : nil)].compact.join(" ") %>
@@ -30,15 +17,25 @@
         <li class="nav-item"><%= link_to "Sets", sets_path, class: ["nav-link", (current_page?(sets_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
         <li class="nav-item"><%= link_to "Marketplace", marketplace_path, class: ["nav-link", (current_page?(marketplace_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
         <li class="nav-item"><%= link_to "Auction", auction_path, class: ["nav-link", (current_page?(auction_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
-        <li class="nav-item"><%= link_to "Raffle", raffle_path, class: ["nav-link", (current_page?(raffle_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
-        <li class="nav-item"><%= link_to "Showcase", showcase_path, class: ["nav-link", (current_page?(showcase_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
+        <li class="nav-item"><%= link_to "Raffle", raffles_path, class: ["nav-link", ((current_page?(raffles_path) || request.path == "/raffle") ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
+        <li class="nav-item"><%= link_to "Community", community_path, class: ["nav-link", (request.path.start_with?("/community") || request.path.start_with?("/showcase") ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
 
         <% if defined?(admin_signed_in?) && admin_signed_in? %>
+          <% admin_path = request.path.to_s %>
+          <% admin_active = admin_path.start_with?("/admin") %>
+          <% admin_products_active = admin_path.start_with?("/admin/products") %>
+          <% admin_sets_active = admin_path.start_with?("/admin/sets") %>
+          <% admin_logs_active = admin_path.start_with?("/admin/logs") %>
+
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+            <a href="#" role="button" class="<%= ["nav-link dropdown-toggle pv-admin-dropdown-toggle", (admin_active ? "fw-bold text-dark" : nil)].compact.join(" ") %>" data-bs-toggle="dropdown" aria-expanded="false">
+              <span>Admin</span>
+              <span class="pv-admin-caret">▾</span>
+            </a>
             <ul class="dropdown-menu">
-              <li><%= link_to "Products", admin_products_path, class: "dropdown-item" %></li>
-              <li><%= link_to "Sets", admin_sets_path, class: "dropdown-item" %></li>
+              <li><%= link_to "Products", admin_products_path, class: ["dropdown-item", (admin_products_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
+              <li><%= link_to "Sets", admin_sets_path, class: ["dropdown-item", (admin_sets_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
+              <li><%= link_to "Logs", admin_logs_path, class: ["dropdown-item", (admin_logs_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
             </ul>
           </li>
         <% end %>
@@ -49,28 +46,47 @@
         #global-search-results.open{display:block!important}
         .navbar{padding-top:0;padding-bottom:0;min-height:56px}
         .pv-navbar-logo{height:52px;width:auto}
+        .pv-footer-logo{height:100px;width:auto}
+        .pv-logo-light{display:inline-block!important}
+        .pv-logo-dark{display:none!important}
+        :root[data-pv-theme="dark"] .pv-logo-light{display:none!important}
+        :root[data-pv-theme="dark"] .pv-logo-dark{display:inline-block!important}
+        :root[data-pv-theme="light"] .pv-logo-light{display:inline-block!important}
+        :root[data-pv-theme="light"] .pv-logo-dark{display:none!important}
+        .pv-admin-dropdown-toggle{display:inline-flex!important;align-items:center!important;gap:.22rem!important}
+        .pv-admin-dropdown-toggle::after{display:none!important}
+        .pv-admin-caret{display:inline-block!important;font-size:.78rem!important;line-height:1!important;color:inherit!important;background:transparent!important;border:0!important;transform:translateY(1px)}
+        .pv-search-wrap{width:250px;min-width:250px;max-width:250px;flex:0 0 250px}
         .navbar-user-wrap{display:flex;align-items:center;gap:.35rem;flex-wrap:nowrap}
-        .navbar-user-text{white-space:nowrap;font-size:.85rem;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+        .navbar-user-text{white-space:nowrap;font-size:.85rem;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+        .pv-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;font-size:.78rem;font-weight:900;line-height:1;vertical-align:middle}
+        .pv-badge-admin{background:rgba(220,53,69,.10);color:#dc3545;border:1px solid rgba(220,53,69,.45);box-shadow:0 2px 6px rgba(220,53,69,.15)}
+        @media (max-width: 1199.98px){
+          .pv-search-wrap{width:220px;min-width:220px;max-width:220px;flex:0 0 220px}
+          .navbar-user-text{max-width:170px}
+        }
+        @media (max-width: 991.98px){
+          .pv-search-wrap{width:100%;min-width:0;max-width:none;flex:1 1 auto;margin-top:.5rem;margin-bottom:.5rem}
+          .navbar-user-wrap{margin-top:.5rem}
+          .navbar-user-text{max-width:100%}
+        }
       </style>
 
-      <%# Global search input (sets + products) with dropdown results %>
-      <div class="position-relative me-3" style="min-width:340px;">
+      <div class="position-relative me-2 pv-search-wrap">
         <input id="global-search" class="form-control" type="search" placeholder="Search products and sets..." aria-label="Search" autocomplete="off">
         <div id="global-search-results" class="dropdown-menu w-100 mt-1 p-0" aria-labelledby="global-search" style="max-height:420px; overflow:auto;"></div>
       </div>
 
-      <%# MyAccount link – either goes to account page or opens auth modal %>
-      <ul class="navbar-nav mb-2 mb-lg-0 me-3">
+      <ul class="navbar-nav mb-2 mb-lg-0 me-2">
         <li class="nav-item">
           <% if current_user %>
-            <%= link_to "MyAccount", account_path, class: ["nav-link", (current_page?(account_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %>
+            <%= link_to "My Account", account_path, class: ["nav-link", (current_page?(account_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %>
           <% else %>
-            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#authModal">MyAccount</a>
+            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#authModal">My Account</a>
           <% end %>
         </li>
       </ul>
 
-      <%# Right-hand side: user info + logout or Login/Register button %>
       <% if current_user %>
         <div class="navbar-user-wrap">
           <span class="navbar-text navbar-user-text">
@@ -91,74 +107,105 @@
   </div>
 </nav>
 
-<script type="module">
-  const input  = document.getElementById("global-search");
-  const menu   = document.getElementById("global-search-results");
-
-  function row(item) {
-    return `
-      <a class="dropdown-item py-2" href="${item.href}">
-        <div class="d-flex align-items-center">
-          <img src="${item.image_url}" alt="" style="width:48px;height:48px;object-fit:contain;margin-right:10px;">
-          <div class="flex-grow-1">
-            <div class="fw-semibold text-truncate">${item.label}</div>
-            <div class="text-muted small text-truncate">${item.subtitle}</div>
-          </div>
-        </div>
-      </a>
-    `;
-  }
-
-  function section(title, items) {
-    if (!items || items.length === 0) return "";
-    return `
-      <div class="border-bottom px-3 py-2 fw-semibold text-muted small">${title}</div>
-      ${items.map(row).join("")}
-    `;
-  }
-
-  function render(data) {
-    const setsHtml     = section("Sets", data.sets || []);
-    const productsHtml = section("Products", data.products || []);
-    const html = [setsHtml, productsHtml].filter(Boolean).join("");
-
-    if (html) {
-      menu.innerHTML = html;
-      menu.classList.add("open");
-    } else {
-      menu.classList.remove("open");
-      menu.innerHTML = "";
-    }
-  }
-
-  let timer;
-  input?.addEventListener("input", (e) => {
-    const q = e.target.value.trim();
-    clearTimeout(timer);
-
-    if (!q) {
-      menu.classList.remove("open");
-      menu.innerHTML = "";
-      return;
+<script>
+  (function(){
+    function initDropdowns(){
+      if(!window.bootstrap || !window.bootstrap.Dropdown) return;
+      document.querySelectorAll('#mainNav .dropdown-toggle[data-bs-toggle="dropdown"]').forEach(function(el){
+        window.bootstrap.Dropdown.getOrCreateInstance(el);
+      });
     }
 
-    timer = setTimeout(async () => {
-      try {
-        const resp = await fetch("/search_index.json?q=" + encodeURIComponent(q));
-        if (!resp.ok) return;
-        const data = await resp.json();
-        render(data);
-      } catch(_) {
+    document.addEventListener("turbo:load", initDropdowns);
+    document.addEventListener("DOMContentLoaded", initDropdowns);
+  })();
+</script>
+
+<script>
+  (function(){
+    function initGlobalSearch(){
+      const input = document.getElementById("global-search");
+      const menu = document.getElementById("global-search-results");
+
+      if(!input || !menu) return;
+      if(input.dataset.pvSearchBound === "1") return;
+      input.dataset.pvSearchBound = "1";
+
+      function row(item) {
+        return `
+          <a class="dropdown-item py-2" href="${item.href}">
+            <div class="d-flex align-items-center">
+              <img src="${item.image_url}" alt="" style="width:48px;height:48px;object-fit:contain;margin-right:10px;">
+              <div class="flex-grow-1">
+                <div class="fw-semibold text-truncate">${item.label}</div>
+                <div class="text-muted small text-truncate">${item.subtitle}</div>
+              </div>
+            </div>
+          </a>
+        `;
       }
-    }, 120);
-  });
 
-  document.addEventListener("click", (e) => {
-    if (!menu.contains(e.target) && e.target !== input) {
-      menu.classList.remove("open");
+      function section(title, items) {
+        if (!items || items.length === 0) return "";
+        return `
+          <div class="border-bottom px-3 py-2 fw-semibold text-muted small">${title}</div>
+          ${items.map(row).join("")}
+        `;
+      }
+
+      function render(data) {
+        const setsHtml = section("Sets", data.sets || []);
+        const productsHtml = section("Products", data.products || []);
+        const html = [setsHtml, productsHtml].filter(Boolean).join("");
+
+        if (html) {
+          menu.innerHTML = html;
+          menu.classList.add("open");
+        } else {
+          menu.classList.remove("open");
+          menu.innerHTML = "";
+        }
+      }
+
+      let timer;
+
+      input.addEventListener("input", function(e){
+        const q = e.target.value.trim();
+        clearTimeout(timer);
+
+        if (!q) {
+          menu.classList.remove("open");
+          menu.innerHTML = "";
+          return;
+        }
+
+        timer = setTimeout(async function(){
+          try {
+            const resp = await fetch("/search_index.json?q=" + encodeURIComponent(q));
+            if (!resp.ok) return;
+            const data = await resp.json();
+            render(data);
+          } catch(_) {
+          }
+        }, 120);
+      });
+
+      document.addEventListener("click", function(e){
+        if (!menu.contains(e.target) && e.target !== input) {
+          menu.classList.remove("open");
+        }
+      });
+
+      document.addEventListener("turbo:click", function(){
+        menu.classList.remove("open");
+      });
+
+      document.addEventListener("turbo:before-cache", function(){
+        menu.classList.remove("open");
+      });
     }
-  });
 
-  document.addEventListener("turbo:click", () => menu.classList.remove("open"));
-  document.addEventListener("turbo:before-cache", () => menu.classList.remove("open"));
+    document.addEventListener("turbo:load", initGlobalSearch);
+    document.addEventListener("DOMContentLoaded", initGlobalSearch);
+  })();
 </script>

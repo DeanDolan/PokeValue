@@ -1,0 +1,216 @@
+<%
+@running_main_raffles ||= []
+ticket_price_value =
+  if params[:ticket_price_eur].present?
+    params[:ticket_price_eur]
+  elsif @raffle.ticket_price_cents.to_i > 0
+    @raffle.ticket_price_cents.to_i / 100.0
+  end
+
+selected_kind =
+  if @raffle.raffle_kind.present?
+    @raffle.raffle_kind
+  else
+    "raffle"
+  end
+
+host_revolut_tag = current_user&.revolut_tag.to_s
+%>
+
+<div class="container py-4">
+  <style>
+    .rf-form-card{
+      max-width:900px;
+      margin:0 auto;
+      background:#ffffff;
+      border:1px solid #d4d4d8;
+      border-radius:1rem;
+      box-shadow:0 10px 25px rgba(15,23,42,0.08);
+      padding:20px;
+    }
+    .rf-form-title{
+      margin:0 0 4px;
+      font-size:1.5rem;
+      font-weight:800;
+      color:#111827;
+    }
+    .rf-form-sub{
+      margin:0 0 18px;
+      color:#6b7280;
+      font-size:.9rem;
+    }
+    .rf-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+    .rf-full{
+      grid-column:1 / -1;
+    }
+    .rf-upload-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px;
+    }
+    .rf-upload-box{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:12px;
+      background:#fafafa;
+    }
+    .rf-upload-label{
+      display:block;
+      font-size:.82rem;
+      font-weight:700;
+      color:#374151;
+      margin-bottom:8px;
+    }
+    .rf-note{
+      color:#6b7280;
+      font-size:.8rem;
+      margin-top:4px;
+    }
+    .rf-actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:18px;
+    }
+    @media (max-width: 768px){
+      .rf-grid,
+      .rf-upload-grid{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+
+  <div class="rf-form-card">
+    <h1 class="rf-form-title">Host Raffle</h1>
+    <p class="rf-form-sub">Create a raffle or mini raffle.</p>
+
+    <% if @raffle.errors.any? %>
+      <div class="alert alert-danger">
+        <strong>Please fix the following:</strong>
+        <ul class="mb-0 mt-2">
+          <% @raffle.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%= form_with model: @raffle, url: raffles_path, method: :post, local: true, html: { multipart: true } do |f| %>
+      <div class="rf-grid">
+        <div class="rf-full">
+          <label class="form-label">Title</label>
+          <%= f.text_field :title, class: "form-control", required: true, maxlength: 120 %>
+        </div>
+
+        <div>
+          <label class="form-label">Type</label>
+          <%= f.select :raffle_kind,
+                options_for_select([["Raffle", "raffle"], ["Mini Raffle", "mini"]], selected_kind),
+                {},
+                class: "form-select",
+                id: "raffle_kind_select" %>
+        </div>
+
+        <div id="main_raffle_wrap" style="<%= selected_kind == 'mini' ? '' : 'display:none;' %>">
+          <label class="form-label">Main Raffle Title</label>
+          <%= f.select :main_raffle_id,
+                options_for_select(@running_main_raffles.map { |raffle| ["#{raffle.title} - #{raffle.host.username}", raffle.id] }, @raffle.main_raffle_id),
+                { include_blank: "Select active main raffle" },
+                class: "form-select",
+                id: "main_raffle_select",
+                required: (selected_kind == "mini") %>
+          <div class="rf-note">Only needed for mini raffles.</div>
+        </div>
+
+        <div>
+          <label class="form-label">Ticket Price (€)</label>
+          <%= number_field_tag :ticket_price_eur,
+                ticket_price_value,
+                step: "0.01",
+                min: "0.01",
+                class: "form-control",
+                required: true %>
+        </div>
+
+        <div>
+          <label class="form-label">Total Tickets</label>
+          <%= f.number_field :total_tickets, min: 1, max: 1000, class: "form-control", required: true %>
+        </div>
+
+        <div class="rf-full">
+          <label class="form-label">Host Revolut Tag</label>
+          <%= text_field_tag :revolut_tag_display,
+                host_revolut_tag,
+                class: "form-control",
+                maxlength: 80,
+                required: true,
+                readonly: true,
+                placeholder: "@yourtag" %>
+          <div class="rf-note">This Revolut Tag is taken from your account and cannot be changed here.</div>
+        </div>
+
+        <div class="rf-full">
+          <label class="form-label">Upload Images</label>
+          <div class="rf-upload-grid">
+            <div class="rf-upload-box">
+              <label class="rf-upload-label">Image 1</label>
+              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
+            </div>
+            <div class="rf-upload-box">
+              <label class="rf-upload-label">Image 2</label>
+              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
+            </div>
+            <div class="rf-upload-box">
+              <label class="rf-upload-label">Image 3</label>
+              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
+            </div>
+            <div class="rf-upload-box">
+              <label class="rf-upload-label">Image 4</label>
+              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
+            </div>
+          </div>
+          <div class="rf-note">Up to 4 JPG or PNG images.</div>
+        </div>
+      </div>
+
+      <div class="rf-actions">
+        <%= f.submit "Create Raffle", class: "btn btn-success" %>
+        <%= link_to "Cancel", raffles_path, class: "btn btn-outline-secondary" %>
+      </div>
+    <% end %>
+  </div>
+
+  <script>
+    ;(function () {
+      function toggleMainRaffleField() {
+        const kindSelect = document.getElementById("raffle_kind_select")
+        const mainWrap = document.getElementById("main_raffle_wrap")
+        const mainSelect = document.getElementById("main_raffle_select")
+        if (!kindSelect || !mainWrap || !mainSelect) return
+
+        const isMini = kindSelect.value === "mini"
+        mainWrap.style.display = isMini ? "" : "none"
+        mainSelect.required = isMini
+
+        if (!isMini) {
+          mainSelect.value = ""
+        }
+      }
+
+      function initRaffleNewForm() {
+        const kindSelect = document.getElementById("raffle_kind_select")
+        if (!kindSelect) return
+        toggleMainRaffleField()
+        kindSelect.removeEventListener("change", toggleMainRaffleField)
+        kindSelect.addEventListener("change", toggleMainRaffleField)
+      }
+
+      document.addEventListener("DOMContentLoaded", initRaffleNewForm)
+      document.addEventListener("turbo:load", initRaffleNewForm)
+    })()
+  </script>
+</div>

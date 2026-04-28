@@ -1,0 +1,449 @@
+<%
+auction = @auction
+
+stars = lambda do |avg|
+  a = avg.to_f
+  full = a.floor
+  half = ((a - full) >= 0.5) ? 1 : 0
+  empty = 5 - full - half
+  ("★" * full) + (half == 1 ? "½" : "") + ("☆" * empty)
+end
+
+admin_badge_asset = "badges/adminbadge.png"
+
+badge_imgs_for = lambda do |user|
+  out = []
+  if user && ((user.respond_to?(:admin?) && user.admin?) || (user.respond_to?(:admin) && !!user.admin))
+    out << admin_badge_asset
+  end
+  out
+end
+
+seller = auction.seller
+seller_name = seller&.username.to_s.presence || "User ##{auction.seller_id}"
+seller_badges = badge_imgs_for.call(seller)
+
+country_code =
+  if seller && seller.respond_to?(:country_code) && seller.country_code.present?
+    seller.country_code.to_s
+  else
+    ""
+  end
+
+reserve_label = auction.reserve_status.to_s.downcase.include?("no") ? "No Reserve" : "Reserve"
+
+status_key = auction.status.to_s
+status_label =
+  case status_key
+  when "sold"
+    "Sold"
+  when "paid"
+    "Payment Confirmed"
+  when "payment_pending"
+    "Awaiting Winner Payment"
+  when "ended"
+    "Ended"
+  else
+    auction.ends_at.present? && auction.ends_at <= Time.current ? "Ended" : "Running"
+  end
+
+status_badge_class =
+  case status_key
+  when "sold"
+    "bg-danger"
+  when "paid"
+    "bg-primary"
+  when "payment_pending"
+    "bg-warning text-dark"
+  when "ended"
+    "bg-secondary"
+  else
+    "bg-success"
+  end
+
+remaining_text =
+  if status_key == "payment_pending"
+    "Awaiting Payment"
+  elsif status_key == "paid"
+    "Awaiting Host Verification"
+  elsif status_key == "sold"
+    "Sold"
+  elsif status_key == "ended"
+    "Ended"
+  elsif auction.ends_at.blank?
+    "-"
+  else
+    diff = (auction.ends_at.to_f - Time.current.to_f).to_i
+    if diff <= 0
+      "Ended"
+    else
+      days = diff / 86_400
+      hours = (diff % 86_400) / 3_600
+      minutes = (diff % 3_600) / 60
+      seconds = diff % 60
+
+      if days > 0
+        "#{days}d #{hours}h #{minutes}m"
+      elsif hours > 0
+        "#{hours}h #{minutes}m #{seconds}s"
+      else
+        "#{minutes}m #{seconds}s"
+      end
+    end
+  end
+
+images = auction.photos.attached? ? auction.photos.first(4) : []
+owner_can_end = defined?(current_user) && current_user && auction.can_end_early_by?(current_user)
+winning_bidder = auction.winning_bidder
+current_user_id = defined?(current_user) && current_user ? current_user.id.to_i : nil
+is_host = current_user_id.present? && current_user_id == auction.seller_id.to_i
+is_winner = current_user_id.present? && winning_bidder && current_user_id == winning_bidder.id.to_i
+can_bid_now = auction.running? && !is_host
+highest_bid_display = auction.current_bid_cents_value.to_i > 0 ? number_to_currency(auction.current_bid_cents_value.to_i / 100.0, unit: "€") : "No bids yet"
+host_revolut_tag = auction.host_revolut_tag.to_s
+winner_revolut_tag = auction.winner_revolut_tag.to_s
+%>
+
+<div class="container py-4">
+  <style>
+    .au-show-wrap{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+    .au-show-left{flex:1;min-width:320px}
+    .au-show-right{width:420px;max-width:100%}
+    .au-show-title{font-size:1.2rem;margin:0 0 6px}
+    .au-show-sub{color:#6b7280;font-size:.85rem;margin:0 0 14px}
+    .au-show-block{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .au-show-line{font-size:.88rem;margin:6px 0}
+    .au-show-line strong{font-weight:700}
+    .au-show-flag{font-size:1.2rem;line-height:1;display:inline-block;position:relative;top:3px}
+    .au-show-rev{white-space:nowrap;color:#f59e0b}
+    .au-show-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .au-show-btn{padding:6px 10px;font-size:.85rem}
+    .au-show-thumbgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    .au-show-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer;transition:transform .12s ease}
+    .au-show-thumb:hover{transform:scale(1.03)}
+    .au-show-noimg{color:#6b7280;font-size:.9rem}
+    .au-show-reviews-title{margin:18px 0 8px;font-size:1rem}
+    .au-show-review-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:8px}
+    .au-show-review-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .au-show-review-stars{white-space:nowrap;color:#f59e0b}
+    .au-show-review-body{margin-top:6px;color:#111827;font-size:.9rem}
+    .au-show-review-meta{color:#6b7280;font-size:.8rem}
+    .au-show-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .au-show-badges img{height:22px;width:22px;display:block;object-fit:contain}
+    .au-show-desc{white-space:pre-wrap;word-break:break-word}
+    .au-pay-box{margin-top:12px;border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#f9fafb}
+    .au-hidden-tag{display:inline-flex;align-items:center;justify-content:center;min-width:150px;height:30px;background:#000;color:#000;border-radius:8px;padding:0 10px;font-weight:800;letter-spacing:.04em;vertical-align:middle;user-select:none}
+    .au-hidden-tag.revealed{background:#111827;color:#fff}
+    .au-confirm-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:99999;padding:18px}
+    .au-confirm-box{width:min(420px,100%);background:#fff;border-radius:16px;border:1px solid #e5e7eb;box-shadow:0 24px 80px rgba(15,23,42,.28);padding:16px}
+    .au-confirm-title{font-size:1rem;font-weight:900;margin:0 0 8px}
+    .au-confirm-text{font-size:.9rem;color:#374151;margin:0 0 14px}
+    .au-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+  </style>
+
+  <div class="mb-3">
+    <%= link_to "← Back to Auction", auction_path, class: "btn btn-link p-0" %>
+  </div>
+
+  <div class="au-show-wrap">
+    <div class="au-show-left">
+      <div class="au-show-block" id="au-show-info-card">
+        <h1 class="au-show-title">Auction Information:</h1>
+        <p class="au-show-sub">Auction listing details</p>
+
+        <div class="au-show-line"><strong>Seller:</strong> <%= link_to seller_name, user_path(auction.seller_id), class: "text-decoration-none" %></div>
+
+        <div class="au-show-line">
+          <strong>Location:</strong>
+          <% if country_code.present? && defined?(flag_emoji) %>
+            <span class="au-show-flag" title="<%= defined?(country_name) ? country_name(country_code) : country_code %>"><%= flag_emoji(country_code) %></span>
+          <% elsif country_code.present? %>
+            <span><%= country_code %></span>
+          <% else %>
+            <span class="text-muted">-</span>
+          <% end %>
+        </div>
+
+        <div class="au-show-line">
+          <strong>Reviews:</strong>
+          <span class="au-show-rev" title="<%= "#{@seller_stats[:avg].round(1)}/5 (#{@seller_stats[:count]})" %>"><%= stars.call(@seller_stats[:avg]) %> (<%= @seller_stats[:count] %>)</span>
+        </div>
+
+        <div class="au-show-line">
+          <strong>Badges:</strong>
+          <% if seller_badges.any? %>
+            <span class="au-show-badges">
+              <% seller_badges.each do |img| %>
+                <%= image_tag img, alt: "" %>
+              <% end %>
+            </span>
+          <% else %>
+            <span class="text-muted">None</span>
+          <% end %>
+        </div>
+
+        <div class="au-show-line">
+          <strong>Auction Description:</strong>
+          <div class="au-show-desc mt-1"><%= auction.auction_description %></div>
+        </div>
+
+        <div class="au-show-line"><strong>Condition:</strong> <%= auction.condition %></div>
+        <div class="au-show-line"><strong>Reserve Status:</strong> <%= reserve_label %></div>
+        <div class="au-show-line"><strong>Length:</strong> <%= auction.auction_length_label.to_s.presence || "-" %></div>
+        <div class="au-show-line"><strong>Highest Bid:</strong> <%= highest_bid_display %></div>
+        <div class="au-show-line"><strong>Bids:</strong> <%= auction.bids_count.to_i %></div>
+        <div class="au-show-line"><strong>Time Remaining:</strong> <span id="au-show-timer" data-status="<%= status_key %>" data-end-timestamp="<%= auction.ends_at.present? ? (auction.ends_at.to_f * 1000).to_i : 0 %>"><%= remaining_text %></span></div>
+        <div class="au-show-line"><strong>Status:</strong> <span id="au-show-status" class="badge <%= status_badge_class %>"><%= status_label %></span></div>
+
+        <% if winning_bidder.present? && %w[payment_pending paid sold].include?(status_key) %>
+          <div class="au-show-line"><strong>Winning Bidder:</strong> <%= winning_bidder.username.to_s.presence || "User ##{winning_bidder.id}" %></div>
+          <div class="au-show-line"><strong>Winning Bid:</strong> <%= number_to_currency(auction.winning_bid_cents.to_i / 100.0, unit: "€") %></div>
+        <% end %>
+
+        <% if status_key == "payment_pending" && is_winner %>
+          <div class="au-pay-box">
+            <div class="fw-semibold mb-2">You won this auction. Confirm payment after sending payment through Revolut.</div>
+            <div class="au-show-line">
+              <strong>Host Revolut Tag:</strong>
+              <span class="au-hidden-tag" data-secret-tag="<%= host_revolut_tag %>">████████</span>
+              <button type="button" class="btn btn-outline-dark btn-sm" data-reveal-tag="1">Reveal</button>
+            </div>
+            <%= button_to "Confirm Payment", confirm_payment_auction_path(auction), method: :post, class: "btn btn-primary btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to confirm payment?" } } %>
+          </div>
+        <% elsif status_key == "payment_pending" && is_host %>
+          <div class="au-pay-box">
+            <div class="fw-semibold">Waiting for auction winner to confirm payment.</div>
+            <div class="text-muted small mt-1">You will only see the winner’s Revolut tag after they confirm payment.</div>
+          </div>
+        <% elsif status_key == "paid" && is_host %>
+          <div class="au-pay-box">
+            <div class="fw-semibold mb-2">Winner has confirmed payment. Verify it after checking your Revolut.</div>
+            <div class="au-show-line">
+              <strong>Winner Revolut Tag:</strong>
+              <span class="au-hidden-tag" data-secret-tag="<%= winner_revolut_tag %>">████████</span>
+              <button type="button" class="btn btn-outline-dark btn-sm" data-reveal-tag="1">Reveal</button>
+            </div>
+            <div class="au-show-line"><strong>Send To:</strong> <%= auction.winning_address_text.to_s.presence || "-" %></div>
+            <%= button_to "Verify Payment", verify_payment_auction_path(auction), method: :post, class: "btn btn-success btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to verify this payment?" } } %>
+          </div>
+        <% elsif status_key == "paid" && is_winner %>
+          <div class="au-pay-box">
+            <div class="fw-semibold">Payment confirmation sent.</div>
+            <div class="text-muted small mt-1">Waiting for the auction host to verify payment.</div>
+          </div>
+        <% elsif status_key == "sold" && winning_bidder.present? %>
+          <div class="au-pay-box">
+            <div class="fw-semibold">Payment verified. Auction sold.</div>
+            <% if is_host %>
+              <div class="au-show-line"><strong>Send To:</strong> <%= auction.winning_address_text.to_s.presence || "-" %></div>
+            <% end %>
+          </div>
+        <% end %>
+
+        <div class="au-show-actions">
+          <% if can_bid_now %>
+            <%= link_to "Bid", bid_auction_path(auction), class: "btn btn-primary au-show-btn" %>
+          <% elsif is_host %>
+            <button type="button" class="btn btn-secondary au-show-btn" disabled>Host Cannot Bid</button>
+          <% else %>
+            <button type="button" class="btn btn-secondary au-show-btn" disabled>Bid</button>
+          <% end %>
+
+          <% if owner_can_end %>
+            <%= button_to "End", end_auction_path(auction), method: :post, class: "btn btn-outline-danger au-show-btn", form: { class: "d-inline", data: { confirm_modal: "Do you want to end this auction?" } } %>
+          <% end %>
+        </div>
+      </div>
+
+      <h3 class="au-show-reviews-title">Recent Reviews</h3>
+      <% if @recent_reviews.present? && @recent_reviews.any? %>
+        <% @recent_reviews.each do |review| %>
+          <div class="au-show-review-card">
+            <div class="au-show-review-top">
+              <div class="au-show-review-stars"><%= stars.call(review.respond_to?(:rating) ? review.rating : 0) %></div>
+              <div class="au-show-review-meta"><%= review.respond_to?(:created_at) ? review.created_at.strftime("%d %b %Y") : "" %></div>
+            </div>
+            <% body = (review.respond_to?(:comment) ? review.comment : (review.respond_to?(:body) ? review.body : "")).to_s %>
+            <% if body.present? %>
+              <div class="au-show-review-body"><%= body %></div>
+            <% end %>
+          </div>
+        <% end %>
+      <% else %>
+        <div class="text-muted">No reviews yet.</div>
+      <% end %>
+    </div>
+
+    <div class="au-show-right">
+      <div class="au-show-block" id="au-show-images-card">
+        <div class="fw-semibold mb-2">Auction Image(s):</div>
+        <% if images.any? %>
+          <div class="au-show-thumbgrid">
+            <% images.each_with_index do |img, idx| %>
+              <%= image_tag url_for(img), class: "au-show-thumb", alt: "Auction image #{idx + 1}", data: { bs_toggle: "modal", bs_target: "#auctionImgModal", full_src: url_for(img) } %>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="au-show-noimg">No images uploaded.</div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="auctionImgModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-flex justify-content-center">
+        <img id="auctionImgModalEl" src="" alt="" style="max-width:100%;max-height:78vh;object-fit:contain;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="au-confirm-backdrop" id="auctionConfirmModal">
+  <div class="au-confirm-box">
+    <div class="au-confirm-title">Confirm Action</div>
+    <p class="au-confirm-text" id="auctionConfirmText">Do you want to confirm this action?</p>
+    <div class="au-confirm-actions">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="auctionConfirmNo">No</button>
+      <button type="button" class="btn btn-primary btn-sm" id="auctionConfirmYes">Yes</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  const modalEl = document.getElementById("auctionImgModalEl");
+
+  document.addEventListener("click", (e) => {
+    const img = e.target.closest("img[data-bs-target='#auctionImgModal']");
+    if (!img) return;
+    const src = img.getAttribute("data-full-src");
+    if (modalEl && src) modalEl.src = src;
+  });
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-reveal-tag='1']");
+    if (!btn) return;
+
+    const wrap = btn.parentElement;
+    const tag = wrap ? wrap.querySelector("[data-secret-tag]") : null;
+    if (!tag) return;
+
+    const secret = tag.getAttribute("data-secret-tag") || "";
+    tag.textContent = secret || "No tag";
+    tag.classList.add("revealed");
+    btn.disabled = true;
+
+    setTimeout(() => {
+      tag.textContent = "████████";
+      tag.classList.remove("revealed");
+      btn.disabled = false;
+    }, 10000);
+  });
+
+  const timerEl = document.getElementById("au-show-timer");
+  const statusEl = document.getElementById("au-show-status");
+
+  function formatRemaining(milliseconds) {
+    if (milliseconds <= 0) return "Ended";
+
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) return days + "d " + hours + "h " + minutes + "m";
+    if (hours > 0) return hours + "h " + minutes + "m " + seconds + "s";
+    return minutes + "m " + seconds + "s";
+  }
+
+  function updateAuctionShowTimer() {
+    if (!timerEl) return;
+
+    const status = timerEl.getAttribute("data-status") || "";
+    if (status === "payment_pending") {
+      timerEl.textContent = "Awaiting Payment";
+      return;
+    }
+
+    if (status === "paid") {
+      timerEl.textContent = "Awaiting Host Verification";
+      return;
+    }
+
+    if (status === "sold") {
+      timerEl.textContent = "Sold";
+      return;
+    }
+
+    const endTimestamp = parseInt(timerEl.getAttribute("data-end-timestamp") || "0", 10);
+    if (!endTimestamp) return;
+
+    const remaining = endTimestamp - Date.now();
+
+    if (remaining <= 0) {
+      timerEl.textContent = "Ended";
+      if (statusEl && statusEl.textContent.trim() === "Running") {
+        statusEl.textContent = "Ended";
+        statusEl.classList.remove("bg-success", "bg-danger", "bg-warning", "text-dark", "bg-primary");
+        statusEl.classList.add("bg-secondary");
+      }
+      return;
+    }
+
+    timerEl.textContent = formatRemaining(remaining);
+  }
+
+  function syncAuctionShowCardHeights() {
+    const infoCard = document.getElementById("au-show-info-card");
+    const imagesCard = document.getElementById("au-show-images-card");
+    if (!infoCard || !imagesCard) return;
+
+    imagesCard.style.minHeight = "";
+    if (window.innerWidth < 992) return;
+
+    imagesCard.style.minHeight = infoCard.offsetHeight + "px";
+  }
+
+  let pendingForm = null;
+  const confirmModal = document.getElementById("auctionConfirmModal");
+  const confirmText = document.getElementById("auctionConfirmText");
+  const confirmYes = document.getElementById("auctionConfirmYes");
+  const confirmNo = document.getElementById("auctionConfirmNo");
+
+  document.addEventListener("submit", (e) => {
+    const form = e.target.closest("form[data-confirm-modal]");
+    if (!form) return;
+    if (form.dataset.confirmedSubmit === "1") return;
+
+    e.preventDefault();
+    pendingForm = form;
+    if (confirmText) confirmText.textContent = form.dataset.confirmModal || "Do you want to confirm this action?";
+    if (confirmModal) confirmModal.style.display = "flex";
+  });
+
+  confirmNo?.addEventListener("click", () => {
+    pendingForm = null;
+    if (confirmModal) confirmModal.style.display = "none";
+  });
+
+  confirmYes?.addEventListener("click", () => {
+    if (!pendingForm) return;
+    pendingForm.dataset.confirmedSubmit = "1";
+    if (confirmModal) confirmModal.style.display = "none";
+    pendingForm.requestSubmit();
+  });
+
+  updateAuctionShowTimer();
+  syncAuctionShowCardHeights();
+
+  setInterval(updateAuctionShowTimer, 1000);
+  window.addEventListener("resize", syncAuctionShowCardHeights);
+  document.addEventListener("turbo:load", syncAuctionShowCardHeights);
+</script>
