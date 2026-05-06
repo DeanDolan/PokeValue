@@ -25,6 +25,7 @@ export default class extends Controller {
     }
   }
 
+  // Runs when the Bootstrap metrics modal is opened
   async onShown() {
     if (!this.endpointValue) {
       if (this.hasStatusTarget) this.statusTarget.textContent = "ERROR: metrics endpoint missing (data-metrics-endpoint-value)"
@@ -39,6 +40,7 @@ export default class extends Controller {
     this.show("cost")
   }
 
+  // Loads Chart.js and then loads the portfolio metrics JSON
   async loadEverything() {
     const chartLoad = await this.loadChartLib()
     if (!chartLoad.ok) {
@@ -58,6 +60,7 @@ export default class extends Controller {
     }
   }
 
+  // Dynamically imports Chart.js so the chart only loads when needed
   async loadChartLib() {
     if (window.Chart) {
       this.Chart = window.Chart
@@ -93,6 +96,7 @@ export default class extends Controller {
     }
   }
 
+  // Fetches portfolio metric data from the Rails JSON endpoint
   async loadData() {
     let res
     try {
@@ -156,6 +160,7 @@ export default class extends Controller {
     return { ok: true, debug: json.debug }
   }
 
+  // Safely reads a short part of a failed response for debugging
   async readTextSafe(res) {
     try {
       const t = await res.text()
@@ -165,12 +170,14 @@ export default class extends Controller {
     }
   }
 
+  // Handles metric tab button clicks
   select(event) {
     const key = event.currentTarget.getAttribute("data-metrics-key-param")
     if (!key) return
     this.show(key)
   }
 
+  // Shows the selected chart panel and highlights the active button
   show(key) {
     this.activeKey = key
 
@@ -190,6 +197,7 @@ export default class extends Controller {
     if (this.charts[key]) this.charts[key].resize()
   }
 
+  // Builds one Chart.js line chart for the selected metric
   buildChart(key) {
     const canvas = this.element.querySelector(`canvas[data-key="${key}"]`)
     if (!canvas) return
@@ -221,6 +229,7 @@ export default class extends Controller {
     })
   }
 
+  // Converts an ISO date into dd/mm/yyyy for chart labels
   ddmmyyyy(iso) {
     const d = new Date(String(iso) + "T00:00:00")
     const dd = String(d.getDate()).padStart(2, "0")

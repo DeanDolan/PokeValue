@@ -1,12 +1,23 @@
-<%= form_with url: login_path, method: :post, local: true do %>
+<%= form_with url: login_path, method: :post, local: true, data: { turbo: false }, html: { novalidate: true } do %>
+  <%# Username field used to identify the account being logged into %>
   <div class="mb-3">
     <label class="form-label">Username</label>
-    <%= text_field_tag :username, params[:username], class: "form-control", required: true, autocomplete: "username" %>
+    <%= text_field_tag :username,
+      params[:username],
+      class: "form-control",
+      autocomplete: "username" %>
   </div>
+
+  <%# Password field uses current-password autocomplete for normal login behaviour %>
   <div class="mb-3">
     <label class="form-label">Password</label>
-    <%= password_field_tag :password, nil, class: "form-control", required: true, autocomplete: "current-password" %>
+    <%= password_field_tag :password,
+      nil,
+      class: "form-control",
+      autocomplete: "current-password" %>
   </div>
+
+  <%# Submits the login form to the sessions controller route %>
   <div class="d-grid">
     <%= submit_tag "Log in", class: "btn btn-primary" %>
   </div>

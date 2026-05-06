@@ -1,8 +1,10 @@
 class MarketplaceOffer < ApplicationRecord
+  # Offer belongs to one listing, one buyer and one seller
   belongs_to :marketplace_listing
   belongs_to :buyer, class_name: "User"
   belongs_to :seller, class_name: "User"
 
+  # Offer lifecycle from buyer sending an offer to seller confirming payment
   STATUSES = %w[pending accepted paid confirmed_paid rejected cancelled].freeze
 
   validates :marketplace_listing_id, :buyer_id, :seller_id, presence: true
@@ -11,6 +13,7 @@ class MarketplaceOffer < ApplicationRecord
 
   scope :newest_first, -> { order(created_at: :desc) }
 
+  # Converts stored cents into a euro amount for display
   def offer_eur
     offer_cents.to_i / 100.0
   end
@@ -35,6 +38,7 @@ class MarketplaceOffer < ApplicationRecord
     status.to_s == "rejected"
   end
 
+  # Decrypts the buyer Revolut tag when the seller needs to reveal it
   def buyer_revolut_tag
     return nil if buyer_revolut_tag_encrypted.blank?
     self.class.buyer_revolut_tag_encryptor.decrypt_and_verify(buyer_revolut_tag_encrypted)
@@ -42,6 +46,7 @@ class MarketplaceOffer < ApplicationRecord
     nil
   end
 
+  # Encrypts the buyer Revolut tag before saving it to the database
   def buyer_revolut_tag=(plain)
     cleaned = plain.to_s.strip
 
@@ -53,6 +58,7 @@ class MarketplaceOffer < ApplicationRecord
     end
   end
 
+  # Uses the Rails secret key base to create an AES-GCM encryptor
   def self.buyer_revolut_tag_encryptor
     key = ActiveSupport::KeyGenerator.new(Rails.application.secret_key_base).generate_key("marketplace_offer_buyer_revolut_tag_v1", 32)
     ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm")

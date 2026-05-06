@@ -3,6 +3,7 @@ class AuctionBid < ApplicationRecord
   belongs_to :bidder, class_name: "User"
   belongs_to :saved_address
 
+  # Reuses the bidder's previous address on later bids for the same auction.
   before_validation :inherit_previous_address
 
   validates :amount_cents, numericality: { only_integer: true, greater_than: 0 }
@@ -11,6 +12,7 @@ class AuctionBid < ApplicationRecord
   validate :address_must_be_present
   validate :address_must_belong_to_bidder
 
+  # Updates the cached bids_count on the auction after a bid is created.
   after_commit :sync_auction_bid_count, on: :create
 
   private

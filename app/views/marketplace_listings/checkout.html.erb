@@ -1,4 +1,5 @@
 <%
+# Loads set metadata so the checkout page can show the era, set name, and product details
 require "json"
 
 sets_data =
@@ -9,6 +10,7 @@ sets_data =
     {}
   end
 
+# Maps internal product type codes into readable product names for display
 type_map = {
   "etb" => "Elite Trainer Box",
   "pc_etb" => "Pokemon Center Elite Trainer Box",
@@ -23,10 +25,12 @@ type_map = {
   "mini_tin_display" => "Mini Tin Display"
 }
 
+# Converts fallback internal names into title-style labels
 titleize = lambda do |s|
   s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
 end
 
+# Splits route types such as etb--v-lucario into base type and variant text
 split_type_variant = lambda do |t|
   s = t.to_s
   down = s.downcase
@@ -41,6 +45,7 @@ split_type_variant = lambda do |t|
   end
 end
 
+# Builds a simple star display from the seller review average
 stars = lambda do |avg|
   a = avg.to_f
   full = a.floor
@@ -49,6 +54,7 @@ stars = lambda do |avg|
   ("★" * full) + (half == 1 ? "½" : "") + ("☆" * empty)
 end
 
+# EU country list used by the shipping address dropdown
 eu = [
   ["Austria", "AT"], ["Belgium", "BE"], ["Bulgaria", "BG"], ["Croatia", "HR"], ["Cyprus", "CY"],
   ["Czechia", "CZ"], ["Denmark", "DK"], ["Estonia", "EE"], ["Finland", "FI"], ["France", "FR"],
@@ -58,6 +64,7 @@ eu = [
   ["Spain", "ES"], ["Sweden", "SE"]
 ]
 
+# Normalises a saved address country value into a two-letter country code
 country_code_from = lambda do |addr|
   v =
     if addr.respond_to?(:country_code) && addr.country_code.present?
@@ -87,6 +94,7 @@ rescue
   ""
 end
 
+# Pulls page data from the controller and prepares safe fallback values
 address = defined?(@address) && @address.is_a?(Hash) ? @address : {}
 
 l = @listing
@@ -98,6 +106,7 @@ s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
 era = s ? s["era"].to_s : ""
 set_name = s ? s["name"].to_s : (l.set_name.to_s.presence || slug)
 
+# Builds the main product name and subtitle shown in the checkout summary
 base, variant = split_type_variant.call(l.route_type.to_s.presence || l.product_type_name.to_s)
 base_key = base.to_s.downcase
 tn = type_map[base_key].presence || titleize.call(base)
@@ -105,11 +114,13 @@ vn = variant.to_s.strip
 display_product = vn.present? ? "#{tn} (#{vn})" : tn
 subtitle_product = tn
 
+# Calculates seller stats, saved addresses, and checkout total
 stats = @seller_stats || { avg: 0.0, count: 0 }
 saved_addresses = defined?(@saved_addresses) && @saved_addresses.is_a?(Array) ? @saved_addresses : []
 unit_cents = l.price_cents.to_i
 total_cents = unit_cents * qty
 
+# Checks whether the seller should display the admin badge
 seller_obj = (l.respond_to?(:seller) ? l.seller : nil) rescue nil
 seller_is_admin =
   begin
@@ -156,6 +167,7 @@ admin_badge_asset = "badges/adminbadge.png"
 
   <div class="co-wrap">
     <div class="co-left">
+      <%# Main checkout summary card for the product, seller, reviews, and total price %>
       <div class="co-block mb-3">
         <div class="h5 m-0">Checkout</div>
 
@@ -183,6 +195,7 @@ admin_badge_asset = "badges/adminbadge.png"
         <div class="co-line"><strong>Total:</strong> <%= number_to_currency(total_cents / 100.0, unit: "€") %></div>
       </div>
 
+      <%# Shipping form submitted to the buy action for this marketplace listing %>
       <div class="co-block">
         <div class="fw-semibold mb-2">Shipping Address</div>
 
@@ -231,6 +244,7 @@ admin_badge_asset = "badges/adminbadge.png"
               </select>
             </div>
 
+            <%# Allows the buyer to save a new manually entered address %>
             <div class="col-12 mt-1" id="saveAddressWrap">
               <div class="form-check">
                 <%= check_box_tag :save_address, "1", params[:save_address].to_s == "1", class: "form-check-input", id: "save_address" %>
@@ -247,6 +261,7 @@ admin_badge_asset = "badges/adminbadge.png"
       </div>
     </div>
 
+    <%# Saved address sidebar where the buyer can reuse or delete saved addresses %>
     <div class="co-right">
       <div class="co-block">
         <div class="fw-semibold mb-2">Saved Addresses</div>
@@ -316,6 +331,7 @@ admin_badge_asset = "badges/adminbadge.png"
           country: document.getElementById("addr_country")
         };
 
+        // Locks a field after a saved address is selected so the submitted values stay consistent
         function lockField(el){
           if(!el) return;
           const type = (el.tagName || "").toLowerCase();
@@ -334,6 +350,7 @@ admin_badge_asset = "badges/adminbadge.png"
           el.classList.add("bg-light");
         }
 
+        // Locks all address fields and hides the save-address checkbox when using an existing address
         function lockAll(){
           document.querySelectorAll("[data-lock-mirror='1']").forEach((n) => n.remove());
           Object.values(fields).forEach((el) => lockField(el));
@@ -351,6 +368,7 @@ admin_badge_asset = "badges/adminbadge.png"
           }
         }
 
+        // Copies the selected saved address into the checkout form
         function fillFromCard(card){
           if(!card) return;
           if(fields.name) fields.name.value = card.dataset.name || "";
@@ -367,6 +385,7 @@ admin_badge_asset = "badges/adminbadge.png"
           lockAll();
         }
 
+        // Handles the Use button for each saved address card
         savedList.addEventListener("click", (e) => {
           const btn = e.target.closest("button[data-use-saved='1']");
           if(!btn) return;
@@ -375,6 +394,7 @@ admin_badge_asset = "badges/adminbadge.png"
           fillFromCard(card);
         });
 
+        // Keeps the hidden select mirror updated before submitting the form
         form.addEventListener("submit", () => {
           document.querySelectorAll("select[data-locked='1']").forEach((sel) => {
             const existing = form.querySelector(`input[type="hidden"][name="${sel.name}"][data-lock-mirror="1"]`);

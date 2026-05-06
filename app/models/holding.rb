@@ -1,9 +1,11 @@
 class Holding < ApplicationRecord
+  # Each holding belongs to one user and may link to one product record
   belongs_to :user
   belongs_to :product, optional: true
 
   validates :user_id, presence: true
 
+  # Conditions that should not receive a normal market-value calculation
   NA_CONDITIONS = [
     "unsealed",
     "damaged",
@@ -11,6 +13,7 @@ class Holding < ApplicationRecord
     "contents only"
   ].freeze
 
+  # Conditions valued at 90% of the base product value
   TEN_PERCENT_LESS = [
     "loosely sealed",
     "mini tear/hole (<2cm)",
@@ -19,25 +22,30 @@ class Holding < ApplicationRecord
     "small imperfections"
   ].freeze
 
+  # Conditions valued at 85% of the base product value
   FIFTEEN_PERCENT_LESS = [
     "big imperfections",
     "small tear (<1 inch)"
   ].freeze
 
+  # Conditions valued at 80% of the base product value
   TWENTY_PERCENT_LESS = [
     "big tear (>1 inch)",
     "big tear (>inch)",
     "slightly dented"
   ].freeze
 
+  # Conditions valued at 70% of the base product value
   THIRTY_PERCENT_LESS = [
     "heavy dented"
   ].freeze
 
+  # Normalises condition text before comparing it to condition lists
   def self.normalize_condition(condition)
     condition.to_s.strip.downcase.gsub(/\s+/, " ")
   end
 
+  # Returns the value multiplier for the selected condition
   def self.condition_multiplier(condition)
     normalized = normalize_condition(condition)
 
@@ -50,6 +58,7 @@ class Holding < ApplicationRecord
     1.0
   end
 
+  # Applies the condition multiplier to the base market value
   def self.adjusted_value_for_condition(base_value, condition)
     multiplier = condition_multiplier(condition)
     base = BigDecimal(base_value.to_s)

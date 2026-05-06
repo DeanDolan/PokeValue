@@ -1,4 +1,5 @@
 class RaffleTicket < ApplicationRecord
+  # Host-assigned tickets must use one of these reasons.
   ASSIGNMENT_REASONS = [ "Mini Raffle", "Free Ticket(s)" ].freeze
 
   belongs_to :raffle
@@ -23,12 +24,15 @@ class RaffleTicket < ApplicationRecord
   end
 
   def display_name
+    # Shows the assigned name first, otherwise falls back to the linked user's username.
     assigned_name.to_s.strip.presence || user&.username.to_s
   end
 
   def owner_can_manage?(actor)
+    # The host can manage every ticket, while a participant can manage only their own ticket.
     return false unless actor
     return true if raffle.host_id.to_i == actor.id.to_i
+
     user_id.to_i == actor.id.to_i
   end
 
@@ -46,6 +50,7 @@ class RaffleTicket < ApplicationRecord
   end
 
   def name_or_user_present
+    # A ticket must either belong to a registered user or have a manually assigned display name.
     return if assigned_name.to_s.strip.present?
     return if user_id.present?
 

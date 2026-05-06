@@ -1,6 +1,20 @@
+<%#
+References:
+- Rails Action View helpers and forms:
+  https://guides.rubyonrails.org/action_view_helpers.html
+  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+- Rails asset helpers:
+  https://guides.rubyonrails.org/asset_pipeline.html
+- Bootstrap tables, forms and buttons:
+  https://getbootstrap.com/docs/5.3/content/tables/
+  https://getbootstrap.com/docs/5.3/forms/overview/
+  https://getbootstrap.com/docs/5.3/components/buttons/
+%>
+
 <%
 require "json"
 
+# Loads the set catalogue so marketplace filters and table rows can show set, era and product data.
 sets_data =
   begin
     raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
@@ -9,6 +23,7 @@ sets_data =
     {}
   end
 
+# Converts internal product type codes into readable names for the user.
 type_map = {
   "etb" => "Elite Trainer Box",
   "pc_etb" => "Pokemon Center Elite Trainer Box",
@@ -23,10 +38,12 @@ type_map = {
   "mini_tin_display" => "Mini Tin Display"
 }
 
+# Converts route/code text into title case for display.
 titleize = lambda do |s|
   s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
 end
 
+# Splits product routes that contain variants such as etb--v-lucario.
 split_type_variant = lambda do |t|
   s = t.to_s
   down = s.downcase
@@ -41,6 +58,7 @@ split_type_variant = lambda do |t|
   end
 end
 
+# Builds the final product type text shown in the table.
 display_type = lambda do |listing|
   src = listing.respond_to?(:route_type) ? listing.route_type.to_s : ""
   src = listing.respond_to?(:product_type_name) ? listing.product_type_name.to_s : src if src.blank?
@@ -51,11 +69,13 @@ display_type = lambda do |listing|
   variant.present? ? "#{base_name} (#{variant})" : base_name
 end
 
+# Finds the era for a listing by matching its set slug against config/sets.json.
 era_for_slug = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["era"].to_s : ""
 end
 
+# EU country options used by the marketplace location filter.
 eu = [
   ["Austria", "AT"], ["Belgium", "BE"], ["Bulgaria", "BG"], ["Croatia", "HR"], ["Cyprus", "CY"],
   ["Czechia", "CZ"], ["Denmark", "DK"], ["Estonia", "EE"], ["Finland", "FI"], ["France", "FR"],
@@ -65,6 +85,7 @@ eu = [
   ["Spain", "ES"], ["Sweden", "SE"]
 ]
 
+# Reads the current filter state from params so selected values stay visible after applying filters.
 eras = (defined?(@eras) && @eras.is_a?(Array)) ? @eras : sets_data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq
 selected_era = params[:era].to_s.strip
 sets_for_era = (defined?(@sets_for_era) && @sets_for_era.is_a?(Array)) ? @sets_for_era : []
@@ -80,6 +101,7 @@ max_price = params[:max_price].to_s
 sort = params[:sort].to_s
 tab = defined?(@tab) && @tab.present? ? @tab.to_s : "current"
 
+# Shows badges beside sellers, currently used for admin accounts.
 badge_imgs_for = lambda do |u|
   out = []
   if u && u.respond_to?(:admin) && !!u.admin
@@ -88,34 +110,30 @@ badge_imgs_for = lambda do |u|
   out
 end
 
+# Builds a simple star display without overlapping stars.
 stars = lambda do |avg|
-  rounded = ((avg.to_f * 2).round / 2.0)
+  value = avg.to_f
+  value = 0.0 if value < 0
+  value = 5.0 if value > 5
+
+  rounded = ((value * 2).round / 2.0)
+  full = rounded.floor
+  half = (rounded - full) >= 0.5
+
   parts = []
+  full.times { parts << '<span class="pv-mp-rating-star">★</span>' }
+  parts << '<span class="pv-mp-rating-half">½</span>' if half
 
-  5.times do |i|
-    fill =
-      if rounded >= (i + 1)
-        "100%"
-      elsif rounded >= (i + 0.5)
-        "50%"
-      else
-        "0%"
-      end
-
-    parts << %(
-      <span class="mp-star">
-        <span class="mp-star-base">★</span>
-        <span class="mp-star-fill" style="width: #{fill};">★</span>
-      </span>
-    )
-  end
-
-  %(<span class="mp-stars">#{parts.join}</span>).html_safe
+  %(<span class="pv-mp-rating-stars">#{parts.join}</span>).html_safe
 end
 
 admin_can_delete = defined?(@admin_can_delete) ? !!@admin_can_delete : false
 condition_options = defined?(@condition_options) && @condition_options.is_a?(Array) ? @condition_options : []
 
+# Checks whether a user is logged in so the Create Listing button can either open the form or show the login pop-up.
+marketplace_logged_in = current_user.present?
+
+# Resolves a sold purchase row back to its original marketplace listing when possible.
 sold_listing_for = lambda do |row|
   if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
     (@sold_listing_map || {})[row.marketplace_listing_id.to_i]
@@ -142,22 +160,179 @@ end
     .mp-tab-links{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
     .mp-tab-link{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap;background:#fff}
     .mp-tab-link.active{border-color:#111827;font-weight:900}
-    .mp-stars{display:inline-flex;align-items:center;gap:1px;white-space:nowrap;vertical-align:middle;line-height:1}
-    .mp-star{position:relative;display:inline-block;width:.95em;height:1em;line-height:1;vertical-align:middle}
-    .mp-star-base{position:absolute;left:0;top:0;color:#d1d5db;line-height:1}
-    .mp-star-fill{position:absolute;left:0;top:0;overflow:hidden;color:#d4a017;line-height:1;white-space:nowrap}
+    .pv-mp-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
+    .pv-mp-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
+    .pv-mp-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
+    .mp-confirm-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
+    .mp-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000000;background:#ffffff;color:#000000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
+    .mp-confirm-text{color:#000000;font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
+    .mp-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+    .mp-confirm-yes,.mp-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000000 !important;transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important}
+    .mp-confirm-yes{background:#000000 !important;color:#ffffff !important}
+    .mp-confirm-no{background:#ffffff !important;color:#000000 !important}
+    .mp-confirm-yes:hover,.mp-confirm-yes:focus,.mp-confirm-yes:active,.mp-confirm-no:hover,.mp-confirm-no:focus,.mp-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
+    :root[data-pv-theme="dark"] .mp-confirm-box,
+    html[data-bs-theme="dark"] .mp-confirm-box,
+    body[data-bs-theme="dark"] .mp-confirm-box,
+    html[data-theme="dark"] .mp-confirm-box,
+    body[data-theme="dark"] .mp-confirm-box,
+    html.dark .mp-confirm-box,
+    body.dark .mp-confirm-box,
+    html.dark-mode .mp-confirm-box,
+    body.dark-mode .mp-confirm-box,
+    body:has(.navbar-dark) .mp-confirm-box{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .mp-confirm-text,
+    html[data-bs-theme="dark"] .mp-confirm-text,
+    body[data-bs-theme="dark"] .mp-confirm-text,
+    html[data-theme="dark"] .mp-confirm-text,
+    body[data-theme="dark"] .mp-confirm-text,
+    html.dark .mp-confirm-text,
+    body.dark .mp-confirm-text,
+    html.dark-mode .mp-confirm-text,
+    body.dark-mode .mp-confirm-text,
+    body:has(.navbar-dark) .mp-confirm-text{color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .mp-confirm-yes,
+    :root[data-pv-theme="dark"] .mp-confirm-no,
+    html[data-bs-theme="dark"] .mp-confirm-yes,
+    html[data-bs-theme="dark"] .mp-confirm-no,
+    body[data-bs-theme="dark"] .mp-confirm-yes,
+    body[data-bs-theme="dark"] .mp-confirm-no,
+    html[data-theme="dark"] .mp-confirm-yes,
+    html[data-theme="dark"] .mp-confirm-no,
+    body[data-theme="dark"] .mp-confirm-yes,
+    body[data-theme="dark"] .mp-confirm-no,
+    html.dark .mp-confirm-yes,
+    html.dark .mp-confirm-no,
+    body.dark .mp-confirm-yes,
+    body.dark .mp-confirm-no,
+    html.dark-mode .mp-confirm-yes,
+    html.dark-mode .mp-confirm-no,
+    body.dark-mode .mp-confirm-yes,
+    body.dark-mode .mp-confirm-no,
+    body:has(.navbar-dark) .mp-confirm-yes,
+    body:has(.navbar-dark) .mp-confirm-no{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .mp-confirm-yes:hover,
+    :root[data-pv-theme="dark"] .mp-confirm-yes:focus,
+    :root[data-pv-theme="dark"] .mp-confirm-yes:active,
+    :root[data-pv-theme="dark"] .mp-confirm-no:hover,
+    :root[data-pv-theme="dark"] .mp-confirm-no:focus,
+    :root[data-pv-theme="dark"] .mp-confirm-no:active,
+    html[data-bs-theme="dark"] .mp-confirm-yes:hover,
+    html[data-bs-theme="dark"] .mp-confirm-yes:focus,
+    html[data-bs-theme="dark"] .mp-confirm-yes:active,
+    html[data-bs-theme="dark"] .mp-confirm-no:hover,
+    html[data-bs-theme="dark"] .mp-confirm-no:focus,
+    html[data-bs-theme="dark"] .mp-confirm-no:active,
+    body[data-bs-theme="dark"] .mp-confirm-yes:hover,
+    body[data-bs-theme="dark"] .mp-confirm-yes:focus,
+    body[data-bs-theme="dark"] .mp-confirm-yes:active,
+    body[data-bs-theme="dark"] .mp-confirm-no:hover,
+    body[data-bs-theme="dark"] .mp-confirm-no:focus,
+    body[data-bs-theme="dark"] .mp-confirm-no:active,
+    html[data-theme="dark"] .mp-confirm-yes:hover,
+    html[data-theme="dark"] .mp-confirm-yes:focus,
+    html[data-theme="dark"] .mp-confirm-yes:active,
+    html[data-theme="dark"] .mp-confirm-no:hover,
+    html[data-theme="dark"] .mp-confirm-no:focus,
+    html[data-theme="dark"] .mp-confirm-no:active,
+    body[data-theme="dark"] .mp-confirm-yes:hover,
+    body[data-theme="dark"] .mp-confirm-yes:focus,
+    body[data-theme="dark"] .mp-confirm-yes:active,
+    body[data-theme="dark"] .mp-confirm-no:hover,
+    body[data-theme="dark"] .mp-confirm-no:focus,
+    body[data-theme="dark"] .mp-confirm-no:active,
+    html.dark .mp-confirm-yes:hover,
+    html.dark .mp-confirm-yes:focus,
+    html.dark .mp-confirm-yes:active,
+    html.dark .mp-confirm-no:hover,
+    html.dark .mp-confirm-no:focus,
+    html.dark .mp-confirm-no:active,
+    body.dark .mp-confirm-yes:hover,
+    body.dark .mp-confirm-yes:focus,
+    body.dark .mp-confirm-yes:active,
+    body.dark .mp-confirm-no:hover,
+    body.dark .mp-confirm-no:focus,
+    body.dark .mp-confirm-no:active,
+    html.dark-mode .mp-confirm-yes:hover,
+    html.dark-mode .mp-confirm-yes:focus,
+    html.dark-mode .mp-confirm-yes:active,
+    html.dark-mode .mp-confirm-no:hover,
+    html.dark-mode .mp-confirm-no:focus,
+    html.dark-mode .mp-confirm-no:active,
+    body.dark-mode .mp-confirm-yes:hover,
+    body.dark-mode .mp-confirm-yes:focus,
+    body.dark-mode .mp-confirm-yes:active,
+    body.dark-mode .mp-confirm-no:hover,
+    body.dark-mode .mp-confirm-no:focus,
+    body.dark-mode .mp-confirm-no:active,
+    body:has(.navbar-dark) .mp-confirm-yes:hover,
+    body:has(.navbar-dark) .mp-confirm-yes:focus,
+    body:has(.navbar-dark) .mp-confirm-yes:active,
+    body:has(.navbar-dark) .mp-confirm-no:hover,
+    body:has(.navbar-dark) .mp-confirm-no:focus,
+    body:has(.navbar-dark) .mp-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
   </style>
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div class="h4 m-0">Marketplace</div>
-    <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-primary btn-sm" %>
+
+    <% if marketplace_logged_in %>
+      <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-primary btn-sm" %>
+    <% else %>
+      <%# Logged-out users see a login pop-up instead of being sent to the protected Create Listing page. %>
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#marketplaceCreateListingLoginModal">
+        Create Listing
+      </button>
+    <% end %>
   </div>
 
+  <%# Login modal shown when a logged-out user clicks Create Listing. %>
+  <% unless marketplace_logged_in %>
+    <div class="modal fade" id="marketplaceCreateListingLoginModal" tabindex="-1" aria-labelledby="marketplaceCreateListingLoginModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="marketplaceCreateListingLoginModalLabel">Log in to create listing</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+          </div>
+
+          <div class="modal-body">
+            <%= form_with url: login_path, method: :post, local: true do %>
+              <div class="mb-3">
+                <label class="form-label" for="marketplace_create_listing_username">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", id: "marketplace_create_listing_username", required: true %>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label" for="marketplace_create_listing_password">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", id: "marketplace_create_listing_password", required: true %>
+              </div>
+
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Log in</button>
+              </div>
+            <% end %>
+
+            <hr class="my-3">
+
+            <div class="text-center small">
+              Don't have an account?
+              <%= link_to "Register", register_path, class: "btn btn-link btn-sm" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Switches between active listings and completed sold listings. %>
   <div class="mp-tab-links">
     <%= link_to "Current Listings", marketplace_path(tab: "current"), class: ["mp-tab-link", (tab == "current" ? "active" : nil)].compact.join(" ") %>
     <%= link_to "Sold Listings", marketplace_path(tab: "sold"), class: ["mp-tab-link", (tab == "sold" ? "active" : nil)].compact.join(" ") %>
   </div>
 
+  <%# GET form keeps marketplace filters visible in the URL. %>
   <%= form_with url: marketplace_path, method: :get, local: true, class: "mp-filters mb-3" do %>
     <%= hidden_field_tag :tab, tab %>
 
@@ -294,10 +469,10 @@ end
                     <div class="mp-actions">
                       <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
                       <% if current_user && current_user.id == l.seller_id && l.status.to_s == "active" %>
-                        <%= button_to "Cancel", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline" } %>
+                        <%= button_to "Delete", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
                       <% end %>
                       <% if admin_can_delete %>
-                        <%= button_to "Delete", marketplace_listing_path(l), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline" }, data: { turbo_confirm: "Are you sure you want to delete this listing?" } %>
+                        <%= button_to "Delete", marketplace_listing_path(l), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
                       <% end %>
                     </div>
                   </td>
@@ -415,12 +590,89 @@ end
     </div>
   </div>
 
+  <%# Custom confirmation overlay used before deleting marketplace listings from the table. %>
+  <div class="mp-confirm-overlay" id="mpConfirmOverlay" aria-hidden="true">
+    <div class="mp-confirm-box">
+      <div class="mp-confirm-text" id="mpConfirmText">Are you sure you want to delete this listing?</div>
+      <div class="mp-confirm-actions">
+        <button type="button" class="mp-confirm-yes" id="mpConfirmYes">Yes</button>
+        <button type="button" class="mp-confirm-no" id="mpConfirmNo">No</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
-    const eraSel = document.getElementById("mp-era");
+    const eraSel = document.getElementById("mp-era")
+
     eraSel?.addEventListener("change", () => {
-      const form = eraSel.closest("form");
-      if (!form) return;
-      form.submit();
-    });
+      const form = eraSel.closest("form")
+      if (!form) return
+      form.submit()
+    })
+
+    let pendingMarketplaceForm = null
+    let confirmedMarketplaceForm = false
+
+    const mpOverlay = document.getElementById("mpConfirmOverlay")
+    const mpText = document.getElementById("mpConfirmText")
+    const mpYes = document.getElementById("mpConfirmYes")
+    const mpNo = document.getElementById("mpConfirmNo")
+
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest(".mp-confirm-form")
+      if (!form) return
+
+      if (confirmedMarketplaceForm) {
+        confirmedMarketplaceForm = false
+        return
+      }
+
+      event.preventDefault()
+      pendingMarketplaceForm = form
+
+      if (mpText) mpText.textContent = form.dataset.confirmText || "Are you sure you want to delete this listing?"
+
+      if (mpOverlay) {
+        mpOverlay.style.display = "flex"
+        mpOverlay.setAttribute("aria-hidden", "false")
+      }
+    })
+
+    mpYes?.addEventListener("click", () => {
+      if (!pendingMarketplaceForm) return
+
+      const form = pendingMarketplaceForm
+      pendingMarketplaceForm = null
+
+      if (mpOverlay) {
+        mpOverlay.style.display = "none"
+        mpOverlay.setAttribute("aria-hidden", "true")
+      }
+
+      confirmedMarketplaceForm = true
+
+      if (form.requestSubmit) {
+        form.requestSubmit()
+      } else {
+        form.submit()
+      }
+    })
+
+    mpNo?.addEventListener("click", () => {
+      pendingMarketplaceForm = null
+
+      if (mpOverlay) {
+        mpOverlay.style.display = "none"
+        mpOverlay.setAttribute("aria-hidden", "true")
+      }
+    })
+
+    mpOverlay?.addEventListener("click", (event) => {
+      if (event.target !== mpOverlay) return
+
+      pendingMarketplaceForm = null
+      mpOverlay.style.display = "none"
+      mpOverlay.setAttribute("aria-hidden", "true")
+    })
   </script>
 </div>

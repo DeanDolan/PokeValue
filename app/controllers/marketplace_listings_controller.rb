@@ -1,8 +1,10 @@
 class MarketplaceListingsController < ApplicationController
   helper_method :current_user
 
+  # Shows either current marketplace listings or sold listings
   def index
     @tab = params[:tab].to_s == "sold" ? "sold" : "current"
+    @admin_can_delete = admin_can_manage_marketplace?
     prepare_filter_data
 
     if @tab == "sold"
@@ -12,12 +14,15 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Opens the create listing page for logged-in users
   def new
     return redirect_to(root_path, alert: "Please log in.") unless current_user
+
     @holdings = selectable_holdings
     @listing_form = listing_form_from_params
   end
 
+  # Creates a marketplace listing from either the catalogue or the user's holdings
   def create
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -141,6 +146,85 @@ class MarketplaceListingsController < ApplicationController
     render_new_with_error("Could not create listing.")
   end
 
+  # Opens the edit listing form for the seller or an admin
+  def edit
+    return redirect_to(root_path, alert: "Please log in.") unless current_user
+
+    @listing = MarketplaceListing.includes(:seller).find(params[:id])
+
+    unless can_edit_listing?(@listing)
+      return redirect_to(marketplace_listing_path(@listing), alert: "You cannot edit this listing.")
+    end
+
+    unless @listing.status.to_s == "active"
+      return redirect_to(marketplace_listing_path(@listing), alert: "Only active listings can be edited.")
+    end
+
+    if @listing.marketplace_offers.where(status: [ "accepted", "paid", "confirmed_paid" ]).exists?
+      return redirect_to(marketplace_listing_path(@listing), alert: "This listing cannot be edited because payment or sale activity has already started.")
+    end
+
+    @condition_options = editable_condition_options
+  end
+
+  # Updates safe editable listing fields without touching payment, offers or sold listing logic
+  def update
+    return redirect_to(root_path, alert: "Please log in.") unless current_user
+
+    listing = nil
+
+    ActiveRecord::Base.transaction do
+      listing = MarketplaceListing.lock.find(params[:id])
+
+      unless can_edit_listing?(listing)
+        raise "not_allowed"
+      end
+
+      unless listing.status.to_s == "active"
+        raise "listing_not_active"
+      end
+
+      if listing.marketplace_offers.where(status: [ "accepted", "paid", "confirmed_paid" ]).exists?
+        raise "listing_has_sale_activity"
+      end
+
+      price_cents = parse_price_cents(params[:price])
+      raise "invalid_price" if price_cents <= 0
+
+      quantity = params[:quantity].to_i
+      raise "invalid_quantity" if quantity <= 0
+
+      condition = params[:condition].to_s.strip
+      raise "invalid_condition" if condition.blank?
+
+      uploads = Array(params[:photos]).compact.reject { |f| f.respond_to?(:blank?) && f.blank? }
+      validate_listing_uploads!(listing, uploads)
+
+      update_holding_listed_quantity_for_edit!(listing, quantity)
+
+      listing.update!(
+        price_cents: price_cents,
+        quantity: quantity,
+        condition: condition
+      )
+
+      uploads.each { |file| listing.photos.attach(file) } if uploads.any?
+    end
+
+    redirect_to marketplace_listing_path(listing), notice: "Listing updated."
+  rescue => e
+    @listing = MarketplaceListing.includes(:seller).find_by(id: params[:id])
+    @condition_options = editable_condition_options
+
+    if @listing
+      flash.now[:alert] = edit_error_message(e)
+      render :edit, status: :unprocessable_entity
+    else
+      redirect_to marketplace_path, alert: "Could not update listing."
+    end
+  end
+
+  # Shows one marketplace listing, its images, reviews and offer information
   def show
     @listing = MarketplaceListing.includes(:seller, marketplace_offers: [ :buyer ]).find(params[:id])
 
@@ -168,6 +252,7 @@ class MarketplaceListingsController < ApplicationController
     @seller_offers = @is_seller ? @listing.marketplace_offers.includes(:buyer).order(created_at: :desc).to_a : []
   end
 
+  # Opens the older checkout page if direct purchase flow is used
   def checkout
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -201,6 +286,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_path, alert: "Could not open checkout."
   end
 
+  # Validates checkout details, but current buying flow now uses offers
   def buy
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -250,6 +336,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Lets a buyer send an offer to the seller
   def create_offer
     return redirect_to(root_path, alert: "Please log in.", status: :see_other) unless current_user
 
@@ -313,6 +400,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(params[:id]), alert: "Could not send offer.", status: :see_other
   end
 
+  # Allows the seller to accept one pending offer
   def accept_offer
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -345,6 +433,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(params[:id]), alert: "Could not accept offer."
   end
 
+  # Opens the manual Revolut payment page for an accepted offer
   def pay
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -365,6 +454,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(params[:id]), alert: "Could not open payment page."
   end
 
+  # Buyer marks the Revolut payment as sent
   def confirm_payment
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -392,6 +482,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(params[:id]), alert: "Could not confirm payment."
   end
 
+  # Seller confirms payment and completes the sale
   def confirm_paid
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -460,6 +551,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(params[:id]), alert: "Could not confirm payment."
   end
 
+  # Seller cancels an active listing and frees the listed holding quantity
   def cancel
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -485,6 +577,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to(marketplace_path, alert: "Could not cancel listing.")
   end
 
+  # Admin moves a listing from current listings into sold listings and cancels active offers
   def destroy
     return redirect_to(marketplace_path, alert: "Forbidden.") unless admin_can_manage_marketplace?
 
@@ -518,8 +611,8 @@ class MarketplaceListingsController < ApplicationController
 
         listing.marketplace_offers.where(status: [ "pending", "accepted" ]).update_all(status: "cancelled", updated_at: Time.current)
 
-        attrs = { status: "deleted", updated_at: Time.current }
-        attrs[:quantity] = 0 if listing.respond_to?(:quantity)
+        attrs = { status: "sold", updated_at: Time.current }
+        attrs[:sold_at] = Time.current if listing.has_attribute?(:sold_at)
         listing.update_columns(attrs)
       end
     rescue => e
@@ -528,11 +621,12 @@ class MarketplaceListingsController < ApplicationController
       return redirect_to(marketplace_path, alert: "Could not delete listing. [#{debug_id}]")
     end
 
-    redirect_to(marketplace_path, notice: "Listing deleted.")
+    redirect_to(marketplace_path(tab: "sold"), notice: "Listing moved to Sold Listings.")
   end
 
   private
 
+  # Keeps form values available when the create listing form has an error
   def listing_form_from_params
     {
       mode: params[:mode].to_s.presence || params[:ml_mode_choice].to_s.presence || "catalog",
@@ -545,6 +639,7 @@ class MarketplaceListingsController < ApplicationController
     }
   end
 
+  # Re-renders the new listing form with an error message
   def render_new_with_error(message)
     @holdings = selectable_holdings
     @listing_form = listing_form_from_params
@@ -552,6 +647,7 @@ class MarketplaceListingsController < ApplicationController
     render :new, status: :unprocessable_entity
   end
 
+  # Re-renders checkout with the current address data and error message
   def render_checkout_with_error(message)
     flash.now[:alert] = message
     @address ||= address_from_params
@@ -560,6 +656,127 @@ class MarketplaceListingsController < ApplicationController
     render :checkout, status: :unprocessable_entity
   end
 
+  # Allows the seller or admin to edit an active listing
+  def can_edit_listing?(listing)
+    return false unless current_user
+    return true if listing.seller_id.to_i == current_user.id.to_i
+    return true if admin_can_manage_marketplace?
+
+    false
+  rescue
+    false
+  end
+
+  # Converts the submitted euro price into cents
+  def parse_price_cents(raw)
+    value = BigDecimal(raw.to_s.strip.tr(",", "."))
+    (value * 100).round.to_i
+  rescue
+    0
+  end
+
+  # Condition dropdown used by the edit form
+  def editable_condition_options
+    [
+      "Mint Condition",
+      "Mint Sealed",
+      "Loosely Sealed",
+      "Unsealed",
+      "Big Tear",
+      "Small Tear",
+      "Mini Tear/Hole (<2cm)",
+      "Small Tear (>2cm)",
+      "Big Tear (>1 inch)",
+      "Big Imperfections",
+      "Small Imperfections",
+      "Pressure Marks",
+      "Slightly Dented",
+      "Heavy Dented",
+      "Damaged",
+      "Box Only",
+      "Contents Only"
+    ].uniq
+  end
+
+  # Validates uploaded listing photos before attaching them
+  def validate_listing_uploads!(listing, uploads)
+    return if uploads.blank?
+
+    current_count =
+      if listing.respond_to?(:photos) && listing.photos.respond_to?(:attached?) && listing.photos.attached?
+        listing.photos.count
+      else
+        0
+      end
+
+    if current_count + uploads.length > 4
+      raise "too_many_photos"
+    end
+
+    uploads.each do |file|
+      content_type = file.content_type.to_s
+
+      unless content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
+        raise "invalid_photo_type"
+      end
+    end
+  end
+
+  # Keeps holding listed quantity accurate when the seller edits quantity
+  def update_holding_listed_quantity_for_edit!(listing, new_quantity)
+    return if listing.holding_id.blank?
+    return unless defined?(Holding)
+
+    holding = Holding.lock.find_by(id: listing.holding_id)
+    return unless holding
+    return unless holding.respond_to?(:listed_quantity)
+
+    old_quantity = listing.quantity.to_i
+    listed_quantity = holding.listed_quantity.to_i
+    total_quantity = holding.respond_to?(:quantity) ? holding.quantity.to_i : 0
+
+    available_for_this_listing = total_quantity - listed_quantity + old_quantity
+    available_for_this_listing = 0 if available_for_this_listing < 0
+
+    raise "not_enough_available_quantity" if new_quantity > available_for_this_listing
+
+    new_listed_quantity = listed_quantity - old_quantity + new_quantity
+    new_listed_quantity = 0 if new_listed_quantity < 0
+
+    if holding.respond_to?(:listed_quantity=)
+      holding.update!(listed_quantity: new_listed_quantity)
+    end
+  end
+
+  # Converts internal edit errors into user-friendly flash messages
+  def edit_error_message(error)
+    message = error.message.to_s
+
+    case message
+    when "not_allowed"
+      "You cannot edit this listing."
+    when "listing_not_active"
+      "Only active listings can be edited."
+    when "listing_has_sale_activity"
+      "This listing cannot be edited because payment or sale activity has already started."
+    when "invalid_price"
+      "Price must be greater than €0."
+    when "invalid_quantity"
+      "Quantity must be at least 1."
+    when "invalid_condition"
+      "Condition is required."
+    when "too_many_photos"
+      "A listing can only have up to 4 images."
+    when "invalid_photo_type"
+      "Images must be JPG or PNG."
+    when "not_enough_available_quantity"
+      "Not enough available quantity in your holding."
+    else
+      "Could not update listing."
+    end
+  end
+
+  # Safely extracts address fields from submitted params
   def address_from_params
     raw = params[:address]
     h =
@@ -584,6 +801,7 @@ class MarketplaceListingsController < ApplicationController
     { name: "", line1: "", line2: "", city: "", county: "", postcode: "", country_code: "" }
   end
 
+  # Loads the user's saved addresses if the saved address table exists
   def load_saved_addresses(user)
     return [] unless user
     return [] unless defined?(SavedAddress)
@@ -595,6 +813,7 @@ class MarketplaceListingsController < ApplicationController
     []
   end
 
+  # Prepares dropdown data used by the marketplace filters
   def prepare_filter_data
     data = sets_data
     @eras = data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq.sort
@@ -627,6 +846,7 @@ class MarketplaceListingsController < ApplicationController
     ]
   end
 
+  # Loads active marketplace listings for the current tab
   def load_current_index_rows
     scope = MarketplaceListing.active.includes(:seller)
     scope = apply_current_scope_filters(scope)
@@ -637,7 +857,10 @@ class MarketplaceListingsController < ApplicationController
     @review_stats = review_stats_for_seller_ids(@listings.map(&:seller_id).uniq)
   end
 
+  # Loads sold listings and completed marketplace purchase records for the sold tab
   def load_sold_index_rows
+    rows = []
+
     if marketplace_purchase_available?
       scope = MarketplacePurchase.all
 
@@ -649,7 +872,20 @@ class MarketplaceListingsController < ApplicationController
         scope = scope.where(refunded_at: nil)
       end
 
-      rows = scope.order(created_at: :desc).limit(2000).to_a
+      purchase_rows = scope.order(created_at: :desc).limit(2000).to_a
+      purchase_listing_ids = purchase_rows.map do |row|
+        if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
+          row.marketplace_listing_id.to_i
+        elsif row.respond_to?(:listing_id) && row.listing_id.present?
+          row.listing_id.to_i
+        end
+      end.compact.uniq
+
+      sold_listing_scope = MarketplaceListing.where(status: "sold").includes(:seller)
+      sold_listing_scope = sold_listing_scope.where.not(id: purchase_listing_ids) if purchase_listing_ids.any?
+      sold_listing_rows = sold_listing_scope.order(updated_at: :desc).limit(2000).to_a
+
+      rows = purchase_rows + sold_listing_rows
       @sold_listing_map = build_sold_listing_map(rows)
       rows = apply_sold_row_filters(rows, @sold_listing_map)
       @sold_rows = rows.first(500)
@@ -665,6 +901,7 @@ class MarketplaceListingsController < ApplicationController
     @review_stats = review_stats_for_seller_ids(seller_ids)
   end
 
+  # Applies search, dropdown, price and sort filters to active listings
   def apply_current_scope_filters(scope)
     q = params[:q].to_s.strip
     if q.present?
@@ -725,6 +962,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Applies filters to sold rows after purchase rows are loaded
   def apply_sold_row_filters(rows, listing_map)
     filtered = Array(rows).select { |row| sold_row_matches_filters?(row, listing_map) }
 
@@ -740,6 +978,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Checks whether one sold row matches the selected marketplace filters
   def sold_row_matches_filters?(row, listing_map)
     listing = sold_listing_for_row(row, listing_map)
 
@@ -838,6 +1077,7 @@ class MarketplaceListingsController < ApplicationController
     true
   end
 
+  # Gets the set slug from either the sold row or the related listing
   def sold_row_set_slug(row, listing_map)
     if row.respond_to?(:set_slug) && row.set_slug.present?
       row.set_slug.to_s
@@ -847,6 +1087,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets the product route type from either the sold row or the related listing
   def sold_row_route_type(row, listing_map)
     if row.respond_to?(:route_type) && row.route_type.present?
       row.route_type.to_s
@@ -856,6 +1097,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets the product condition from either the sold row or the related listing
   def sold_row_condition(row, listing_map)
     if row.respond_to?(:condition) && row.condition.present?
       row.condition.to_s
@@ -865,6 +1107,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets the seller country from either the sold row or the related listing
   def sold_row_country_code(row, listing_map)
     if row.respond_to?(:country_code) && row.country_code.present?
       row.country_code.to_s
@@ -874,6 +1117,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets the unit price in cents for a sold row
   def sold_row_unit_cents(row, listing_map)
     if row.respond_to?(:unit_price_cents) && row.unit_price_cents.to_i > 0
       row.unit_price_cents.to_i
@@ -885,6 +1129,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets the sale date from the purchase row or listing update date
   def sold_row_date(row, listing_map)
     if row.respond_to?(:created_at) && row.created_at.present?
       row.created_at
@@ -900,6 +1145,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Gets seller ID from the sold row or related listing
   def seller_id_for_sold_row(row, listing_map)
     if row.respond_to?(:seller_id) && row.seller_id.present?
       row.seller_id
@@ -909,6 +1155,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Finds the marketplace listing connected to a sold row
   def sold_listing_for_row(row, listing_map)
     if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
       listing_map[row.marketplace_listing_id.to_i]
@@ -921,6 +1168,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Builds a lookup map of sold listing IDs to listing records
   def build_sold_listing_map(rows)
     ids = []
 
@@ -940,6 +1188,7 @@ class MarketplaceListingsController < ApplicationController
     {}
   end
 
+  # Calculates average review rating and review count for sellers
   def review_stats_for_seller_ids(ids)
     return {} unless defined?(Review)
     return {} if ids.blank?
@@ -954,6 +1203,7 @@ class MarketplaceListingsController < ApplicationController
     {}
   end
 
+  # Checks that the marketplace purchases table is available before using it
   def marketplace_purchase_available?
     return false unless defined?(MarketplacePurchase)
     return false unless MarketplacePurchase.respond_to?(:table_name)
@@ -963,6 +1213,7 @@ class MarketplaceListingsController < ApplicationController
     false
   end
 
+  # Checks if a database column exists before querying it
   def col_exists?(model, col)
     return false unless model
     return false unless model.respond_to?(:table_name)
@@ -972,6 +1223,7 @@ class MarketplaceListingsController < ApplicationController
     false
   end
 
+  # Finds all set slugs that belong to a selected era
   def set_slugs_for_era(era)
     sets_data.values
              .select { |s| s["era"].to_s == era.to_s }
@@ -981,6 +1233,7 @@ class MarketplaceListingsController < ApplicationController
     []
   end
 
+  # Finds the era for a set slug using config/sets.json
   def set_era_for_slug(slug)
     s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
     s ? s["era"].to_s : ""
@@ -988,11 +1241,13 @@ class MarketplaceListingsController < ApplicationController
     ""
   end
 
+  # Finds the logged-in user from the session
   def current_user
     return @current_user if defined?(@current_user)
     @current_user = User.find_by(id: session[:user_id])
   end
 
+  # Allows only admins to manage listings they do not own
   def admin_can_manage_marketplace?
     ok = false
 
@@ -1014,6 +1269,7 @@ class MarketplaceListingsController < ApplicationController
     false
   end
 
+  # Only holdings with available quantity can be listed
   def selectable_holdings
     hs = Holding.where(user_id: current_user.id).to_a
 
@@ -1024,6 +1280,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Reads the product catalogue from config/sets.json
   def sets_data
     raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
     JSON.parse(raw)
@@ -1031,6 +1288,7 @@ class MarketplaceListingsController < ApplicationController
     {}
   end
 
+  # Converts internal product type codes into display names
   def type_map
     {
       "etb" => "Elite Trainer Box",
@@ -1047,6 +1305,7 @@ class MarketplaceListingsController < ApplicationController
     }
   end
 
+  # Splits a SKU into set slug and product type
   def parse_sku(sku)
     s = sku.to_s
 
@@ -1063,6 +1322,7 @@ class MarketplaceListingsController < ApplicationController
     [ s.to_s, "" ]
   end
 
+  # Splits route type into base type and variant
   def split_type_variant(type_code)
     t = type_code.to_s
 
@@ -1075,10 +1335,12 @@ class MarketplaceListingsController < ApplicationController
     [ t.to_s, "" ]
   end
 
+  # Turns a code such as booster_box into Booster Box
   def titleize_code(code)
     code.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
   end
 
+  # Normalises product names into product type and variant text
   def normalize_name_to_type_and_variant(name, base_name)
     n = name.to_s.strip
     b = base_name.to_s.strip
@@ -1111,6 +1373,7 @@ class MarketplaceListingsController < ApplicationController
     [ b, "" ]
   end
 
+  # Builds set and product display data for catalogue listings
   def listing_meta_for_slug_type(slug, type_code)
     s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
     set_name = s ? s["name"].to_s : slug.to_s
@@ -1143,6 +1406,7 @@ class MarketplaceListingsController < ApplicationController
     { set_name: set_name, product_type_name: product_type_name }
   end
 
+  # Builds SKU and display metadata from a user's holding
   def listing_meta_for_holding(holding)
     sku =
       if holding.respond_to?(:sku) && holding.sku.present?
@@ -1220,6 +1484,7 @@ class MarketplaceListingsController < ApplicationController
     }
   end
 
+  # Creates a sold purchase record and supports older/alternate column names
   def create_purchase_log_safe(listing, buyer, seller, qty, unit_cents, total_cents, addr, debug_id)
     return unless defined?(MarketplacePurchase)
 
@@ -1248,60 +1513,6 @@ class MarketplaceListingsController < ApplicationController
     attrs["product_name"] = listing.product_type_name.to_s if cols.include?("product_name") && listing.respond_to?(:product_type_name)
     attrs["condition"] = listing.condition.to_s if cols.include?("condition") && listing.respond_to?(:condition)
 
-    if cols.include?("shipping_name") && addr[:name].present?
-      attrs["shipping_name"] = addr[:name]
-    elsif cols.include?("address_name") && addr[:name].present?
-      attrs["address_name"] = addr[:name]
-    end
-
-    if cols.include?("address_line1") && addr[:line1].present?
-      attrs["address_line1"] = addr[:line1]
-    elsif cols.include?("shipping_line1") && addr[:line1].present?
-      attrs["shipping_line1"] = addr[:line1]
-    elsif cols.include?("line1") && addr[:line1].present?
-      attrs["line1"] = addr[:line1]
-    end
-
-    if cols.include?("address_line2") && addr[:line2].present?
-      attrs["address_line2"] = addr[:line2]
-    elsif cols.include?("shipping_line2") && addr[:line2].present?
-      attrs["shipping_line2"] = addr[:line2]
-    elsif cols.include?("line2") && addr[:line2].present?
-      attrs["line2"] = addr[:line2]
-    end
-
-    if cols.include?("address_city") && addr[:city].present?
-      attrs["address_city"] = addr[:city]
-    elsif cols.include?("shipping_city") && addr[:city].present?
-      attrs["shipping_city"] = addr[:city]
-    elsif cols.include?("city") && addr[:city].present?
-      attrs["city"] = addr[:city]
-    end
-
-    if cols.include?("address_county") && addr[:county].present?
-      attrs["address_county"] = addr[:county]
-    elsif cols.include?("shipping_county") && addr[:county].present?
-      attrs["shipping_county"] = addr[:county]
-    elsif cols.include?("county") && addr[:county].present?
-      attrs["county"] = addr[:county]
-    end
-
-    if cols.include?("address_postcode") && addr[:postcode].present?
-      attrs["address_postcode"] = addr[:postcode]
-    elsif cols.include?("shipping_postcode") && addr[:postcode].present?
-      attrs["shipping_postcode"] = addr[:postcode]
-    elsif cols.include?("postcode") && addr[:postcode].present?
-      attrs["postcode"] = addr[:postcode]
-    end
-
-    if cols.include?("address_country_code") && addr[:country_code].present?
-      attrs["address_country_code"] = addr[:country_code]
-    elsif cols.include?("shipping_country_code") && addr[:country_code].present?
-      attrs["shipping_country_code"] = addr[:country_code]
-    elsif cols.include?("country_code") && addr[:country_code].present?
-      attrs["country_code"] = addr[:country_code]
-    end
-
     rec = MarketplacePurchase.new(attrs)
 
     begin
@@ -1319,6 +1530,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Adds a catalogue-created listing to the buyer's holdings after sale
   def add_catalog_to_buyer_holdings_safe(buyer, listing, qty, unit_price_cents, debug_id)
     return unless defined?(Holding)
     return unless Holding.column_names.include?("user_id") && Holding.column_names.include?("quantity")
@@ -1380,6 +1592,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Copies a seller holding into the buyer's portfolio after payment is confirmed
   def add_to_buyer_holdings_safe(buyer, seller_holding, qty, unit_price_cents, debug_id)
     return unless defined?(Holding)
     return unless Holding.column_names.include?("user_id") && Holding.column_names.include?("quantity")
@@ -1464,6 +1677,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
+  # Ensures a Product record exists for catalogue listings before adding buyer holdings
   def ensure_product_for_listing(listing)
     return nil unless defined?(Product)
 

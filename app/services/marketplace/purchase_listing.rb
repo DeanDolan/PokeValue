@@ -2,12 +2,14 @@ module Marketplace
   class PurchaseListing
     class PurchaseError < StandardError; end
 
+    # Different possible column names supported while the schema changed during development
     FUNDS_KEYS = %i[funds_cents balance_cents wallet_cents funds balance wallet].freeze
     PRICE_KEYS = %i[price_cents unit_price_cents price unit_price].freeze
-    QTY_KEYS   = %i[available_quantity quantity qty stock].freeze
-    SOLD_KEYS  = %i[sold_quantity purchased_quantity].freeze
+    QTY_KEYS = %i[available_quantity quantity qty stock].freeze
+    SOLD_KEYS = %i[sold_quantity purchased_quantity].freeze
     STATUS_KEYS = %i[status state].freeze
 
+    # Main service method for purchasing a listing with app funds
     def self.call!(listing_id:, buyer:, quantity:)
       debug_id = SecureRandom.hex(6)
       raise PurchaseError, "buyer required" if buyer.nil?
@@ -59,6 +61,7 @@ module Marketplace
 
         holding = nil
         holding_id = listing.respond_to?(:holding_id) ? listing.holding_id : nil
+
         if holding_id.present? && defined?(Holding)
           holding = Holding.lock.find_by(id: holding_id)
           if holding.nil?
@@ -74,6 +77,7 @@ module Marketplace
           end
         end
 
+        # Debit buyer and credit seller inside one database transaction
         write_money_cents!(buyer, FUNDS_KEYS, buyer_funds_cents - total_cents)
 
         seller_funds_cents = read_money_cents(seller, FUNDS_KEYS)
@@ -111,7 +115,7 @@ module Marketplace
           end
         listing_condition = listing.respond_to?(:condition) ? listing.condition.to_s : ""
 
-        purchase = MarketplacePurchase.create!(
+        MarketplacePurchase.create!(
           buyer_id: buyer.id,
           seller_id: seller.id,
           marketplace_listing_id: listing.id,
@@ -140,8 +144,6 @@ module Marketplace
             seller_funds_cents: seller_funds_cents
           )
         )
-
-        purchase
       end
     rescue => e
       Rails.logger.error("PURCHASE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
@@ -149,6 +151,7 @@ module Marketplace
       raise PurchaseError, "[#{debug_id}] #{e.message}"
     end
 
+    # Builds a JSON debug record to help trace failed or completed purchases
     def self.build_debug_context(listing:, buyer:, seller:, qty:, unit_price_cents:, total_cents:, available:, buyer_funds_cents:, seller_funds_cents:)
       {
         listing_id: listing.id,
@@ -169,6 +172,7 @@ module Marketplace
       ""
     end
 
+    # Returns safe attributes for debugging without exposing full user records
     def self.safe_attrs(obj, keys: nil)
       h = obj.respond_to?(:attributes) ? obj.attributes : {}
       if keys
@@ -185,6 +189,7 @@ module Marketplace
       {}
     end
 
+    # Reads listing status while supporting older possible column names
     def self.read_status(listing)
       STATUS_KEYS.each do |k|
         return listing.public_send(k) if listing.respond_to?(k) && listing.public_send(k).present?
@@ -192,6 +197,7 @@ module Marketplace
       nil
     end
 
+    # Calculates how many units are available for purchase
     def self.read_available_units(listing)
       sold = 0
       SOLD_KEYS.each do |k|
@@ -215,6 +221,7 @@ module Marketplace
       0
     end
 
+    # Reduces listing inventory after a successful purchase
     def self.apply_listing_decrement!(listing, qty)
       if listing.respond_to?(:available_quantity) && !listing.available_quantity.nil?
         listing.available_quantity = listing.available_quantity.to_i - qty
@@ -241,6 +248,7 @@ module Marketplace
       raise PurchaseError, "cannot decrement listing inventory (listing_id=#{listing.id})"
     end
 
+    # Reads money columns and converts euro values to cents where needed
     def self.read_money_cents(obj, keys)
       attrs = obj.respond_to?(:attributes) ? obj.attributes : {}
 
@@ -263,6 +271,7 @@ module Marketplace
       nil
     end
 
+    # Writes money back to whichever funds column exists on the user
     def self.write_money_cents!(obj, keys, new_cents)
       attrs = obj.respond_to?(:attributes) ? obj.attributes : {}
 

@@ -1,5 +1,6 @@
 <div class="container py-3 sets-layout">
   <div class="row g-3">
+    <%# Era filter sidebar %>
     <aside class="col-12 col-lg-3">
       <div class="border rounded-3 p-3 bg-white">
         <h3 class="h6 mb-3">Era</h3>
@@ -20,6 +21,7 @@
       </div>
     </aside>
 
+    <%# Main sets grid and search area %>
     <section class="col-12 col-lg-9">
       <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-3">
         <div class="d-flex align-items-center gap-3">
@@ -32,6 +34,7 @@
         </div>
       </div>
 
+      <%# Each set card stores its era and name for the JavaScript filters below %>
       <div id="sets-grid" class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3">
         <% @sets.each do |s| %>
           <div class="col set-card" data-era="<%= s[:era] %>" data-name="<%= s[:name].downcase %>">
@@ -78,16 +81,19 @@
 
     if (!eraList || !grid) return;
 
+    // Maps each era to its badge image
     const eraToBadge = {
       "Mega Evolution": "<%= @era_badges['Mega Evolution'] %>",
       "Scarlet & Violet": "<%= @era_badges['Scarlet & Violet'] %>",
       "Sword & Shield": "<%= @era_badges['Sword & Shield'] %>"
     };
 
+    // Reads theme colour variables from the page
     function cssVar(name) {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     }
 
+    // Colours used for inactive era buttons
     function normalColours() {
       return {
         bg: cssVar("--pv-button-bg") || "#ffffff",
@@ -96,6 +102,7 @@
       };
     }
 
+    // Colours used for the selected era button
     function lockedColours() {
       return {
         bg: cssVar("--pv-button-hover-bg") || cssVar("--pv-active-bg") || "#000000",
@@ -104,6 +111,7 @@
       };
     }
 
+    // Forces button colours so the selected era keeps the correct theme styling
     function forceButtonColour(button, colours) {
       button.style.setProperty("background", colours.bg, "important");
       button.style.setProperty("background-color", colours.bg, "important");
@@ -112,6 +120,7 @@
       button.style.setProperty("box-shadow", "none", "important");
     }
 
+    // Changes the era badge size depending on the selected era logo
     function sizeClassForEra(era) {
       if (era === "Mega Evolution") return "is-mega";
       if (era === "Scarlet & Violet") return "is-sv-small";
@@ -123,6 +132,7 @@
     const buttons = Array.from(eraList.querySelectorAll("button[data-era]"));
     let storedEra = null;
 
+    // Restores the last selected era when the user returns to the page
     try {
       storedEra = window.localStorage.getItem("setsActiveEra");
     } catch (_) {}
@@ -133,6 +143,7 @@
       activeEra = storedEra;
     }
 
+    // Applies active and inactive styles to all era buttons
     function applyEraButtonStyles() {
       const normal = normalColours();
       const locked = lockedColours();
@@ -155,6 +166,7 @@
       });
     }
 
+    // Updates the era logo image beside the search bar
     function updateBadge() {
       const src = eraToBadge[activeEra] || "";
 
@@ -172,12 +184,14 @@
 
     let storedSearch = "";
 
+    // Restores the last search text when the user comes back to the sets page
     try {
       storedSearch = window.localStorage.getItem("setsSearch") || "";
     } catch (_) {}
 
     if (search) search.value = storedSearch;
 
+    // Filters set cards by selected era and search text
     function apply() {
       const q = (search && search.value ? search.value : "").trim().toLowerCase();
       const cards = Array.from(grid.querySelectorAll(".set-card"));
@@ -196,6 +210,7 @@
       if (count) count.textContent = shown + (shown === 1 ? " set" : " sets");
     }
 
+    // Handles era button hover and click behaviour
     buttons.forEach((button) => {
       button.addEventListener("mouseenter", () => {
         forceButtonColour(button, lockedColours());
@@ -222,6 +237,7 @@
       });
     });
 
+    // Saves the search text and reapplies filtering as the user types
     if (search) {
       search.addEventListener("input", () => {
         try {
@@ -232,6 +248,7 @@
       });
     }
 
+    // Reapplies button colours when the light/dark theme changes
     const observer = new MutationObserver(() => {
       applyEraButtonStyles();
     });

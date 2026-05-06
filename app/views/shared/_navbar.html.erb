@@ -1,15 +1,18 @@
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
   <div class="container-fluid">
+    <%# Main brand logo link %>
     <%= link_to "/", class: "navbar-brand d-flex align-items-center gap-2" do %>
       <%= image_tag "logos/pokevaluelogolightmode.png", alt: "PokeValue", class: "pv-navbar-logo pv-logo-light" %>
       <%= image_tag "logos/pokevaluelogodarkmode.png", alt: "PokeValue", class: "pv-navbar-logo pv-logo-dark" %>
     <% end %>
 
+    <%# Bootstrap mobile navbar toggle button %>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
 
     <div class="collapse navbar-collapse" id="mainNav">
+      <%# Main navigation links %>
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
         <li class="nav-item">
           <%= link_to "Portfolio", "/", class: ["nav-link", (current_page?("/") ? "fw-bold text-dark" : nil)].compact.join(" ") %>
@@ -20,6 +23,7 @@
         <li class="nav-item"><%= link_to "Raffle", raffles_path, class: ["nav-link", ((current_page?(raffles_path) || request.path == "/raffle") ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
         <li class="nav-item"><%= link_to "Community", community_path, class: ["nav-link", (request.path.start_with?("/community") || request.path.start_with?("/showcase") ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
 
+        <%# Admin dropdown is only shown when an admin is signed in %>
         <% if defined?(admin_signed_in?) && admin_signed_in? %>
           <% admin_path = request.path.to_s %>
           <% admin_active = admin_path.start_with?("/admin") %>
@@ -72,21 +76,25 @@
         }
       </style>
 
+      <%# Global search input for finding sets and products from the navbar %>
       <div class="position-relative me-2 pv-search-wrap">
         <input id="global-search" class="form-control" type="search" placeholder="Search products and sets..." aria-label="Search" autocomplete="off">
         <div id="global-search-results" class="dropdown-menu w-100 mt-1 p-0" aria-labelledby="global-search" style="max-height:420px; overflow:auto;"></div>
       </div>
 
+      <%# My Account link opens the account page for logged-in users or the auth modal for guests %>
       <ul class="navbar-nav mb-2 mb-lg-0 me-2">
         <li class="nav-item">
           <% if current_user %>
             <%= link_to "My Account", account_path, class: ["nav-link", (current_page?(account_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %>
           <% else %>
-            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#authModal">My Account</a>
+            <%# Logged-out users see a login pop-up instead of being sent to the protected account page %>
+            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Log in to view account">My Account</a>
           <% end %>
         </li>
       </ul>
 
+      <%# Logged-in user area with logout button, otherwise show login/register button %>
       <% if current_user %>
         <div class="navbar-user-wrap">
           <span class="navbar-text navbar-user-text">
@@ -99,7 +107,7 @@
                 form: { class: "d-inline mb-0" } %>
         </div>
       <% else %>
-        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#authModal">
+        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Welcome">
           Login/Register
         </button>
       <% end %>
@@ -111,6 +119,8 @@
   (function(){
     function initDropdowns(){
       if(!window.bootstrap || !window.bootstrap.Dropdown) return;
+
+      // Rebuilds Bootstrap dropdown instances after Turbo page loads
       document.querySelectorAll('#mainNav .dropdown-toggle[data-bs-toggle="dropdown"]').forEach(function(el){
         window.bootstrap.Dropdown.getOrCreateInstance(el);
       });
@@ -118,6 +128,29 @@
 
     document.addEventListener("turbo:load", initDropdowns);
     document.addEventListener("DOMContentLoaded", initDropdowns);
+  })();
+</script>
+
+<script>
+  (function(){
+    function initAuthModalTitles(){
+      const authModal = document.getElementById("authModal");
+      const authTitle = document.getElementById("authModalLabel");
+
+      if(!authModal || !authTitle) return;
+      if(authModal.dataset.navbarAuthTitleBound === "1") return;
+      authModal.dataset.navbarAuthTitleBound = "1";
+
+      // Changes the shared login modal title depending on which navbar button opened it
+      authModal.addEventListener("show.bs.modal", function(event){
+        const button = event.relatedTarget;
+        const title = button ? button.getAttribute("data-auth-title") : "";
+        authTitle.textContent = title || "Welcome";
+      });
+    }
+
+    document.addEventListener("turbo:load", initAuthModalTitles);
+    document.addEventListener("DOMContentLoaded", initAuthModalTitles);
   })();
 </script>
 
@@ -131,6 +164,7 @@
       if(input.dataset.pvSearchBound === "1") return;
       input.dataset.pvSearchBound = "1";
 
+      // Builds one dropdown result row
       function row(item) {
         return `
           <a class="dropdown-item py-2" href="${item.href}">
@@ -145,6 +179,7 @@
         `;
       }
 
+      // Groups search results under a section heading
       function section(title, items) {
         if (!items || items.length === 0) return "";
         return `
@@ -153,6 +188,7 @@
         `;
       }
 
+      // Renders search results or hides the dropdown if there are none
       function render(data) {
         const setsHtml = section("Sets", data.sets || []);
         const productsHtml = section("Products", data.products || []);
@@ -169,6 +205,7 @@
 
       let timer;
 
+      // Delays the search request slightly so it does not fetch on every single keystroke instantly
       input.addEventListener("input", function(e){
         const q = e.target.value.trim();
         clearTimeout(timer);
@@ -190,16 +227,19 @@
         }, 120);
       });
 
+      // Closes search results when the user clicks outside the search box
       document.addEventListener("click", function(e){
         if (!menu.contains(e.target) && e.target !== input) {
           menu.classList.remove("open");
         }
       });
 
+      // Closes the dropdown when Turbo starts navigating
       document.addEventListener("turbo:click", function(){
         menu.classList.remove("open");
       });
 
+      // Clears open search UI before Turbo caches the page
       document.addEventListener("turbo:before-cache", function(){
         menu.classList.remove("open");
       });

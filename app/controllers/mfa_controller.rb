@@ -1,8 +1,11 @@
 class MfaController < ApplicationController
+  # Gives this controller access to current_user and login session helpers
   include Authentication
 
+  # Only admin users are allowed to access the MFA flow
   before_action :require_admin_for_mfa
 
+  # Shows the MFA code form after the admin has entered their password
   def new
     @user = mfa_user
     return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
@@ -12,6 +15,7 @@ class MfaController < ApplicationController
     end
   end
 
+  # Verifies the submitted authenticator code and completes the admin login
   def create
     @user = mfa_user
     return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
@@ -41,6 +45,7 @@ class MfaController < ApplicationController
     end
   end
 
+  # Creates the MFA secret and shows the setup QR-code details
   def setup
     @user = mfa_user
     return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
@@ -49,6 +54,7 @@ class MfaController < ApplicationController
     @secret = @user.mfa_secret
   end
 
+  # Enables MFA after the first valid authenticator code is entered
   def enable
     @user = mfa_user
     return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
@@ -67,6 +73,7 @@ class MfaController < ApplicationController
 
   private
 
+  # Stops non-admin users from entering the admin MFA area
   def require_admin_for_mfa
     u = mfa_user
     unless u&.admin?
@@ -74,6 +81,7 @@ class MfaController < ApplicationController
     end
   end
 
+  # Finds either the admin waiting for MFA or the already logged-in user
   def mfa_user
     if session[:pre_mfa_user_id].present?
       User.find_by(id: session[:pre_mfa_user_id])
@@ -82,6 +90,7 @@ class MfaController < ApplicationController
     end
   end
 
+  # Prevents unsafe redirect paths after MFA verification
   def safe_return_to(path)
     p = path.to_s
     return nil if p.blank?

@@ -1,8 +1,10 @@
 <%
+  # Collects comments and sorts top-level comments by reaction count first
   all_comments = post.community_comments.to_a
   top_level_comments = all_comments.select { |comment| comment.parent_comment_id.nil? }
   sorted_top_level_comments = top_level_comments.sort_by { |comment| [ -community_total_comment_reactions(comment), comment.created_at.to_i ] }
 
+  # Prepares reaction totals, the current user's reaction, and modal/image data
   reaction_counts = community_reaction_counts(post)
   total_reactions = reaction_counts.values.sum
   current_reaction = current_user ? post.community_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
@@ -21,9 +23,15 @@
   .community-badge-admin{background:rgba(220,53,69,.12);border:1px solid rgba(220,53,69,.35);color:#dc3545}
   .community-badge-default{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151}
   .community-time{font-size:.8rem;color:#6b7280;margin-top:.15rem}
+  .community-post-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:nowrap}
+  .community-edit-btn{border-radius:999px}
   .community-delete-btn{border-radius:999px}
   .community-post-body{margin-top:.8rem;color:#111827;font-size:.97rem;line-height:1.55;word-break:break-word}
   .community-post-body p:last-child{margin-bottom:0}
+  .community-edit-form-wrap{margin-top:.85rem;padding:.85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}
+  .community-edit-textarea{width:100%;min-height:110px;border:1px solid #d1d5db;border-radius:1rem;padding:.8rem .9rem;font-size:.95rem;resize:vertical;outline:none;background:#fff;color:#111827}
+  .community-edit-textarea:focus{border-color:#111827;box-shadow:0 0 0 3px rgba(17,24,39,.08)}
+  .community-edit-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.7rem;flex-wrap:wrap}
   .community-media-grid{display:grid;gap:.5rem;margin-top:.9rem}
   .community-media-grid-1{grid-template-columns:1fr}
   .community-media-grid-2{grid-template-columns:repeat(2,1fr)}
@@ -98,6 +106,7 @@
   .community-reactions-empty-filter{display:none;padding:.4rem 0;color:#6b7280}
   @media (max-width:640px){
     .community-post-head{flex-direction:column}
+    .community-post-actions{width:100%;justify-content:flex-start}
     .community-media-grid-2,.community-media-grid-4{grid-template-columns:1fr}
     .community-media-grid-3{grid-template-columns:1fr;grid-template-rows:none}
     .community-media-grid-3 .community-media-item-1{grid-row:auto;height:220px}
@@ -108,6 +117,7 @@
 </style>
 
 <article id="community-post-<%= post.id %>" class="community-card community-post-card">
+  <%# Post header with user details and optional edit/delete buttons %>
   <div class="community-post-head">
     <div>
       <div class="community-user-line">
@@ -129,21 +139,53 @@
     </div>
 
     <% if current_user && (current_user.id == post.user_id || current_user.admin?) %>
-      <%= button_to "Delete",
-            community_post_path(post),
-            method: :delete,
-            params: { channel: selected_channel },
-            class: "btn btn-sm btn-outline-danger community-delete-btn",
-            form: { class: "d-inline mb-0" } %>
+      <div class="community-post-actions">
+        <button type="button" class="btn btn-sm btn-outline-secondary community-edit-btn" data-community-edit-toggle="<%= post.id %>">
+          Edit
+        </button>
+
+        <%= button_to "Delete",
+              community_post_path(post),
+              method: :delete,
+              params: { channel: selected_channel },
+              class: "btn btn-sm btn-outline-danger community-delete-btn",
+              form: { class: "d-inline mb-0" } %>
+      </div>
     <% end %>
   </div>
 
+  <%# Escapes and formats the post text safely %>
   <% if post.body.present? %>
-    <div class="community-post-body">
+    <div class="community-post-body" data-community-post-body="<%= post.id %>">
       <%= simple_format(h(post.body), {}, wrapper_tag: "div") %>
     </div>
   <% end %>
 
+  <%# Inline edit form shown only to the post owner or an admin %>
+  <% if current_user && (current_user.id == post.user_id || current_user.admin?) %>
+    <div class="community-edit-form-wrap d-none" data-community-edit-form="<%= post.id %>">
+      <%= form_with model: post, url: community_post_path(post), method: :patch, local: true do |f| %>
+        <%= hidden_field_tag :channel, selected_channel %>
+        <%= f.hidden_field :channel, value: selected_channel %>
+
+        <%= f.text_area :body,
+              class: "community-edit-textarea",
+              maxlength: CommunityPost::MAX_BODY_LENGTH,
+              rows: 5,
+              placeholder: "Edit your post..." %>
+
+        <div class="community-edit-actions">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-community-edit-cancel="<%= post.id %>">
+            Cancel
+          </button>
+
+          <%= f.submit "Save", class: "btn btn-sm btn-dark" %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Displays up to four post images, with a + counter if there are more %>
   <% if shown_images.any? %>
     <div class="community-media-grid community-media-grid-<%= [shown_images.count, 4].min %>">
       <% shown_images.each_with_index do |image, index| %>
@@ -166,6 +208,7 @@
     </div>
   <% end %>
 
+  <%# Summary row for reactions and comments %>
   <div class="community-social-summary">
     <div class="community-social-emojis" data-community-post-summary-emojis data-post-id="<%= post.id %>">
       <% CommunityReaction::KINDS.each do |kind| %>
@@ -184,6 +227,7 @@
     </button>
   </div>
 
+  <%# Creates the post reaction buttons %>
   <div class="community-reactions-row">
     <% CommunityReaction::KINDS.each do |kind| %>
       <%= form_with url: react_community_post_path(post), method: :post, local: true, html: { class: "community-post-react-form", data: { turbo: false, community_post_id: post.id } } do %>
@@ -203,6 +247,7 @@
     <% end %>
   </div>
 
+  <%# Hidden comments section that opens when the user clicks Comments %>
   <div class="community-comments-wrap d-none" data-community-comments-container data-post-id="<%= post.id %>">
     <% if current_user %>
       <div class="community-comment-compose">
@@ -228,6 +273,7 @@
   </div>
 </article>
 
+<%# Modal listing every user who reacted to this post %>
 <div class="modal fade" id="<%= reactions_modal_id %>" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
@@ -327,6 +373,39 @@
       }
     }
 
+    function initCommunityEditToggle(){
+      if(document.body.dataset.communityEditToggleReady === "true") return;
+      document.body.dataset.communityEditToggleReady = "true";
+
+      document.addEventListener("click", function(event){
+        const editButton = event.target.closest("[data-community-edit-toggle]");
+        if(editButton){
+          const postId = editButton.dataset.communityEditToggle;
+          const form = document.querySelector('[data-community-edit-form="' + postId + '"]');
+          const body = document.querySelector('[data-community-post-body="' + postId + '"]');
+
+          if(!form) return;
+
+          form.classList.remove("d-none");
+          if(body) body.classList.add("d-none");
+          editButton.classList.add("d-none");
+          return;
+        }
+
+        const cancelButton = event.target.closest("[data-community-edit-cancel]");
+        if(cancelButton){
+          const postId = cancelButton.dataset.communityEditCancel;
+          const form = document.querySelector('[data-community-edit-form="' + postId + '"]');
+          const body = document.querySelector('[data-community-post-body="' + postId + '"]');
+          const editButton = document.querySelector('[data-community-edit-toggle="' + postId + '"]');
+
+          if(form) form.classList.add("d-none");
+          if(body) body.classList.remove("d-none");
+          if(editButton) editButton.classList.remove("d-none");
+        }
+      });
+    }
+
     function initCommunityCommentToggle(){
       if(document.body.dataset.communityCommentsToggleReady === "true") return;
       document.body.dataset.communityCommentsToggleReady = "true";
@@ -358,7 +437,12 @@
       });
     }
 
-    document.addEventListener("DOMContentLoaded", initCommunityCommentToggle);
-    document.addEventListener("turbo:load", initCommunityCommentToggle);
+    function initCommunityPostPartial(){
+      initCommunityEditToggle();
+      initCommunityCommentToggle();
+    }
+
+    document.addEventListener("DOMContentLoaded", initCommunityPostPartial);
+    document.addEventListener("turbo:load", initCommunityPostPartial);
   })();
 </script>

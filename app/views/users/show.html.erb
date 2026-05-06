@@ -1,6 +1,7 @@
 <%
 require "json"
 
+# Loads the set/product metadata so public user profiles can show readable set and era information.
 sets_data =
   begin
     raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
@@ -9,6 +10,7 @@ sets_data =
     {}
   end
 
+# Converts stored product type codes into readable names for the listings table.
 type_map = {
   "etb" => "Elite Trainer Box",
   "pc_etb" => "Pokemon Center Elite Trainer Box",
@@ -23,10 +25,12 @@ type_map = {
   "mini_tin_display" => "Mini Tin Display"
 }
 
+# Creates a readable fallback label from route-style strings.
 titleize = lambda do |s|
   s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
 end
 
+# Splits product route types such as etb--v-lucario into base type and variant.
 split_type_variant = lambda do |t|
   s = t.to_s
   down = s.downcase
@@ -41,6 +45,7 @@ split_type_variant = lambda do |t|
   end
 end
 
+# Builds the final product type label displayed in the marketplace listings table.
 display_type = lambda do |listing|
   src = listing.respond_to?(:route_type) ? listing.route_type.to_s : ""
   src = listing.respond_to?(:product_type_name) ? listing.product_type_name.to_s : src if src.blank?
@@ -51,14 +56,32 @@ display_type = lambda do |listing|
   variant.present? ? "#{base_name} (#{variant})" : base_name
 end
 
+# Finds the era for a set using its slug.
 era_for = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["era"].to_s : ""
 end
 
+# Builds star rating HTML using decimal star fill.
+stars = lambda do |avg|
+  a = avg.to_f
+  a = 0.0 if a < 0
+  a = 5.0 if a > 5
+  parts = []
+
+  5.times do |i|
+    fill = [[(a - i) * 100, 0].max, 100].min
+    parts << %(<span class="usr-star-box"><span class="usr-star-empty">★</span><span class="usr-star-fill" style="width:#{fill}%;">★</span></span>)
+  end
+
+  %(<span class="usr-stars">#{parts.join}</span>).html_safe
+end
+
+# Admin badge image used when the viewed user is an admin.
 admin_badge_asset = "badges/adminbadge.png"
 is_admin = defined?(@is_admin) ? !!@is_admin : (@user.respond_to?(:admin) && !!@user.admin)
 
+# Uses the controller-provided listings and safely falls back to an empty list.
 listings =
   if defined?(@listings) && @listings
     @listings
@@ -66,14 +89,55 @@ listings =
     []
   end
 
+# Only active listings are shown on public profiles.
 listings = listings.select { |l| l.respond_to?(:status) ? l.status.to_s == "active" : true }
+
+reviews =
+  if defined?(Review) && @user
+    Review.where(seller_id: @user.id).includes(:reviewer).order(created_at: :desc).to_a
+  else
+    []
+  end
+
+reviews_avg =
+  if defined?(@reviews_avg)
+    @reviews_avg.to_f
+  elsif defined?(Review) && @user
+    Review.where(seller_id: @user.id).average(:rating).to_f
+  else
+    0.0
+  end
+
+reviews_count =
+  if defined?(@reviews_count)
+    @reviews_count.to_i
+  elsif defined?(Review) && @user
+    Review.where(seller_id: @user.id).count
+  else
+    0
+  end
 %>
 
 <div class="container py-4">
+  <style>
+    .usr-stars{display:inline-flex;gap:2px;white-space:nowrap;vertical-align:middle}
+    .usr-star-box{position:relative;display:inline-block;width:1em;height:1em;line-height:1;font-size:1rem;overflow:hidden;color:#111827;text-shadow:-1px -1px 0 #d4a017,1px -1px 0 #d4a017,-1px 1px 0 #d4a017,1px 1px 0 #d4a017}
+    .usr-star-empty{position:absolute;left:0;top:0;display:block;width:1em;color:#111827}
+    .usr-star-fill{position:absolute;left:0;top:0;display:block;width:0;height:1em;overflow:hidden;white-space:nowrap;color:#d4a017;text-shadow:none}
+    .usr-review-list{display:grid;gap:10px}
+    .usr-review-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
+    .usr-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .usr-review-name{font-weight:900;font-size:.85rem}
+    .usr-review-date{font-size:.75rem;color:#6b7280}
+    .usr-review-rating{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.8rem}
+    .usr-review-comment{margin-top:8px;font-size:.85rem;color:#111827;white-space:pre-wrap}
+  </style>
+
   <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
     <div>
       <h2 class="mb-2"><%= @user.username %></h2>
 
+      <%# Shows the user's country as a flag with the country name available on hover. %>
       <p class="mb-2">
         Country:
         <span style="font-size: 1.2rem; line-height: 1; display:inline-block; position:relative; top:3px;" title="<%= country_name(@user.country_code) %>">
@@ -81,6 +145,7 @@ listings = listings.select { |l| l.respond_to?(:status) ? l.status.to_s == "acti
         </span>
       </p>
 
+      <%# Shows account badges such as Admin. %>
       <p class="mb-0">
         Badges:
         <% if is_admin %>
@@ -93,20 +158,22 @@ listings = listings.select { |l| l.respond_to?(:status) ? l.status.to_s == "acti
       </p>
     </div>
 
+    <%# Displays the seller review average and total number of reviews. %>
     <div class="text-end">
       <div class="badge bg-light text-dark border mb-1">
-        Reviews: <%= number_with_precision(@reviews_avg.to_f, precision: 1) %>/5 (<%= @reviews_count.to_i %>)
+        Reviews: <%= stars.call(reviews_avg) %> (<%= reviews_count %>)
       </div>
     </div>
   </div>
 
+  <%# Public marketplace listings section for this seller. %>
   <div class="d-flex align-items-center justify-content-between mb-2">
     <h5 class="mb-0">Marketplace Listings</h5>
     <div class="small text-muted"><%= listings.size %> listing<%= listings.size == 1 ? "" : "s" %></div>
   </div>
 
   <% if listings.any? %>
-    <div class="card">
+    <div class="card mb-3">
       <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle">
           <thead class="table-light">
@@ -139,5 +206,49 @@ listings = listings.select { |l| l.respond_to?(:status) ? l.status.to_s == "acti
       </div>
     </div>
   <% else %>
-    <div class="card">
-      <div class="card-body t
+    <%# Empty state shown when this user has no active listings. %>
+    <div class="card mb-3">
+      <div class="card-body text-muted">
+        No active marketplace listings.
+      </div>
+    </div>
+  <% end %>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+        <h5 class="mb-0">Reviews</h5>
+        <div class="small text-muted"><%= reviews_count %> review<%= reviews_count == 1 ? "" : "s" %></div>
+      </div>
+
+      <% if reviews.any? %>
+        <div class="usr-review-list">
+          <% reviews.each do |review| %>
+            <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
+            <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{review.reviewer_id}" %>
+            <div class="usr-review-card">
+              <div class="usr-review-top">
+                <div>
+                  <div class="usr-review-name"><%= reviewer_name %></div>
+                  <div class="usr-review-rating">
+                    <%= stars.call(review.rating.to_f) %>
+                    <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong>
+                  </div>
+                </div>
+                <div class="usr-review-date"><%= review.created_at ? review.created_at.strftime("%d %b %Y") : "" %></div>
+              </div>
+
+              <% if review.comment.to_s.strip.present? %>
+                <div class="usr-review-comment"><%= review.comment %></div>
+              <% else %>
+                <div class="usr-review-comment text-muted">No comment left.</div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <div class="text-muted">No reviews yet.</div>
+      <% end %>
+    </div>
+  </div>
+</div>

@@ -1,25 +1,27 @@
 <%
-  hidden_exact = [
-    "Team Rocket's Moltres ex Ultra Premium Collection",
-    "Team Rocket’s Moltres ex Ultra Premium Collection",
-    "151 Mini Tin",
-    "151 Mini Tin Display"
-  ]
+  require "base64"
 
+  # Product names that should not be shown on the set page
+  hidden_exact = []
+
+  # Normalises names so comparisons work even with different apostrophes or capital letters
   def normalize_name(s)
     s.to_s.strip.downcase.gsub("’", "'")
   end
 
+  # Safely parses the release date stored for the set
   def parse_set_date(value)
     Date.parse(value.to_s)
   rescue
     nil
   end
 
+  # Returns the number of days in a specific month
   def days_in_month(year, month)
     Date.new(year, month, -1).day
   end
 
+  # Breaks the time between two dates into years, months and days
   def date_parts_between(from_date, to_date)
     return [0, 0, 0] if to_date <= from_date
 
@@ -53,9 +55,35 @@
   era_normalized = normalize_name(@era)
   release_date = parse_set_date(@release_date)
 
+  raw_set_logo_path = (defined?(@set_logo_url) && @set_logo_url.present?) ? @set_logo_url.to_s : ""
+  cleaned_set_logo_path = raw_set_logo_path.sub(/\A\//, "").sub(/\Aimages\//, "")
+  logo_file_name = File.basename(cleaned_set_logo_path.presence || "#{@set_slug}logo.png")
+
+  logo_disk_candidates = [
+    Rails.root.join("app", "assets", "images", cleaned_set_logo_path),
+    Rails.root.join("app", "assets", "images", "sets", logo_file_name),
+    Rails.root.join("app", "assets", "images", "images", "sets", logo_file_name),
+    Rails.root.join("public", "assets", "sets", logo_file_name),
+    Rails.root.join("public", "images", "sets", logo_file_name)
+  ].uniq
+
+  found_logo_path = logo_disk_candidates.find { |path| path.to_s.present? && File.file?(path) }
+
+  set_logo_image_path =
+    if found_logo_path
+      ext = File.extname(found_logo_path.to_s).downcase
+      mime = ext == ".jpg" || ext == ".jpeg" ? "image/jpeg" : "image/png"
+      "data:#{mime};base64,#{Base64.strict_encode64(File.binread(found_logo_path.to_s))}"
+    elsif raw_set_logo_path.start_with?("http://", "https://", "/assets/", "/rails/")
+      raw_set_logo_path
+    else
+      "pokevaluelogo.png"
+    end
+
   out_of_print_now = false
   out_of_print_date = nil
 
+  # Sets that are already treated as out of print
   scarlet_violet_out_of_print = [
     "scarlet & violet base",
     "paldea evolved",
@@ -65,6 +93,7 @@
     "paldean fates"
   ]
 
+  # Sets expected to become out of print by April 2027
   april_2027_out_of_print = [
     "temporal forces",
     "twilight masquerade",
@@ -74,6 +103,7 @@
     "prismatic evolutions"
   ]
 
+  # Sets expected to become out of print by April 2028
   april_2028_out_of_print = [
     "journey together",
     "destined rivals",
@@ -84,10 +114,12 @@
     "ascended heroes"
   ]
 
+  # Sets expected to become out of print by April 2029
   april_2029_out_of_print = [
     "perfect order"
   ]
 
+  # Calculates whether the set is already out of print or when it is expected to be out of print
   if era_normalized == "sword & shield"
     out_of_print_now = true
   elsif scarlet_violet_out_of_print.include?(set_name_normalized)
@@ -105,6 +137,7 @@
 
   out_of_print_now = true if out_of_print_date.present? && out_of_print_date <= today
 
+  # Creates the urgency label and colour class shown in the urgency tile
   if out_of_print_now
     urgency_label = "Out of Print"
     urgency_class = "urgency-black"
@@ -158,6 +191,7 @@
     <%= link_to "← Back to sets", sets_path, class: "btn btn-outline-secondary btn-sm" %>
   </div>
 
+  <%# Admin-only edit panel for updating set value and card totals %>
   <% if defined?(admin_signed_in?) && admin_signed_in? %>
     <div class="mb-3">
       <div class="card">
@@ -186,11 +220,11 @@
     </div>
   <% end %>
 
+  <%# Top information tiles for logo, era, release date, value, card count and urgency %>
   <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3 mb-4">
     <div class="col">
       <div class="card h-100 equal-tile d-flex align-items-center justify-content-center text-center p-3">
-        <%= image_tag "logos/pokevaluelogolightmode.png", alt: "PokeValue", class: "tile-logo tile-logo-light" %>
-        <%= image_tag "logos/pokevaluelogodarkmode.png", alt: "PokeValue", class: "tile-logo tile-logo-dark" %>
+        <%= image_tag set_logo_image_path, alt: @set_name, class: "tile-logo" %>
       </div>
     </div>
 
@@ -236,6 +270,7 @@
     </div>
   </div>
 
+  <%# Product cards for the selected set %>
   <div class="row">
     <div class="col-12">
       <% if @products.present? %>
@@ -243,8 +278,9 @@
           <% @products.each do |p| %>
             <%
               n = p[:name].to_s
+
+              # Skips hidden products so they do not appear as clickable product cards
               next if hidden_exact.any? { |x| normalize_name(x) == normalize_name(n) }
-              next if normalize_name(n).include?("team rocket") && normalize_name(n).include?("ultra premium collection")
             %>
 
             <div class="col">

@@ -1,6 +1,7 @@
 class AccountsController < ApplicationController
   before_action :ensure_logged_in
 
+  # Shows the logged-in user's account, or another user's public account page if an ID is supplied.
   def show
     @user =
       if params[:id].present?
@@ -11,12 +12,15 @@ class AccountsController < ApplicationController
 
     return redirect_to(root_path, alert: "User not found.") unless @user
 
+    # Used by the view to decide whether private account sections should be shown.
     @is_self = current_user && current_user.id == @user.id
 
+    # Keeps the marketplace tab locked to one of the supported account tabs.
     @tab = params[:tab].to_s.strip
     @tab = "current" if @tab.blank?
     @tab = "current" unless %w[current sold bought refunded].include?(@tab)
 
+    # Only the account owner can see their own watchlist.
     @watchlist_items = []
     if @is_self
       @watchlist_items =
@@ -29,6 +33,7 @@ class AccountsController < ApplicationController
         end
     end
 
+    # Loads active marketplace listings created by this account.
     @current_listings =
       if defined?(MarketplaceListing)
         scope =
@@ -42,14 +47,17 @@ class AccountsController < ApplicationController
         []
       end
 
+    # These arrays are prepared for marketplace sales and refund history.
     @sold_sales = []
     @refunds_issued = []
     @refunds_received = []
 
+    # Purchase and refund history is private, so it only loads for the account owner.
     return unless @is_self
     return unless defined?(MarketplacePurchase)
     return unless table_exists?(MarketplacePurchase)
 
+    # Splits the user's seller-side purchases into completed sales and refunded sales.
     if col_exists?(MarketplacePurchase, "seller_id")
       base = MarketplacePurchase.where(seller_id: @user.id).order(created_at: :desc).limit(500).to_a
       refunded, not_refunded = base.partition { |p| refunded_purchase?(p) }
@@ -57,12 +65,14 @@ class AccountsController < ApplicationController
       @sold_sales = not_refunded
     end
 
+    # Loads buyer-side purchases that were refunded back to this account.
     if col_exists?(MarketplacePurchase, "buyer_id")
       base = MarketplacePurchase.where(buyer_id: @user.id).order(created_at: :desc).limit(500).to_a
       @refunds_received = base.select { |p| refunded_purchase?(p) }
     end
   end
 
+  # Opens the refund confirmation page for a marketplace purchase.
   def refund
     return redirect_to(root_path, alert: "Please log in.") unless current_user
     return redirect_to(account_path, alert: "Not available.") unless defined?(MarketplacePurchase)
@@ -71,6 +81,7 @@ class AccountsController < ApplicationController
     @purchase = MarketplacePurchase.find_by(id: params[:id])
     return redirect_to(account_path, alert: "Not found.") unless @purchase
 
+    # Only the seller attached to the purchase can issue the refund.
     return redirect_to(account_path, alert: "Forbidden.") unless col_exists?(MarketplacePurchase, "seller_id") && @purchase.seller_id.to_i == current_user.id
 
     @buyer =
@@ -80,12 +91,14 @@ class AccountsController < ApplicationController
         nil
       end
 
+    # These values are displayed on the refund confirmation screen.
     @listing = resolve_listing_for_purchase(@purchase)
     @address = purchase_address_hash(@purchase)
     @amount_cents = purchase_total_cents(@purchase).to_i
     @already_refunded = refunded_purchase?(@purchase)
   end
 
+  # Processes the refund, moves funds, and records the refund state on the purchase.
   def process_refund
     return redirect_to(root_path, alert: "Please log in.") unless current_user
     return redirect_to(account_path, alert: "Not available.") unless defined?(MarketplacePurchase)
@@ -94,12 +107,14 @@ class AccountsController < ApplicationController
     purchase = MarketplacePurchase.find_by(id: params[:id])
     return redirect_to(account_path, alert: "Not found.") unless purchase
 
+    # Stops users from refunding purchases that do not belong to them as seller.
     return redirect_to(account_path, alert: "Forbidden.") unless col_exists?(MarketplacePurchase, "seller_id") && purchase.seller_id.to_i == current_user.id
 
     note = params[:note].to_s
     debug_id = SecureRandom.hex(8)
 
     begin
+      # Transaction keeps the seller deduction, buyer credit, and refund record together.
       ActiveRecord::Base.transaction do
         p = MarketplacePurchase.lock.find(purchase.id)
 
@@ -116,16 +131,19 @@ class AccountsController < ApplicationController
         total_cents = purchase_total_cents(p).to_i
         raise "bad_amount" if total_cents <= 0
 
+        # Removes the refunded amount from the seller's in-app funds.
         seller_funds = user_funds_cents(seller)
         new_seller = seller_funds - total_cents
         new_seller = 0 if new_seller < 0
         update_user_funds_cents!(seller, new_seller)
 
+        # Adds the refunded amount back to the buyer's in-app funds when a buyer exists.
         if buyer
           buyer_funds = user_funds_cents(buyer)
           update_user_funds_cents!(buyer, buyer_funds + total_cents)
         end
 
+        # Persists the refund status using whichever refund columns exist in the database.
         persisted = persist_refund!(p, debug_id: debug_id, note: note, amount_cents: total_cents)
         raise "refund_not_persisted" unless persisted
       end
@@ -141,10 +159,12 @@ class AccountsController < ApplicationController
 
   private
 
+  # Prevents access to account pages when no user is logged in.
   def ensure_logged_in
     redirect_to root_path, alert: "Please log in to view your account." unless current_user
   end
 
+  # Safely checks whether an optional model table exists before querying it.
   def table_exists?(model)
     return false unless model
     return false unless model.respond_to?(:table_name)
@@ -154,6 +174,7 @@ class AccountsController < ApplicationController
     false
   end
 
+  # Safely checks whether an optional database column exists before using it.
   def col_exists?(model, col)
     return false unless model && col.present?
     return false unless table_exists?(model)
@@ -163,6 +184,7 @@ class AccountsController < ApplicationController
     false
   end
 
+  # Reads the user's funds regardless of whether the app stores them as cents or decimal euros.
   def user_funds_cents(user)
     if user.respond_to?(:balance_cents)
       user.balance_cents.to_i
@@ -179,6 +201,7 @@ class AccountsController < ApplicationController
     0
   end
 
+  # Updates the user's funds using whichever balance column exists on the User model.
   def update_user_funds_cents!(user, cents)
     cents = cents.to_i
 
@@ -195,6 +218,7 @@ class AccountsController < ApplicationController
     end
   end
 
+  # Calculates the total purchase value in cents from the available purchase columns.
   def purchase_total_cents(p)
     cols = p.class.column_names rescue []
 
@@ -213,6 +237,7 @@ class AccountsController < ApplicationController
     0
   end
 
+  # Finds the original marketplace listing linked to a purchase record.
   def resolve_listing_for_purchase(p)
     return nil unless defined?(MarketplaceListing)
 
@@ -229,6 +254,7 @@ class AccountsController < ApplicationController
     nil
   end
 
+  # Detects whether a purchase has already been refunded using supported refund fields.
   def refunded_purchase?(p)
     cols = p.class.column_names rescue []
 
@@ -244,6 +270,7 @@ class AccountsController < ApplicationController
       return p.status.to_s == "refunded"
     end
 
+    # Some older purchase records may store refund details inside debug_context.
     if cols.include?("debug_context") && p.respond_to?(:debug_context)
       h = parse_debug_context(p.debug_context)
       return true if h["refunded"] == true
@@ -268,6 +295,7 @@ class AccountsController < ApplicationController
     false
   end
 
+  # Writes refund information to the purchase using the columns available in the current schema.
   def persist_refund!(p, debug_id:, note:, amount_cents:)
     cols = p.class.column_names rescue []
     now = Time.current
@@ -283,6 +311,7 @@ class AccountsController < ApplicationController
     attrs["refund_debug_id"] = debug_id if cols.include?("refund_debug_id")
     attrs["debug_id"] = debug_id if cols.include?("debug_id")
 
+    # Keeps refund details inside debug_context as a fallback audit trail.
     if cols.include?("debug_context")
       h = parse_debug_context(p.debug_context)
       h["status"] = "refunded"
@@ -307,6 +336,7 @@ class AccountsController < ApplicationController
 
     p.update!(attrs) if attrs.any?
 
+    # Re-reads the record to make sure the refund state was actually saved.
     fresh = p.class.find_by(id: p.id)
     ok = fresh && refunded_purchase?(fresh)
     snapshot_refund_state(tag: ok ? "persist_ok" : "refund_not_persisted", debug_id: debug_id, purchase_id: p.id, total_cents: amount_cents, purchase: fresh)
@@ -318,6 +348,7 @@ class AccountsController < ApplicationController
     false
   end
 
+  # Logs a safe refund snapshot so failed refunds can be debugged without guessing.
   def snapshot_refund_state(tag:, debug_id:, purchase_id:, total_cents: nil, purchase: nil)
     return unless defined?(Rails) && Rails.respond_to?(:logger)
 
@@ -354,6 +385,7 @@ class AccountsController < ApplicationController
   rescue
   end
 
+  # Converts stored debug text back into a Hash when it was saved as JSON, YAML, or Ruby-style hash text.
   def parse_debug_context(raw)
     return {} if raw.nil?
 
@@ -390,6 +422,7 @@ class AccountsController < ApplicationController
     {}
   end
 
+  # Builds a single address hash from any supported shipping/address column names.
   def purchase_address_hash(p)
     cols = p.class.column_names rescue []
 

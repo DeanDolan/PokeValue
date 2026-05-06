@@ -1,3 +1,12 @@
+<%# Single login check used by the marketplace create-listing button so logged-out users do not hit the protected new-listing route %>
+<% marketplace_logged_in =
+  if defined?(user_signed_in?)
+    user_signed_in?
+  else
+    defined?(current_user) && current_user.present?
+  end
+%>
+
 <div class="container py-3">
   <style>
     .mk-page-header{
@@ -101,19 +110,64 @@
     }
   </style>
 
+  <%# Marketplace page header with a create-listing button for logged-in users %>
   <div class="mk-page-header">
     <div>
       <h1 class="mk-page-title">Marketplace</h1>
       <p class="mk-subtitle mb-0">Browse listings from the community.</p>
     </div>
 
-    <% if defined?(current_user) && current_user %>
+    <% if marketplace_logged_in %>
       <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-success" %>
     <% else %>
-      <%= link_to "Log in to Create Listing", new_session_path, class: "btn btn-outline-secondary" %>
+      <%# Logged-out users get a pop-up login window instead of being sent to the protected create-listing route %>
+      <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#marketplaceAuthModal">
+        Create Listing
+      </button>
     <% end %>
   </div>
 
+  <%# Login modal shown when a logged-out user tries to create a marketplace listing %>
+  <% if !marketplace_logged_in %>
+    <div class="modal fade" id="marketplaceAuthModal" tabindex="-1" aria-labelledby="marketplaceAuthModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="marketplaceAuthModalLabel">Log in to create listing</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+
+          <div class="modal-body">
+            <%= form_with url: login_path, method: :post, local: true do %>
+              <div class="mb-3">
+                <label class="form-label" for="marketplace_login_username">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", id: "marketplace_login_username", required: true %>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label" for="marketplace_login_password">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", id: "marketplace_login_password", required: true %>
+              </div>
+
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Log in</button>
+              </div>
+            <% end %>
+
+            <hr class="my-3">
+
+            <div class="text-center small">
+              Don't have an account?
+              <%= link_to "Register", register_path, class: "btn btn-link btn-sm" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Client-side filters for marketplace listings %>
   <section class="mk-filters-card">
     <div class="row g-3 mb-2">
       <div class="col-12">
@@ -183,6 +237,7 @@
     </div>
   </section>
 
+  <%# Marketplace listings table. Each row stores filter data in data attributes for the JavaScript below %>
   <section class="mk-table-card">
     <div class="mk-table-wrap">
       <table class="mk-table" aria-label="Marketplace Listings">
@@ -236,7 +291,7 @@
               <td class="d-flex gap-2 justify-content-center flex-wrap">
                 <%= link_to "View", marketplace_listing_path(l), class: "btn btn-sm btn-outline-primary" %>
 
-                <% if defined?(current_user) && current_user && current_user.id == l.seller_id && l.status == "active" %>
+                <% if marketplace_logged_in && current_user.id == l.seller_id && l.status == "active" %>
                   <%= button_to "Cancel", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-sm btn-outline-danger" %>
                 <% end %>
               </td>
@@ -268,16 +323,19 @@
         const resetButton = document.getElementById("mk-reset-filters");
         const applyButton = document.getElementById("mk-apply-filters");
 
+        // Normalises text so filter comparisons are case-insensitive
         function normalize(value){
           return String(value || "").trim().toLowerCase();
         }
 
+        // Converts form number fields into usable numbers or null when empty
         function numberValue(value){
           if(value === null || value === undefined || value === "") return null;
           const parsed = parseFloat(value);
           return Number.isNaN(parsed) ? null : parsed;
         }
 
+        // Removes active styling from the reset button after filters run
         function unlockResetButton(){
           if(!resetButton) return;
           resetButton.classList.remove("active", "pv-tab-locked");
@@ -290,6 +348,7 @@
           resetButton.style.removeProperty("filter");
         }
 
+        // Applies search, country, condition, price, and sort filters to the table
         function applyFilters(){
           const searchValue = normalize(searchInput ? searchInput.value : "");
           const locationValue = normalize(locationSelect ? locationSelect.value : "");
@@ -346,6 +405,7 @@
           unlockResetButton();
         }
 
+        // Clears every filter and returns the table to the default newest-first order
         function resetFilters(){
           if(searchInput) searchInput.value = "";
           if(locationSelect) locationSelect.value = "";

@@ -1,4 +1,5 @@
 class MarketplacePurchase < ApplicationRecord
+  # Purchase records link the listing, buyer, seller and original holding where available
   belongs_to :listing, class_name: "MarketplaceListing", foreign_key: :marketplace_listing_id, optional: true
   belongs_to :buyer, class_name: "User", foreign_key: :buyer_id, optional: true
   belongs_to :seller, class_name: "User", foreign_key: :seller_id, optional: true
@@ -7,6 +8,7 @@ class MarketplacePurchase < ApplicationRecord
   validates :buyer_id, :seller_id, :marketplace_listing_id, :quantity, :unit_price_cents, :total_price_cents, presence: true
   validates :quantity, numericality: { greater_than: 0 }
 
+  # Converts stored cents into euro values for display
   def unit_price_eur
     unit_price_cents.to_i / 100.0
   end

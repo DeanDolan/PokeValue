@@ -1,4 +1,5 @@
 <%
+# Refreshes auction statuses before showing the auction table.
 if defined?(Auction)
   begin
     Auction.refresh_all_statuses!
@@ -6,6 +7,7 @@ if defined?(Auction)
   end
 end
 
+# Loads auctions for the table, including seller, bids and image attachments.
 all_auctions =
   begin
     defined?(Auction) ? Auction.includes(:seller, :auction_bids, photos_attachments: :blob).order(created_at: :desc).to_a : Array(@auctions)
@@ -13,11 +15,14 @@ all_auctions =
     Array(@auctions)
   end
 
+# Controls which auction tab is shown.
 view_tab = params[:auction_tab].to_s
 view_tab = "current" unless %w[current ended sold].include?(view_tab)
 
+# Payment statuses are shown in current auctions because action is still needed.
 payment_waiting_statuses = %w[payment_pending awaiting_payment awaiting_payment_verification payment_confirmed paid pending_payment pending_verification]
 
+# Converts an auction into a simple table status.
 status_key_for = lambda do |auction|
   explicit_status =
     if auction.respond_to?(:status) && auction.status.present?
@@ -50,6 +55,7 @@ status_key_for = lambda do |auction|
   end
 end
 
+# Displays the auction length from stored label or seconds.
 length_label_for = lambda do |auction|
   label =
     if auction.respond_to?(:auction_length_label) && auction.auction_length_label.present?
@@ -68,6 +74,9 @@ length_label_for = lambda do |auction|
 
   {
     1.minute.to_i => "1 min",
+    5.minutes.to_i => "5 mins",
+    10.minutes.to_i => "10 mins",
+    30.minutes.to_i => "30 mins",
     1.hour.to_i => "1 hour",
     3.hours.to_i => "3 hours",
     6.hours.to_i => "6 hours",
@@ -78,6 +87,7 @@ length_label_for = lambda do |auction|
   }[seconds.to_i] || "-"
 end
 
+# Filters auctions by the active tab.
 auctions =
   all_auctions.select do |auction|
     status_key = status_key_for.call(auction)
@@ -93,6 +103,7 @@ auctions =
 
 seller_ids = auctions.map { |a| a.respond_to?(:seller_id) ? a.seller_id : nil }.compact.uniq
 
+# Pulls seller review averages for visible auctions.
 review_averages =
   if defined?(Review) && seller_ids.any?
     Review.where(seller_id: seller_ids).group(:seller_id).average(:rating)
@@ -100,6 +111,7 @@ review_averages =
     {}
   end
 
+# Pulls seller review counts for visible auctions.
 review_counts =
   if defined?(Review) && seller_ids.any?
     Review.where(seller_id: seller_ids).group(:seller_id).count
@@ -107,6 +119,7 @@ review_counts =
     {}
   end
 
+# Converts country codes into flag emojis.
 flag_for = lambda do |code|
   {
     "AT" => "🇦🇹",
@@ -139,31 +152,24 @@ flag_for = lambda do |code|
   }[code.to_s.upcase] || "🌍"
 end
 
+# Builds a clean star display without overlapping stars.
 stars = lambda do |avg|
-  rounded = ((avg.to_f * 2).round / 2.0)
+  value = avg.to_f
+  value = 0.0 if value < 0
+  value = 5.0 if value > 5
+
+  rounded = ((value * 2).round / 2.0)
+  full = rounded.floor
+  half = (rounded - full) >= 0.5
+
   parts = []
+  full.times { parts << '<span class="pv-au-table-star">★</span>' }
+  parts << '<span class="pv-au-table-half">½</span>' if half
 
-  5.times do |i|
-    fill =
-      if rounded >= (i + 1)
-        "100%"
-      elsif rounded >= (i + 0.5)
-        "50%"
-      else
-        "0%"
-      end
-
-    parts << %(
-      <span class="au-star">
-        <span class="au-star-base">★</span>
-        <span class="au-star-fill" style="width: #{fill};">★</span>
-      </span>
-    )
-  end
-
-  %(<span class="au-stars">#{parts.join}</span>).html_safe
+  %(<span class="pv-au-table-stars">#{parts.join}</span>).html_safe
 end
 
+# Formats live countdown text.
 remaining_text_for = lambda do |end_time|
   return "-" if end_time.blank?
 
@@ -187,6 +193,7 @@ end
 admin_badge_asset = "badges/adminbadge.png"
 empty_label = view_tab == "ended" ? "No ended auctions." : (view_tab == "sold" ? "No sold auctions." : "No current auctions.")
 
+# Condition filters used on the auction page.
 auction_conditions = [
   "Mint Condition",
   "Loosely Sealed",
@@ -203,6 +210,7 @@ auction_conditions = [
   "Contents Only"
 ]
 
+# Location filter list for EU marketplace focus.
 eu_countries = [
   ["AT", "🇦🇹 Austria"],
   ["BE", "🇧🇪 Belgium"],
@@ -232,6 +240,20 @@ eu_countries = [
   ["ES", "🇪🇸 Spain"],
   ["SE", "🇸🇪 Sweden"]
 ]
+
+# Checks whether a user is logged in so the Create Auction button can either open the form or show the login pop-up.
+auction_logged_in = current_user.present?
+
+# Checks whether the logged-in user can delete auctions from the auction table.
+auction_admin_can_delete =
+  begin
+    current_user.present? && (
+      (current_user.respond_to?(:admin?) && current_user.admin?) ||
+      (current_user.respond_to?(:admin) && !!current_user.admin)
+    )
+  rescue
+    false
+  end
 %>
 
 <div class="container py-3">
@@ -382,37 +404,37 @@ eu_countries = [
       font-size:.85rem;
       line-height:1;
     }
-    .au-stars{
-      display:inline-flex;
-      align-items:center;
-      gap:1px;
-      white-space:nowrap;
-      vertical-align:middle;
-      line-height:1;
+    .pv-au-table-stars{
+      display:inline-flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      gap:1px !important;
+      white-space:nowrap !important;
+      line-height:1 !important;
+      vertical-align:middle !important;
+      color:#d4a017 !important;
     }
-    .au-star{
-      position:relative;
-      display:inline-block;
-      width:.95em;
-      height:1em;
-      line-height:1;
-      vertical-align:middle;
+    .pv-au-table-star{
+      display:inline-block !important;
+      position:static !important;
+      width:auto !important;
+      height:auto !important;
+      overflow:visible !important;
+      color:#d4a017 !important;
+      line-height:1 !important;
+      text-shadow:none !important;
     }
-    .au-star-base{
-      position:absolute;
-      left:0;
-      top:0;
-      color:#d1d5db;
-      line-height:1;
-    }
-    .au-star-fill{
-      position:absolute;
-      left:0;
-      top:0;
-      overflow:hidden;
-      color:#d4a017;
-      line-height:1;
-      white-space:nowrap;
+    .pv-au-table-half{
+      display:inline-block !important;
+      position:static !important;
+      width:auto !important;
+      height:auto !important;
+      overflow:visible !important;
+      color:#d4a017 !important;
+      line-height:1 !important;
+      font-weight:900 !important;
+      font-size:.8em !important;
+      text-shadow:none !important;
     }
     .au-badges{
       display:flex;
@@ -499,7 +521,7 @@ eu_countries = [
       gap:3px;
       justify-content:center;
       align-items:center;
-      flex-wrap:nowrap;
+      flex-wrap:wrap;
       white-space:nowrap;
     }
     .au-actions .btn{
@@ -522,8 +544,188 @@ eu_countries = [
     .au-review-wrap{
       display:inline-flex;
       align-items:center;
+      justify-content:center;
       gap:3px;
       white-space:nowrap;
+    }
+    .auction-confirm-overlay{
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      background:rgba(15,23,42,.55)
+    }
+    .auction-confirm-box{
+      width:100%;
+      max-width:430px;
+      border-radius:18px;
+      border:1px solid #000000;
+      background:#ffffff;
+      color:#000000;
+      box-shadow:0 24px 70px rgba(0,0,0,.32);
+      padding:20px;
+      text-align:center
+    }
+    .auction-confirm-text{
+      color:#000000;
+      font-size:.96rem;
+      font-weight:800;
+      line-height:1.45;
+      margin-bottom:18px
+    }
+    .auction-confirm-actions{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      flex-wrap:wrap
+    }
+    .auction-confirm-yes,
+    .auction-confirm-no{
+      min-width:86px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:.86rem;
+      padding:.42rem .9rem;
+      border:1px solid #000000 !important;
+      transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important
+    }
+    .auction-confirm-yes{
+      background:#000000 !important;
+      color:#ffffff !important
+    }
+    .auction-confirm-no{
+      background:#ffffff !important;
+      color:#000000 !important
+    }
+    .auction-confirm-yes:hover,
+    .auction-confirm-yes:focus,
+    .auction-confirm-yes:active,
+    .auction-confirm-no:hover,
+    .auction-confirm-no:focus,
+    .auction-confirm-no:active{
+      background:#d4af37 !important;
+      color:#000000 !important;
+      border-color:#d4af37 !important;
+      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
+    }
+    :root[data-pv-theme="dark"] .auction-confirm-box,
+    html[data-bs-theme="dark"] .auction-confirm-box,
+    body[data-bs-theme="dark"] .auction-confirm-box,
+    html[data-theme="dark"] .auction-confirm-box,
+    body[data-theme="dark"] .auction-confirm-box,
+    html.dark .auction-confirm-box,
+    body.dark .auction-confirm-box,
+    html.dark-mode .auction-confirm-box,
+    body.dark-mode .auction-confirm-box,
+    body:has(.navbar-dark) .auction-confirm-box{
+      background:#000000 !important;
+      color:#d4af37 !important;
+      border-color:#d4af37 !important
+    }
+    :root[data-pv-theme="dark"] .auction-confirm-text,
+    html[data-bs-theme="dark"] .auction-confirm-text,
+    body[data-bs-theme="dark"] .auction-confirm-text,
+    html[data-theme="dark"] .auction-confirm-text,
+    body[data-theme="dark"] .auction-confirm-text,
+    html.dark .auction-confirm-text,
+    body.dark .auction-confirm-text,
+    html.dark-mode .auction-confirm-text,
+    body.dark-mode .auction-confirm-text,
+    body:has(.navbar-dark) .auction-confirm-text{
+      color:#d4af37 !important
+    }
+    :root[data-pv-theme="dark"] .auction-confirm-yes,
+    :root[data-pv-theme="dark"] .auction-confirm-no,
+    html[data-bs-theme="dark"] .auction-confirm-yes,
+    html[data-bs-theme="dark"] .auction-confirm-no,
+    body[data-bs-theme="dark"] .auction-confirm-yes,
+    body[data-bs-theme="dark"] .auction-confirm-no,
+    html[data-theme="dark"] .auction-confirm-yes,
+    html[data-theme="dark"] .auction-confirm-no,
+    body[data-theme="dark"] .auction-confirm-yes,
+    body[data-theme="dark"] .auction-confirm-no,
+    html.dark .auction-confirm-yes,
+    html.dark .auction-confirm-no,
+    body.dark .auction-confirm-yes,
+    body.dark .auction-confirm-no,
+    html.dark-mode .auction-confirm-yes,
+    html.dark-mode .auction-confirm-no,
+    body.dark-mode .auction-confirm-yes,
+    body.dark-mode .auction-confirm-no,
+    body:has(.navbar-dark) .auction-confirm-yes,
+    body:has(.navbar-dark) .auction-confirm-no{
+      background:#000000 !important;
+      color:#d4af37 !important;
+      border-color:#d4af37 !important
+    }
+    :root[data-pv-theme="dark"] .auction-confirm-yes:hover,
+    :root[data-pv-theme="dark"] .auction-confirm-yes:focus,
+    :root[data-pv-theme="dark"] .auction-confirm-yes:active,
+    :root[data-pv-theme="dark"] .auction-confirm-no:hover,
+    :root[data-pv-theme="dark"] .auction-confirm-no:focus,
+    :root[data-pv-theme="dark"] .auction-confirm-no:active,
+    html[data-bs-theme="dark"] .auction-confirm-yes:hover,
+    html[data-bs-theme="dark"] .auction-confirm-yes:focus,
+    html[data-bs-theme="dark"] .auction-confirm-yes:active,
+    html[data-bs-theme="dark"] .auction-confirm-no:hover,
+    html[data-bs-theme="dark"] .auction-confirm-no:focus,
+    html[data-bs-theme="dark"] .auction-confirm-no:active,
+    body[data-bs-theme="dark"] .auction-confirm-yes:hover,
+    body[data-bs-theme="dark"] .auction-confirm-yes:focus,
+    body[data-bs-theme="dark"] .auction-confirm-yes:active,
+    body[data-bs-theme="dark"] .auction-confirm-no:hover,
+    body[data-bs-theme="dark"] .auction-confirm-no:focus,
+    body[data-bs-theme="dark"] .auction-confirm-no:active,
+    html[data-theme="dark"] .auction-confirm-yes:hover,
+    html[data-theme="dark"] .auction-confirm-yes:focus,
+    html[data-theme="dark"] .auction-confirm-yes:active,
+    html[data-theme="dark"] .auction-confirm-no:hover,
+    html[data-theme="dark"] .auction-confirm-no:focus,
+    html[data-theme="dark"] .auction-confirm-no:active,
+    body[data-theme="dark"] .auction-confirm-yes:hover,
+    body[data-theme="dark"] .auction-confirm-yes:focus,
+    body[data-theme="dark"] .auction-confirm-yes:active,
+    body[data-theme="dark"] .auction-confirm-no:hover,
+    body[data-theme="dark"] .auction-confirm-no:focus,
+    body[data-theme="dark"] .auction-confirm-no:active,
+    html.dark .auction-confirm-yes:hover,
+    html.dark .auction-confirm-yes:focus,
+    html.dark .auction-confirm-yes:active,
+    html.dark .auction-confirm-no:hover,
+    html.dark .auction-confirm-no:focus,
+    html.dark .auction-confirm-no:active,
+    body.dark .auction-confirm-yes:hover,
+    body.dark .auction-confirm-yes:focus,
+    body.dark .auction-confirm-yes:active,
+    body.dark .auction-confirm-no:hover,
+    body.dark .auction-confirm-no:focus,
+    body.dark .auction-confirm-no:active,
+    html.dark-mode .auction-confirm-yes:hover,
+    html.dark-mode .auction-confirm-yes:focus,
+    html.dark-mode .auction-confirm-yes:active,
+    html.dark-mode .auction-confirm-no:hover,
+    html.dark-mode .auction-confirm-no:focus,
+    html.dark-mode .auction-confirm-no:active,
+    body.dark-mode .auction-confirm-yes:hover,
+    body.dark-mode .auction-confirm-yes:focus,
+    body.dark-mode .auction-confirm-yes:active,
+    body.dark-mode .auction-confirm-no:hover,
+    body.dark-mode .auction-confirm-no:focus,
+    body.dark-mode .auction-confirm-no:active,
+    body:has(.navbar-dark) .auction-confirm-yes:hover,
+    body:has(.navbar-dark) .auction-confirm-yes:focus,
+    body:has(.navbar-dark) .auction-confirm-yes:active,
+    body:has(.navbar-dark) .auction-confirm-no:hover,
+    body:has(.navbar-dark) .auction-confirm-no:focus,
+    body:has(.navbar-dark) .auction-confirm-no:active{
+      background:#d4af37 !important;
+      color:#000000 !important;
+      border-color:#d4af37 !important;
+      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
     }
   </style>
 
@@ -533,12 +735,55 @@ eu_countries = [
       <p class="au-subtitle mb-0">Bid on live auctions and browse ended or sold auctions.</p>
     </div>
 
-    <% if defined?(current_user) && current_user %>
+    <% if auction_logged_in %>
       <%= link_to "Create Auction", new_auction_path, class: "btn btn-success btn-sm" %>
     <% else %>
-      <%= link_to "Log in to Create Auction", login_path, class: "btn btn-outline-secondary btn-sm" %>
+      <%# Logged-out users see a login pop-up instead of being sent to /login, because SessionsController#new has no page template. %>
+      <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#auctionCreateLoginModal">
+        Create Auction
+      </button>
     <% end %>
   </div>
+
+  <%# Login modal shown when a logged-out user clicks Create Auction. %>
+  <% unless auction_logged_in %>
+    <div class="modal fade" id="auctionCreateLoginModal" tabindex="-1" aria-labelledby="auctionCreateLoginModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="auctionCreateLoginModalLabel">Log in to create auction</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+          </div>
+
+          <div class="modal-body">
+            <%= form_with url: login_path, method: :post, local: true do %>
+              <div class="mb-3">
+                <label class="form-label" for="auction_create_login_username">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", id: "auction_create_login_username", required: true, autocomplete: "username" %>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label" for="auction_create_login_password">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", id: "auction_create_login_password", required: true, autocomplete: "current-password" %>
+              </div>
+
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <%= submit_tag "Log in", class: "btn btn-primary" %>
+              </div>
+            <% end %>
+
+            <hr class="my-3">
+
+            <div class="text-center small">
+              Don't have an account?
+              <%= link_to "Register", register_path, class: "btn btn-link btn-sm" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <div class="au-tabbar">
     <%= link_to "Current Auctions", auction_path(auction_tab: "current"), class: (view_tab == "current" ? "active" : nil) %>
@@ -747,7 +992,18 @@ eu_countries = [
                     <%= link_to "Bid", bid_auction_path(auction), class: "btn btn-primary btn-sm" %>
                   <% end %>
                   <% if owner_can_end %>
-                    <%= button_to "End", end_auction_path(auction), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline", data: { turbo_confirm: "Are you sure you want to end this auction?" } } %>
+                    <%= button_to "End",
+                                  end_auction_path(auction),
+                                  method: :post,
+                                  class: "btn btn-outline-danger btn-sm",
+                                  form: { class: "d-inline", data: { auction_confirm_form: "true", confirm_message: "Are you sure you want to end this auction?", turbo: "false" } } %>
+                  <% end %>
+                  <% if auction_admin_can_delete %>
+                    <%= button_to "Delete",
+                                  delete_auction_path(auction),
+                                  method: :delete,
+                                  class: "btn btn-outline-danger btn-sm",
+                                  form: { class: "d-inline", data: { auction_confirm_form: "true", confirm_message: "Are you sure you want to delete this auction?", turbo: "false" } } %>
                   <% end %>
                 </div>
               </td>
@@ -762,9 +1018,73 @@ eu_countries = [
     </div>
   </section>
 
+  <div class="auction-confirm-overlay" id="auctionConfirmOverlay" aria-hidden="true">
+    <div class="auction-confirm-box">
+      <div class="auction-confirm-text" id="auctionConfirmText">
+        Are you sure you want to continue?
+      </div>
+      <div class="auction-confirm-actions">
+        <button type="button" class="auction-confirm-yes" id="auctionConfirmYes">Yes</button>
+        <button type="button" class="auction-confirm-no" id="auctionConfirmNo">No</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function () {
+      let pendingAuctionForm = null;
+
+      function initAuctionConfirm() {
+        const overlay = document.getElementById("auctionConfirmOverlay");
+        const text = document.getElementById("auctionConfirmText");
+        const yesButton = document.getElementById("auctionConfirmYes");
+        const noButton = document.getElementById("auctionConfirmNo");
+
+        if (!overlay || !text || !yesButton || !noButton) return;
+        if (overlay.dataset.bound === "1") return;
+        overlay.dataset.bound = "1";
+
+        document.addEventListener("submit", function (event) {
+          const form = event.target.closest("form[data-auction-confirm-form='true']");
+          if (!form) return;
+          if (form.dataset.confirmedAuctionAction === "true") return;
+
+          event.preventDefault();
+          pendingAuctionForm = form;
+          text.textContent = form.dataset.confirmMessage || "Are you sure you want to continue?";
+          overlay.style.display = "flex";
+          overlay.setAttribute("aria-hidden", "false");
+        });
+
+        noButton.addEventListener("click", function () {
+          pendingAuctionForm = null;
+          overlay.style.display = "none";
+          overlay.setAttribute("aria-hidden", "true");
+        });
+
+        yesButton.addEventListener("click", function () {
+          if (!pendingAuctionForm) return;
+
+          const form = pendingAuctionForm;
+          pendingAuctionForm = null;
+          overlay.style.display = "none";
+          overlay.setAttribute("aria-hidden", "true");
+          form.dataset.confirmedAuctionAction = "true";
+          form.submit();
+        });
+
+        overlay.addEventListener("click", function (event) {
+          if (event.target !== overlay) return;
+
+          pendingAuctionForm = null;
+          overlay.style.display = "none";
+          overlay.setAttribute("aria-hidden", "true");
+        });
+      }
+
       function initAuctionPage() {
+        initAuctionConfirm();
+
         const tbody = document.getElementById("au-table-body");
         if (!tbody) return;
 
@@ -818,6 +1138,7 @@ eu_countries = [
           return lengthCell ? lengthCell.textContent.trim() : "-";
         };
 
+        // Updates time remaining values for every visible row.
         const updateTimers = function () {
           const now = Date.now();
 
@@ -845,6 +1166,7 @@ eu_countries = [
           });
         };
 
+        // Applies filters and sorting without reloading the page.
         const applyFilters = function () {
           updateTimers();
 
@@ -913,6 +1235,7 @@ eu_countries = [
           }
         };
 
+        // Resets all filters back to defaults.
         const clearFilters = function () {
           if (searchInput) searchInput.value = "";
           if (locationSelect) locationSelect.value = "";

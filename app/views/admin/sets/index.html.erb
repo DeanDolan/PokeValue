@@ -1,3 +1,4 @@
+<%# Admin set value update page %>
 <% groups = (@groups || []) %>
 
 <style>
@@ -17,6 +18,7 @@
 </style>
 
 <div class="container py-3">
+  <%# Sends updated set totals, card counts and secret-card counts to the admin controller %>
   <%= form_with url: "/admin/sets/update_values", method: :patch, local: true do %>
     <% groups.each do |era, rows| %>
       <% next if rows.blank? %>
@@ -52,6 +54,7 @@
                   <td><%= r[:release_date].presence || (r[:release_raw].presence || "—") %></td>
 
                   <td>
+                    <%# First input is total cards, second input is secret cards %>
                     <div class="d-flex justify-content-center gap-2">
                       <input class="form-control form-control-sm text-center"
                              style="max-width:90px"
@@ -72,6 +75,7 @@
                   </td>
 
                   <td>
+                    <%# Updates the visible total set value shown on set pages %>
                     <input class="form-control form-control-sm text-center"
                            style="max-width:160px;margin:0 auto"
                            type="number"

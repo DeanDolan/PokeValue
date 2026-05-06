@@ -2,9 +2,11 @@
 require "json"
 require "yaml"
 
+# Selects which admin log section is shown
 mode = @mode.to_s
 mode = "marketplace" unless %w[marketplace auction raffle].include?(mode)
 
+# Keeps the selected tab safe for each log mode
 tab = @tab.to_s
 if mode == "auction"
   tab = "auctions" unless %w[auctions ended sold deleted].include?(tab)
@@ -14,6 +16,7 @@ else
   tab = "listings" unless %w[listings sales refunds deleted].include?(tab)
 end
 
+# Loads set data so product rows can show era, set name and product type
 sets_data =
   begin
     raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
@@ -36,20 +39,24 @@ type_map = {
   "mini_tin_display"         => "Mini Tin Display"
 }
 
+# Converts internal codes into readable display text
 titleize = lambda do |s|
   s.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
 end
 
+# Finds the era for a set slug
 era_for = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["era"].to_s : ""
 end
 
+# Finds the set name for a set slug
 set_name_for = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["name"].to_s : slug.to_s
 end
 
+# Splits route product types such as etb--v-lucario into base type and variant
 split_type_variant = lambda do |t|
   s = t.to_s
   down = s.downcase
@@ -64,6 +71,7 @@ split_type_variant = lambda do |t|
   end
 end
 
+# Builds a readable product type label for marketplace and sales rows
 product_type_display = lambda do |obj|
   raw =
     if obj.respond_to?(:route_type) && obj.route_type.to_s.present?
@@ -99,6 +107,7 @@ rescue
   "-"
 end
 
+# Reads refund/debug data even if it was saved as JSON, YAML or Ruby-style hash text
 parse_debug_context = lambda do |raw|
   return {} if raw.nil?
   s = raw.to_s.strip
@@ -133,6 +142,7 @@ rescue
   {}
 end
 
+# Finds a refund note from whichever purchase column stores it
 refund_note_for = lambda do |p|
   cols = p.class.column_names rescue []
   %w[refund_note seller_note note notes].each do |c|
@@ -160,6 +170,7 @@ rescue
   ""
 end
 
+# Finds the refund date from direct columns or saved debug context
 refund_date_for = lambda do |p|
   cols = p.class.column_names rescue []
 
@@ -188,6 +199,7 @@ rescue
   p.updated_at
 end
 
+# Calculates total cents from whichever purchase price columns exist
 total_cents_for = lambda do |p|
   cols = p.class.column_names rescue []
   if cols.include?("total_cents") && p.respond_to?(:total_cents) && p.total_cents.to_i > 0
@@ -205,6 +217,7 @@ rescue
   0
 end
 
+# Builds the coloured status badge used across marketplace, auction and raffle logs
 status_badge = lambda do |value|
   v = value.to_s.downcase
   text =
@@ -242,6 +255,7 @@ status_badge = lambda do |value|
   %(<span class="#{css}">#{text}</span>).html_safe
 end
 
+# Data collections supplied by the admin logs controller
 listings = defined?(@listings) && @listings ? @listings : []
 sales = defined?(@sales) && @sales ? @sales : []
 refunds = defined?(@refunds) && @refunds ? @refunds : []
@@ -253,6 +267,7 @@ marketplace_listing_row = lambda do |obj|
   defined?(MarketplaceListing) && obj.is_a?(MarketplaceListing)
 end
 
+# Preloads related listing rows for sales and refunds
 purchase_listing_ids = []
 Array(sales).each do |p|
   if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
@@ -315,6 +330,7 @@ purchase_condition = lambda do |p, l|
     (l && l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-"
 end
 
+# Calculates the highest auction bid value shown in admin logs
 auction_top_bid = lambda do |a|
   if a.respond_to?(:winning_bid_cents) && a.winning_bid_cents.to_i > 0
     a.winning_bid_cents.to_i
@@ -390,6 +406,7 @@ auction_time_remaining = lambda do |a|
   end
 end
 
+# Finds a raffle title from whichever column exists
 raffle_title_for = lambda do |r|
   cols = r.class.column_names rescue []
   %w[title name raffle_name product_name prize_name prize_title].each do |c|
@@ -408,6 +425,7 @@ rescue
   "-"
 end
 
+# Finds a raffle host from associations or host id columns
 raffle_host_for = lambda do |r|
   %i[host seller user creator admin_user].each do |assoc|
     if r.respond_to?(assoc)
@@ -439,6 +457,7 @@ rescue
   "-"
 end
 
+# Detects whether a raffle is a mini raffle
 raffle_mini_for = lambda do |r|
   cols = r.class.column_names rescue []
 
@@ -606,6 +625,7 @@ end
   <div class="acc-card">
     <div class="subhead">Logs</div>
 
+    <%# Top-level log mode navigation %>
     <div class="acc-tabs">
       <%= link_to "Marketplace Logs", admin_logs_path(mode: "marketplace", tab: (mode == "marketplace" ? tab : "listings")), class: ["", (mode == "marketplace" ? "active" : nil)].compact.join(" ") %>
       <%= link_to "Auction Logs", admin_logs_path(mode: "auction", tab: (mode == "auction" ? tab : "auctions")), class: ["", (mode == "auction" ? "active" : nil)].compact.join(" ") %>
@@ -613,6 +633,7 @@ end
     </div>
 
     <% if mode == "marketplace" %>
+      <%# Marketplace log tabs %>
       <div class="acc-tabs">
         <%= link_to "Listings", admin_logs_path(mode: "marketplace", tab: "listings"), class: ["", (tab == "listings" ? "active" : nil)].compact.join(" ") %>
         <%= link_to "Sales", admin_logs_path(mode: "marketplace", tab: "sales"), class: ["", (tab == "sales" ? "active" : nil)].compact.join(" ") %>
@@ -831,6 +852,7 @@ end
       <% end %>
 
     <% elsif mode == "auction" %>
+      <%# Auction log tabs %>
       <div class="acc-tabs">
         <%= link_to "Auctions", admin_logs_path(mode: "auction", tab: "auctions"), class: ["", (tab == "auctions" ? "active" : nil)].compact.join(" ") %>
         <%= link_to "Ended", admin_logs_path(mode: "auction", tab: "ended"), class: ["", (tab == "ended" ? "active" : nil)].compact.join(" ") %>
@@ -889,6 +911,7 @@ end
       <% end %>
 
     <% else %>
+      <%# Raffle log tabs %>
       <div class="acc-tabs">
         <%= link_to "Current Raffles", admin_logs_path(mode: "raffle", tab: "current_raffles"), class: ["", (tab == "current_raffles" ? "active" : nil)].compact.join(" ") %>
         <%= link_to "Mini Raffles", admin_logs_path(mode: "raffle", tab: "mini_raffles"), class: ["", (tab == "mini_raffles" ? "active" : nil)].compact.join(" ") %>

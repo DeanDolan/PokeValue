@@ -1,7 +1,9 @@
 <%
+# Builds safe paths for the auction form and back button.
 back_to_auction_path = respond_to?(:auction_path) ? (auction_path rescue "#") : "#"
 create_auction_path = respond_to?(:auctions_path) ? (auctions_path rescue "#") : "#"
 
+# Condition options shown in the auction form.
 conditions = [
   "Mint Condition",
   "Loosely Sealed",
@@ -73,6 +75,9 @@ conditions = [
           <select class="form-select" id="au-auction-duration" name="auction_duration" required>
             <option value=""></option>
             <option value="1_minute">1 min</option>
+            <option value="5_minutes">5 mins</option>
+            <option value="10_minutes">10 mins</option>
+            <option value="30_minutes">30 mins</option>
             <option value="1_hour">1 hour</option>
             <option value="3_hours">3 hours</option>
             <option value="6_hours">6 hours</option>
@@ -127,6 +132,7 @@ conditions = [
         const description = document.getElementById("au-auction-description");
         const descriptionCount = document.getElementById("au-description-count");
 
+        // Keeps the character counter synced with the description field.
         if (description && descriptionCount) {
           const syncDescriptionCount = function () {
             descriptionCount.textContent = String(description.value.length) + " / 250";
@@ -138,6 +144,7 @@ conditions = [
 
         if (!reserveStatus || !reservePrice || !reserveNote) return;
 
+        // Enables reserve price only when Reserve is selected.
         const syncReserveFields = function () {
           const value = reserveStatus.value;
           const isReserve = value === "Reserve";

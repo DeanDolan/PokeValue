@@ -1,4 +1,5 @@
 module ApplicationHelper
+  # Provides the EU country list used by marketplace, auctions, raffles and account forms
   def eu_countries
     [
       { code: "AT", name: "Austria", flag: "🇦🇹" },

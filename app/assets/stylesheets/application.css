@@ -1,10 +1,137 @@
-/*
- * This is a manifest file that'll be compiled into application.css.
- *
- * With Propshaft, assets are served efficiently without preprocessing steps. You can still include
- * application-wide styles in this file, but keep in mind that CSS precedence will follow the standard
- * cascading order, meaning styles declared later in the document or manifest will override earlier ones,
- * depending on specificity.
- *
- * Consider organizing styles into separate files for maintainability.
- */
+/* Registration page layout */
+.register-page {
+  max-width: 1180px;
+}
+
+/* Main registration heading card */
+.register-hero {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 22px;
+  padding: 24px;
+  background: linear-gradient(135deg, #ffffff, #f8fafc);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+/* Small label above the register heading */
+.register-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #198754;
+}
+
+/* Text under the main register heading */
+.register-hero-text {
+  color: #475569;
+  max-width: 760px;
+}
+
+/* Registration form card */
+.register-form-card {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 22px;
+  padding: 24px;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+/* Information cards shown beside the register form */
+.register-info-card {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 20px;
+  padding: 20px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07);
+}
+
+/* Headings inside the registration information cards */
+.register-info-card h2,
+.register-terms-box h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+  color: #0f172a;
+}
+
+/* Paragraphs inside the registration information cards */
+.register-info-card p,
+.register-terms-box p {
+  color: #475569;
+  line-height: 1.55;
+}
+
+/* Warning card used for Revolut tag visibility */
+.register-warning-card {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: #fffbeb;
+}
+
+/* Inline notices inside the registration form */
+.register-notice {
+  border-radius: 16px;
+  padding: 14px 16px;
+  line-height: 1.5;
+}
+
+/* Paragraph spacing inside registration notices */
+.register-notice p {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+/* Revolut payment notice styling */
+.register-payment-notice {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: #fffbeb;
+  color: #78350f;
+}
+
+/* Security notice styling */
+.register-security-notice {
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+/* Required checkbox area */
+.register-check {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  padding: 14px 14px 14px 42px;
+  background: #f8fafc;
+}
+
+/* Terms summary box under checkboxes */
+.register-terms-box {
+  border: 1px solid rgba(25, 135, 84, 0.22);
+  border-radius: 18px;
+  padding: 18px;
+  background: #f0fdf4;
+}
+
+/* Makes form help text easier to read */
+.register-form-card .form-text {
+  color: #64748b;
+}
+
+/* Makes labels clear and consistent */
+.register-form-card .form-label {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* Makes inputs feel consistent with the rest of the page */
+.register-form-card .form-control,
+.register-form-card .form-select {
+  border-radius: 12px;
+}
+
+/* Mobile spacing for registration cards */
+@media (max-width: 991px) {
+  .register-hero,
+  .register-form-card,
+  .register-info-card {
+    padding: 18px;
+  }
+}

@@ -1,3 +1,4 @@
+<%# Admin product value update form %>
 <%= form_with url: update_values_admin_products_path, method: :patch, local: true do %>
   <style>
     .admin-table{width:100%;font-size:.85rem}
@@ -12,6 +13,7 @@
     .admin-update-values-wrap{padding-top:1rem;margin-bottom:1.5rem}
   </style>
 
+  <%# Products are grouped by product type, such as ETB or Booster Box %>
   <% @groups.each do |type_name, rows| %>
     <div class="mt-3 mb-2 fw-semibold"><%= type_name %></div>
 
@@ -41,7 +43,13 @@
               <td><%= p[:release_date] %></td>
               <td><%= p[:listings].to_i %></td>
               <td>
+                <%# The sku key connects each submitted value back to the correct product %>
                 <%= hidden_field_tag "names[#{p[:sku]}]", p[:product_name] %>
+                <%= hidden_field_tag "set_names[#{p[:sku]}]", p[:set_name] %>
+                <%= hidden_field_tag "eras[#{p[:sku]}]", p[:era] %>
+                <%= hidden_field_tag "product_type_names[#{p[:sku]}]", p[:type_name] %>
+                <%= hidden_field_tag "route_types[#{p[:sku]}]", p[:route_type] %>
+                <%= hidden_field_tag "image_urls[#{p[:sku]}]", p[:img_url] %>
                 <%= number_field_tag "values[#{p[:sku]}]",
                                      p[:value],
                                      step: "0.01",

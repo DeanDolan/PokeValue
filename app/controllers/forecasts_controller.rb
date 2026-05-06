@@ -3,8 +3,10 @@ class ForecastsController < ApplicationController
   require "uri"
   require "json"
 
+  # Forecasting service base URL, using localhost by default for development
   SERVICE_BASE = ENV.fetch("FORECAST_SERVICE_URL", "http://127.0.0.1:8000").to_s
 
+  # Receives forecast requests from Rails and forwards them to the Python service
   def show
     raw_set_name      = params[:set_name].to_s
     raw_product_name  = params[:product_name].to_s
@@ -22,18 +24,18 @@ class ForecastsController < ApplicationController
       return render json: {
         ok: false,
         error: "bad_request",
-        message: "set_name is required",
-        params: safe_params(set_name, product_name, product_category, product_variant, origin)
-      }, status: 400
+        title: "Future projections are temporarily unavailable.",
+        message: "The product set could not be identified. Please go back to the product page and try again."
+      }, status: :ok
     end
 
     if product_name.blank? && product_category.blank?
       return render json: {
         ok: false,
         error: "bad_request",
-        message: "product_name or product_category is required",
-        params: safe_params(set_name, product_name, product_category, product_variant, origin)
-      }, status: 400
+        title: "Future projections are temporarily unavailable.",
+        message: "The product could not be identified. Please go back to the product page and try again."
+      }, status: :ok
     end
 
     mapped_set = map_set_name(set_name)
@@ -56,6 +58,7 @@ class ForecastsController < ApplicationController
     attempt_logs = []
     last_response = nil
 
+    # Tries several product-name formats to improve the chance of matching spreadsheet data
     build_attempt_queries(
       set_name: mapped_set,
       product_name: product_name,
@@ -94,6 +97,7 @@ class ForecastsController < ApplicationController
         return render json: parsed
       end
 
+      # If the service returns possible product guesses, retry using those guesses
       if status == 404 && parsed.is_a?(Hash)
         guesses = extract_guesses(parsed)
         if guesses.any?
@@ -143,33 +147,48 @@ class ForecastsController < ApplicationController
       end
     end
 
-    status_code = 404
-    if attempt_logs.any? { |a| a[:status].to_i >= 500 || a[:status].to_i == 0 }
-      status_code = 502
-    end
-
-    render json: {
-      ok: false,
-      error: "forecast_service_error",
-      message: "Forecast request failed",
-      params: safe_params(set_name, product_name, product_category, product_variant, origin),
+    log_forecast_failure(
+      set_name: set_name,
+      product_name: product_name,
+      product_category: product_category,
+      product_variant: product_variant,
+      origin: origin,
       attempts: attempt_logs,
       last_response: last_response
-    }, status: status_code
+    )
+
+    if attempt_logs.any? { |a| a[:status].to_i >= 500 || a[:status].to_i == 0 }
+      render json: {
+        ok: false,
+        error: "forecast_unavailable",
+        title: "Future projections are temporarily unavailable.",
+        message: "The forecasting service could not be reached. It may be turned off for testing/maintenance purposes. Please come back later and try again."
+      }, status: :ok
+    else
+      render json: {
+        ok: false,
+        error: "forecast_not_found",
+        title: "Future projections are not available for this product yet.",
+        message: "There is not enough matching forecasting data for this product yet. Please try another product or come back later."
+      }, status: :ok
+    end
   end
 
   private
 
+  # Cleans incoming string parameters
   def clean(s)
     s.to_s.strip
   end
 
+  # Keeps logged response bodies short enough to display safely
   def preview(body)
     b = body.to_s
     return "" if b.blank?
     b.length > 500 ? "#{b[0, 500]}..." : b
   end
 
+  # Returns only safe request values in error responses
   def safe_params(set_name, product_name, product_category, product_variant, origin)
     {
       set_name: set_name,
@@ -180,23 +199,27 @@ class ForecastsController < ApplicationController
     }
   end
 
+  # Handles set-name differences between the Rails app and forecasting dataset
   def map_set_name(set_name)
     ci = set_name.to_s.downcase.strip
     return "Celebrations" if ci.include?("celebrations") && ci.include?("classic collection")
     set_name
   end
 
+  # Pulls product variant text from names such as Elite Trainer Box (Lucario)
   def infer_variant_from_product_name(product_name)
     m = product_name.to_s.match(/\(([^)]+)\)/)
     m ? m[1].to_s.strip : ""
   end
 
+  # Detects Pokemon Center products from the product name
   def infer_origin_from_product_name(product_name)
     n = product_name.to_s.downcase
     return "Pokemon Center" if n.include?("pokemon center")
     ""
   end
 
+  # Converts product names into the category labels used by the forecasting dataset
   def infer_category_from_product_name(product_name)
     n = product_name.to_s.downcase
     return "PC ETB"   if n.include?("pokemon center") && n.include?("elite trainer box")
@@ -208,6 +231,7 @@ class ForecastsController < ApplicationController
     ""
   end
 
+  # Builds multiple fallback query formats for the Python service
   def build_attempt_queries(set_name:, product_name:, product_category:, product_variant:, origin:)
     queries = []
 
@@ -277,6 +301,7 @@ class ForecastsController < ApplicationController
     out
   end
 
+  # Extracts product-name suggestions returned by the Python forecasting service
   def extract_guesses(parsed)
     detail = parsed["detail"]
     return [] unless detail.is_a?(Hash)
@@ -285,6 +310,7 @@ class ForecastsController < ApplicationController
     g.map(&:to_s).reject(&:blank?)
   end
 
+  # Keeps only the most relevant guessed product names before retrying
   def filter_guesses(guesses:, requested_product_name:, product_variant:, origin:)
     req = requested_product_name.to_s.downcase
     req_no_paren = req.gsub(/\s*\([^)]+\)\s*/, " ").strip
@@ -312,6 +338,7 @@ class ForecastsController < ApplicationController
     filtered.first(5)
   end
 
+  # Compares two product names using shared word overlap
   def similarity(a, b)
     a_tokens = a.to_s.downcase.split(/\s+/).reject(&:blank?)
     b_tokens = b.to_s.downcase.split(/\s+/).reject(&:blank?)
@@ -322,6 +349,7 @@ class ForecastsController < ApplicationController
     inter / union
   end
 
+  # Sends a GET request to the forecasting service and parses the JSON response
   def http_get(url)
     uri = URI.parse(url)
     http = Net::HTTP.new(uri.host, uri.port)
@@ -341,5 +369,18 @@ class ForecastsController < ApplicationController
     [ res.code.to_i, body, parsed ]
   rescue StandardError => e
     [ 0, "", { "error" => "http_error", "message" => "#{e.class}: #{e.message}" } ]
+  end
+
+  def log_forecast_failure(set_name:, product_name:, product_category:, product_variant:, origin:, attempts:, last_response:)
+    Rails.logger.warn(
+      "[ForecastsController] Forecast request failed: " +
+      {
+        params: safe_params(set_name, product_name, product_category, product_variant, origin),
+        attempts: attempts,
+        last_response: last_response
+      }.to_json
+    )
+  rescue
+    nil
   end
 end

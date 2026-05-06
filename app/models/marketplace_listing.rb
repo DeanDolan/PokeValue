@@ -1,10 +1,17 @@
 class MarketplaceListing < ApplicationRecord
+  # Seller is a user, but the foreign key is seller_id instead of user_id
   belongs_to :seller, class_name: "User"
+
+  # Listing can come from a holding, but catalogue listings do not need a holding
   belongs_to :holding, optional: true
 
+  # Offers belong to a listing and are removed if the listing is removed
   has_many :marketplace_offers, dependent: :destroy
+
+  # Allows up to four uploaded product images through Active Storage
   has_many_attached :photos
 
+  # Valid listing states used throughout the marketplace
   STATUSES = %w[active sold cancelled deleted].freeze
 
   validates :status, inclusion: { in: STATUSES }
@@ -18,6 +25,7 @@ class MarketplaceListing < ApplicationRecord
 
   validate :photos_count_and_type
 
+  # Current listings are active and still have quantity available
   scope :active, -> { where(status: "active").where("quantity > 0") }
 
   def active?
@@ -30,6 +38,7 @@ class MarketplaceListing < ApplicationRecord
 
   private
 
+  # Keeps listing uploads limited to four JPG/PNG images
   def photos_count_and_type
     return unless photos.attached?
 

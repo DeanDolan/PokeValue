@@ -29,10 +29,12 @@ module CountriesHelper
     [ "Sweden", "SE" ]
   ].freeze
 
+  # Converts a two-letter country code into a flag emoji
   def flag_emoji(code)
     code.to_s.upcase.chars.map { |c| (127397 + c.ord).chr(Encoding::UTF_8) }.join
   end
 
+  # Returns the full country name for an EU country code
   def country_name(code)
     c = code.to_s.upcase
     pair = COUNTRIES.find { |(_, iso)| iso == c }

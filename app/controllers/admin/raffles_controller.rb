@@ -13,12 +13,13 @@ module Admin
     end
 
     def destroy
+      redirect_target = safe_return_path
       raffle = Raffle.find(params[:id])
       raffle.destroy!
 
-      redirect_to admin_raffles_path, notice: "Raffle deleted.", status: :see_other
+      redirect_to redirect_target, notice: "Raffle deleted.", status: :see_other
     rescue
-      redirect_to admin_raffles_path, alert: "Could not delete raffle.", status: :see_other
+      redirect_to safe_return_path, alert: "Could not delete raffle.", status: :see_other
     end
 
     private
@@ -34,6 +35,18 @@ module Admin
         end
 
       redirect_to(root_path, alert: "Not authorized.", status: :see_other) unless ok
+    end
+
+    def safe_return_path
+      return_to = params[:return_to].to_s
+
+      if return_to.present? && return_to.start_with?("/") && !return_to.start_with?("//")
+        return_to
+      else
+        admin_raffles_path
+      end
+    rescue
+      admin_raffles_path
     end
   end
 end

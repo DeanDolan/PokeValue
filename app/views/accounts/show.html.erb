@@ -2,6 +2,7 @@
 require "json"
 require "yaml"
 
+# Refreshes auction statuses before showing account auction data
 if defined?(Auction)
   begin
     Auction.refresh_all_statuses!
@@ -9,6 +10,7 @@ if defined?(Auction)
   end
 end
 
+# Loads set/product metadata from config/sets.json for account tables
 sets_data =
   begin
     raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
@@ -31,20 +33,24 @@ type_map = {
   "mini_tin_display"         => "Mini Tin Display"
 }
 
+# Converts internal codes into readable labels
 titleize = lambda do |s|
   s.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
 end
 
+# Finds the era for a set slug
 era_for = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["era"].to_s : ""
 end
 
+# Finds the set name for a set slug
 set_name_for = lambda do |slug|
   s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
   s ? s["name"].to_s : slug.to_s
 end
 
+# Splits product route types such as etb--v-lucario into base type and variant
 split_type_variant = lambda do |t|
   s = t.to_s
   down = s.downcase
@@ -59,6 +65,7 @@ split_type_variant = lambda do |t|
   end
 end
 
+# Builds the product type label shown in account marketplace tables
 product_type_display = lambda do |obj|
   raw =
     if obj.respond_to?(:route_type) && obj.route_type.to_s.present?
@@ -96,6 +103,7 @@ rescue
   "-"
 end
 
+# Reads refund/debug data even if it was saved as JSON, YAML or Ruby-style hash text
 parse_debug_context = lambda do |raw|
   return {} if raw.nil?
   s = raw.to_s.strip
@@ -130,6 +138,7 @@ rescue
   {}
 end
 
+# Finds the refund note from whichever purchase column stores it
 refund_note_for = lambda do |p|
   cols = p.class.column_names rescue []
   %w[refund_note seller_note note notes].each do |c|
@@ -157,6 +166,7 @@ rescue
   ""
 end
 
+# Finds the refund date from direct columns or saved debug context
 refund_date_for = lambda do |p|
   cols = p.class.column_names rescue []
 
@@ -185,6 +195,7 @@ rescue
   p.updated_at
 end
 
+# Calculates total cents from whichever purchase price columns exist
 total_cents_for = lambda do |p|
   cols = p.class.column_names rescue []
   if cols.include?("total_cents") && p.respond_to?(:total_cents) && p.total_cents.to_i > 0
@@ -202,6 +213,7 @@ rescue
   0
 end
 
+# Converts listing status values into display text
 listing_status_label = lambda do |l|
   s = l.respond_to?(:status) ? l.status.to_s : ""
   s = "active" if s.blank?
@@ -218,6 +230,7 @@ admin_badge_asset = "badges/adminbadge.png"
 u = @user
 is_self = defined?(@is_self) ? !!@is_self : false
 
+# Keeps the selected marketplace, auction and raffle account tabs safe
 tab = params[:tab].to_s.presence || (defined?(@tab) && @tab.present? ? @tab.to_s : "current")
 tab = "current" unless %w[current sold bought refunded].include?(tab)
 
@@ -227,6 +240,7 @@ auction_tab = "current" unless %w[current ended sold won].include?(auction_tab)
 raffle_tab = params[:raffle_tab].to_s.presence || (defined?(@raffle_tab) && @raffle_tab.present? ? @raffle_tab.to_s : "current")
 raffle_tab = "current" unless %w[current ended won].include?(raffle_tab)
 
+# Loads watchlist items only for the account owner
 items =
   if is_self && defined?(@watchlist_items) && @watchlist_items
     @watchlist_items
@@ -238,6 +252,7 @@ items =
     []
   end
 
+# Builds display data for each watchlist item
 meta_for = lambda do |item|
   sku =
     if item.respond_to?(:sku)
@@ -288,6 +303,7 @@ end
 is_admin =
   u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && !!u.admin))
 
+# Loads seller review statistics for the account header
 reviews_avg =
   if defined?(Review) && u
     Review.where(seller_id: u.id).average(:rating).to_f
@@ -302,59 +318,45 @@ reviews_count =
     0
   end
 
-stars = lambda do |avg|
-  a = avg.to_f
-  full = a.floor
-  half = ((a - full) >= 0.5) ? 1 : 0
-  empty = 5 - full - half
-  parts = []
-  full.times { parts << '<span class="acc-star-full">★</span>' }
-  if half == 1
-    parts << '<span class="acc-star-half-wrap"><span class="acc-star-empty">★</span><span class="acc-star-half">★</span></span>'
+all_reviews =
+  if defined?(Review) && u
+    Review.where(seller_id: u.id).includes(:reviewer).order(created_at: :desc).to_a
+  else
+    []
   end
-  empty.times { parts << '<span class="acc-star-empty">★</span>' }
-  %(<span class="acc-stars">#{parts.join}</span>).html_safe
+
+# Builds a simple star display without overlapping stars.
+stars = lambda do |avg|
+  value = avg.to_f
+  value = 0.0 if value < 0
+  value = 5.0 if value > 5
+
+  rounded = ((value * 2).round / 2.0)
+  full = rounded.floor
+  half = (rounded - full) >= 0.5
+
+  parts = []
+  full.times { parts << '<span class="pv-acc-rating-star">★</span>' }
+  parts << '<span class="pv-acc-rating-half">½</span>' if half
+
+  %(<span class="pv-acc-rating-stars">#{parts.join}</span>).html_safe
 end
 
 marketplace_review_credit_count = 0
+auction_review_credit_count = 0
+raffle_review_credit_count = 0
 reviewer_review_count = 0
 
+# Allows reviews only when the viewer has completed a purchase, won an auction, or won a raffle from this seller
 if defined?(current_user) && current_user && !is_self && u
-  if defined?(MarketplacePurchase)
+  if defined?(MarketplaceOffer)
     begin
-      purchase_cols = MarketplacePurchase.column_names
-      if purchase_cols.include?("buyer_id")
-        if purchase_cols.include?("seller_id")
-          scope = MarketplacePurchase.where(seller_id: u.id, buyer_id: current_user.id)
-          scope = scope.where(status: "sold") if purchase_cols.include?("status")
-          marketplace_review_credit_count = scope.count
-        elsif defined?(MarketplaceListing) && (purchase_cols.include?("marketplace_listing_id") || purchase_cols.include?("listing_id"))
-          ref_col = purchase_cols.include?("marketplace_listing_id") ? "marketplace_listing_id" : "listing_id"
-          seller_listing_ids = MarketplaceListing.where(seller_id: u.id).pluck(:id)
-          scope = MarketplacePurchase.where(buyer_id: current_user.id, ref_col => seller_listing_ids)
-          scope = scope.where(status: "sold") if purchase_cols.include?("status")
-          marketplace_review_credit_count = scope.count
-        end
-      end
+      marketplace_review_credit_count = MarketplaceOffer.where(seller_id: u.id, buyer_id: current_user.id, status: "confirmed_paid").count
     rescue
       marketplace_review_credit_count = 0
     end
   end
 
-  if marketplace_review_credit_count == 0 && defined?(MarketplaceListing)
-    begin
-      listing_cols = MarketplaceListing.column_names
-      if listing_cols.include?("seller_id") && listing_cols.include?("buyer_id")
-        scope = MarketplaceListing.where(seller_id: u.id, buyer_id: current_user.id)
-        scope = scope.where(status: "sold") if listing_cols.include?("status")
-        marketplace_review_credit_count = scope.count
-      end
-    rescue
-      marketplace_review_credit_count = 0
-    end
-  end
-
-  auction_review_credit_count = 0
   if defined?(Auction)
     begin
       auction_cols = Auction.column_names
@@ -368,29 +370,28 @@ if defined?(current_user) && current_user && !is_self && u
     end
   end
 
+  if defined?(Raffle)
+    begin
+      raffle_cols = Raffle.column_names
+      if raffle_cols.include?("host_id") && raffle_cols.include?("winner_user_id")
+        scope = Raffle.where(host_id: u.id, winner_user_id: current_user.id)
+        scope = scope.where(status: "completed") if raffle_cols.include?("status")
+        raffle_review_credit_count = scope.count
+      end
+    rescue
+      raffle_review_credit_count = 0
+    end
+  end
+
   if defined?(Review)
     begin
-      review_cols = Review.column_names
-      reviewer_column =
-        if review_cols.include?("buyer_id")
-          :buyer_id
-        elsif review_cols.include?("reviewer_id")
-          :reviewer_id
-        elsif review_cols.include?("user_id")
-          :user_id
-        elsif review_cols.include?("author_id")
-          :author_id
-        end
-
-      scope = Review.where(seller_id: u.id)
-      scope = scope.where(reviewer_column => current_user.id) if reviewer_column.present?
-      reviewer_review_count = scope.count
+      reviewer_review_count = Review.where(seller_id: u.id, reviewer_id: current_user.id).count
     rescue
       reviewer_review_count = 0
     end
   end
 
-  review_credit_count = marketplace_review_credit_count + auction_review_credit_count
+  review_credit_count = marketplace_review_credit_count + auction_review_credit_count + raffle_review_credit_count
 else
   review_credit_count = 0
 end
@@ -398,6 +399,7 @@ end
 can_give_review = defined?(current_user) && current_user && !is_self && u && review_credit_count > 0 && reviewer_review_count == 0
 review_form_id = "acc-give-review-form-#{u&.id || 'user'}"
 
+# Loads the user's current marketplace listings
 current_listings =
   if defined?(@current_listings)
     @current_listings
@@ -411,6 +413,7 @@ current_listings =
     []
   end
 
+# Loads sold listings for the public seller account view
 sold_listings =
   if defined?(MarketplaceListing) && u
     MarketplaceListing.where(seller_id: u.id, status: "sold").order(updated_at: :desc).to_a
@@ -418,6 +421,7 @@ sold_listings =
     []
   end
 
+# Finds confirmed offers for sold listings so the sold value can show the final accepted price
 sold_offer_map = {}
 if defined?(MarketplaceOffer) && sold_listings.any?
   begin
@@ -455,6 +459,7 @@ end
 refunds_issued = (defined?(@refunds_issued) && @refunds_issued) ? @refunds_issued : []
 refunds_received = (defined?(@refunds_received) && @refunds_received) ? @refunds_received : []
 
+# Loads purchases made by the logged-in user
 bought_purchases =
   if is_self
     if defined?(MarketplacePurchase)
@@ -479,6 +484,7 @@ bought_purchases =
     []
   end
 
+# Preloads related listings for bought and refunded purchase rows
 purchase_listing_ids = []
 (Array(refunds_issued) + Array(refunds_received) + Array(bought_purchases)).each do |p|
   if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
@@ -535,6 +541,7 @@ purchase_condition = lambda do |p, l|
     (l && l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-"
 end
 
+# Keeps account tab links anchored to the working area after reloads
 account_base_path = lambda do |extra = {}|
   extra = extra.merge(anchor: "account-work-area")
   if is_self
@@ -546,6 +553,7 @@ account_base_path = lambda do |extra = {}|
   end
 end
 
+# Groups auctions into current, ended and sold states
 auction_status_key = lambda do |auction|
   explicit_status =
     if auction.respond_to?(:status) && auction.status.present?
@@ -641,6 +649,7 @@ current_auctions = user_auctions.select { |a| auction_status_key.call(a) == "run
 ended_auctions = user_auctions.select { |a| auction_status_key.call(a) == "ended" }
 sold_auctions = user_auctions.select { |a| auction_status_key.call(a) == "sold" }
 
+# Shows auctions won by the current user on their own account only
 won_auctions =
   if is_self && defined?(Auction) && u
     begin
@@ -670,6 +679,7 @@ selected_auctions =
     current_auctions
   end
 
+# Groups raffles into current or ended states
 raffle_status_key = lambda do |raffle|
   status = raffle.respond_to?(:status) ? raffle.status.to_s.downcase : ""
   ended_at = raffle.respond_to?(:ended_at) ? raffle.ended_at : nil
@@ -692,6 +702,7 @@ user_raffles =
 current_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "current" }
 ended_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "ended" }
 
+# Shows raffles won by the current user on their own account only
 won_raffles =
   if is_self && defined?(Raffle) && u
     begin
@@ -744,6 +755,7 @@ raffle_tickets_sold = lambda do |raffle|
   end
 end
 
+# Loads saved delivery addresses for the account owner
 saved_addresses =
   if is_self && defined?(SavedAddress) && u
     SavedAddress.where(user_id: u.id).order(created_at: :desc)
@@ -833,11 +845,16 @@ eu_countries = [
     .acc-address-grid{display:grid;gap:10px}
     .acc-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
     .acc-address-line{font-size:.82rem;line-height:1.25}
-    .acc-stars{display:inline-flex;gap:1px;white-space:nowrap;vertical-align:middle}
-    .acc-star-full{color:#f59e0b}
-    .acc-star-empty{color:#d1d5db}
-    .acc-star-half-wrap{position:relative;display:inline-block;line-height:1}
-    .acc-star-half{position:absolute;left:0;top:0;width:50%;overflow:hidden;color:#f59e0b}
+    .pv-acc-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
+    .pv-acc-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
+    .pv-acc-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
+    .acc-review-list{display:grid;gap:10px}
+    .acc-review-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
+    .acc-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .acc-review-name{font-weight:900;font-size:.85rem}
+    .acc-review-date{font-size:.75rem;color:#6b7280}
+    .acc-review-rating{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.8rem}
+    .acc-review-comment{margin-top:8px;font-size:.85rem;color:#111827;white-space:pre-wrap}
   </style>
 
   <div id="account-work-area" class="acc-wrap">
@@ -845,6 +862,7 @@ eu_countries = [
       <div class="acc-card">
         <div class="acc-top">
           <div class="acc-meta">
+            <%# Main account header and seller profile information %>
             <div class="acc-title"><%= is_self ? "My Account" : (u&.respond_to?(:username) ? u.username : "User") %></div>
             <p>Username: <strong><%= u&.respond_to?(:username) ? u.username : "-" %></strong></p>
 
@@ -879,6 +897,7 @@ eu_countries = [
               <% end %>
             </p>
 
+            <%# Review form only appears when the current user is allowed to review this seller %>
             <% if can_give_review %>
               <div id="<%= review_form_id %>" style="display:none;max-width:420px;">
                 <%= form_with url: reviews_path, method: :post, local: true do %>
@@ -891,7 +910,7 @@ eu_countries = [
 
                   <div class="mb-2">
                     <label class="form-label mb-1" style="font-size:.75rem;">Comment</label>
-                    <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3 %>
+                    <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
                   </div>
 
                   <div class="d-flex justify-content-end">
@@ -1178,26 +1197,7 @@ eu_countries = [
                         <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
                         <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
                         <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
-                        <td class="w-note">
-                          <% if note.present? %>
-                            <div class="mp-actions">
-                              <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#issuedNote-<%= p.id %>">View</button>
-                            </div>
-                            <div class="modal fade" id="issuedNote-<%= p.id %>" tabindex="-1" aria-hidden="true">
-                              <div class="modal-dialog modal-dialog-centered">
-                                <div class="modal-content">
-                                  <div class="modal-header">
-                                    <h5 class="modal-title">Refund Note</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                  </div>
-                                  <div class="modal-body" style="white-space:pre-wrap"><%= note %></div>
-                                </div>
-                              </div>
-                            </div>
-                          <% else %>
-                            <span class="text-muted">No note</span>
-                          <% end %>
-                        </td>
+                        <td class="w-note"><%= note.present? ? note : "No note" %></td>
                       </tr>
                     <% end %>
                   </tbody>
@@ -1240,26 +1240,7 @@ eu_countries = [
                         <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
                         <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
                         <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
-                        <td class="w-note">
-                          <% if note.present? %>
-                            <div class="mp-actions">
-                              <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#receivedNote-<%= p.id %>">View</button>
-                            </div>
-                            <div class="modal fade" id="receivedNote-<%= p.id %>" tabindex="-1" aria-hidden="true">
-                              <div class="modal-dialog modal-dialog-centered">
-                                <div class="modal-content">
-                                  <div class="modal-header">
-                                    <h5 class="modal-title">Refund Note</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                  </div>
-                                  <div class="modal-body" style="white-space:pre-wrap"><%= note %></div>
-                                </div>
-                              </div>
-                            </div>
-                          <% else %>
-                            <span class="text-muted">No note</span>
-                          <% end %>
-                        </td>
+                        <td class="w-note"><%= note.present? ? note : "No note" %></td>
                       </tr>
                     <% end %>
                   </tbody>
@@ -1544,6 +1525,39 @@ eu_countries = [
           <% end %>
         </div>
       <% end %>
+
+      <div class="acc-card">
+        <div class="subhead">Reviews</div>
+
+        <% if all_reviews.any? %>
+          <div class="acc-review-list">
+            <% all_reviews.each do |review| %>
+              <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
+              <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{review.reviewer_id}" %>
+              <div class="acc-review-card">
+                <div class="acc-review-top">
+                  <div>
+                    <div class="acc-review-name"><%= reviewer_name %></div>
+                    <div class="acc-review-rating">
+                      <%= stars.call(review.rating.to_f) %>
+                      <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong>
+                    </div>
+                  </div>
+                  <div class="acc-review-date"><%= review.created_at ? review.created_at.strftime("%d %b %Y") : "" %></div>
+                </div>
+
+                <% if review.comment.to_s.strip.present? %>
+                  <div class="acc-review-comment"><%= review.comment %></div>
+                <% else %>
+                  <div class="acc-review-comment text-muted">No comment left.</div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="mp-empty">No reviews yet.</div>
+        <% end %>
+      </div>
     </div>
   </div>
 </div>

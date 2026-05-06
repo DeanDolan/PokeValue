@@ -14,8 +14,10 @@ class User < ApplicationRecord
   has_many :won_raffles, class_name: "Raffle", foreign_key: :winner_user_id, dependent: :nullify
 
   # Account security rules
-  USERNAME_MIN = 4
+  USERNAME_MIN = 5
+  USERNAME_MAX = 15
   PASSWORD_MIN = 12
+  PASSWORD_MAX = 20
   LOCK_LIMIT = 5
   LOCK_WINDOW = 15.minutes
 
@@ -28,8 +30,18 @@ class User < ApplicationRecord
   MFA_RECOVERY_CODES_COUNT = 10
 
   # Basic account validation rules
-  validates :username, presence: true, uniqueness: true, length: { minimum: USERNAME_MIN }
+  validates :username,
+            presence: true,
+            uniqueness: { case_sensitive: false },
+            length: { minimum: USERNAME_MIN, maximum: USERNAME_MAX },
+            format: {
+              with: /\A[A-Za-z0-9._-]+\z/,
+              message: "can only contain letters, numbers, dots, underscores or dashes"
+            }
+
   validates :country_code, presence: true
+  validate :username_should_not_look_like_email
+  validate :username_should_not_contain_spaces
   validate :revolut_tag_required_on_create, on: :create
   validate :revolut_tag_format, if: -> { revolut_tag.present? }
   validate :password_complexity, if: :password
@@ -74,12 +86,18 @@ class User < ApplicationRecord
   # Tracks failed login attempts and locks the account after too many failures
   def register_failed_login!
     n = (failed_attempts || 0) + 1
-    update!(failed_attempts: n, locked_at: (n >= LOCK_LIMIT ? Time.current : locked_at))
+    security_update!(
+      failed_attempts: n,
+      locked_at: (n >= LOCK_LIMIT ? Time.current : locked_at)
+    )
   end
 
   # Clears failed login attempts after a successful login
   def reset_failed_logins!
-    update!(failed_attempts: 0, locked_at: nil)
+    security_update!(
+      failed_attempts: 0,
+      locked_at: nil
+    )
   end
 
   # Returns true while the MFA lockout window is still active
@@ -91,7 +109,7 @@ class User < ApplicationRecord
   def ensure_mfa_secret!
     return if mfa_secret.present?
     self.mfa_secret = self.class.generate_mfa_secret
-    save!
+    security_update!(mfa_secret_encrypted: mfa_secret_encrypted)
   end
 
   # Decrypts the MFA secret used to verify authenticator app codes
@@ -138,7 +156,11 @@ class User < ApplicationRecord
     end
 
     if matched_step
-      update!(mfa_last_used_step: matched_step, mfa_failed_attempts: 0, mfa_locked_at: nil)
+      security_update!(
+        mfa_last_used_step: matched_step,
+        mfa_failed_attempts: 0,
+        mfa_locked_at: nil
+      )
       true
     else
       register_mfa_failure!
@@ -150,7 +172,7 @@ class User < ApplicationRecord
   def enable_mfa!(code)
     ensure_mfa_secret!
     return nil unless verify_mfa_code!(code)
-    update!(mfa_enabled: true)
+    security_update!(mfa_enabled: true)
     generate_mfa_recovery_codes!
   end
 
@@ -167,7 +189,7 @@ class User < ApplicationRecord
   def generate_mfa_recovery_codes!
     codes = Array.new(MFA_RECOVERY_CODES_COUNT) { self.class.generate_recovery_code }
     digests = codes.map { |c| BCrypt::Password.create(c) }
-    update!(mfa_recovery_codes_digest: digests.to_json)
+    security_update!(mfa_recovery_codes_digest: digests.to_json)
     codes
   end
 
@@ -186,13 +208,16 @@ class User < ApplicationRecord
 
     return false if idx.nil?
     digests.delete_at(idx)
-    update!(mfa_recovery_codes_digest: digests.to_json)
+    security_update!(mfa_recovery_codes_digest: digests.to_json)
     true
   end
 
   # Clears MFA failed attempts and unlocks MFA entry
   def reset_mfa_lock!
-    update!(mfa_failed_attempts: 0, mfa_locked_at: nil)
+    security_update!(
+      mfa_failed_attempts: 0,
+      mfa_locked_at: nil
+    )
   end
 
   # Creates the encryptor used for Revolut tag storage
@@ -273,11 +298,32 @@ class User < ApplicationRecord
 
   private
 
+  # Updates login and MFA security fields without re-validating older accounts
+  def security_update!(attrs)
+    attrs[:updated_at] = Time.current if has_attribute?(:updated_at)
+    update_columns(attrs)
+  end
+
   # Tracks failed MFA attempts and locks MFA after too many failures
   def register_mfa_failure!
     n = (mfa_failed_attempts || 0) + 1
-    update!(mfa_failed_attempts: n, mfa_locked_at: (n >= MFA_LOCK_LIMIT ? Time.current : mfa_locked_at))
+    security_update!(
+      mfa_failed_attempts: n,
+      mfa_locked_at: (n >= MFA_LOCK_LIMIT ? Time.current : mfa_locked_at)
+    )
     true
+  end
+
+  # Stops usernames from being email addresses or contact details
+  def username_should_not_look_like_email
+    return if username.blank?
+    errors.add(:username, "must not be an email address") if username.include?("@")
+  end
+
+  # Stops users from entering full-name style usernames with spaces
+  def username_should_not_contain_spaces
+    return if username.blank?
+    errors.add(:username, "must not contain spaces") if username.match?(/\s/)
   end
 
   # Requires a Revolut tag when creating a new account
@@ -295,13 +341,17 @@ class User < ApplicationRecord
   # Enforces stronger password rules than the Rails default
   def password_complexity
     return if password.blank?
+
     too_short = password.length < PASSWORD_MIN
+    too_long = password.length > PASSWORD_MAX
     no_upper = password !~ /[A-Z]/
     no_lower = password !~ /[a-z]/
     no_digit = password !~ /\d/
     no_symbol = password !~ /[^A-Za-z0-9]/
-    errors.add(:password, "must be at least #{PASSWORD_MIN} chars") if too_short
-    errors.add(:password, "must include upper, lower, digit, symbol") if no_upper || no_lower || no_digit || no_symbol
+
+    errors.add(:password, "must be at least #{PASSWORD_MIN} characters") if too_short
+    errors.add(:password, "must be no more than #{PASSWORD_MAX} characters") if too_long
+    errors.add(:password, "must include uppercase, lowercase, number and symbol") if no_upper || no_lower || no_digit || no_symbol
   end
 
   # Stops users from putting their username inside their password

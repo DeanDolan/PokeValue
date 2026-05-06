@@ -7,7 +7,10 @@ class Raffle < ApplicationRecord
   has_many :raffle_tickets, dependent: :destroy
   has_many_attached :photos
 
+  # Allowed raffle types.
   KINDS = %w[raffle mini].freeze
+
+  # Allowed raffle lifecycle states.
   STATUSES = %w[active completed incompleted].freeze
 
   validates :title, presence: true, length: { maximum: 120 }
@@ -68,6 +71,7 @@ class Raffle < ApplicationRecord
   end
 
   def available_numbers
+    # Builds the full ticket number range and removes numbers already taken.
     used = taken_numbers
     (1..total_tickets.to_i).to_a - used
   end
@@ -81,24 +85,31 @@ class Raffle < ApplicationRecord
   end
 
   def can_be_run_by?(user)
+    # Only the host can run an active raffle after every ticket has been taken.
     return false unless user
     return false unless active?
     return false unless sold_out?
+
     host_id.to_i == user.id.to_i
   end
 
   def can_be_ended_by?(user)
+    # Hosts and admins can end active raffles early as incompleted.
     return false unless user
     return false unless active?
+
     host_id.to_i == user.id.to_i || user.admin?
   end
 
   def run!
+    # A raffle can only be drawn when it is active and sold out.
     raise ActiveRecord::RecordInvalid, self unless sold_out? && active?
 
+    # Chooses one sold ticket randomly as the winner.
     winning_ticket = raffle_tickets.order(Arel.sql("RANDOM()")).first
     raise ActiveRecord::RecordInvalid, self if winning_ticket.blank?
 
+    # Stores the winner details directly on the raffle for easier display later.
     update!(
       status: "completed",
       winner_number: winning_ticket.ticket_number,
@@ -111,12 +122,14 @@ class Raffle < ApplicationRecord
   end
 
   def end_incomplete!
+    # Keeps the raffle record but marks it as not completed.
     update!(status: "incompleted", ended_at: Time.current)
   end
 
   private
 
   def main_raffle_rules
+    # Mini raffles must be connected to an active main raffle.
     if mini?
       if main_raffle_id.blank?
         errors.add(:main_raffle_id, "must be selected for a mini raffle")
@@ -140,6 +153,7 @@ class Raffle < ApplicationRecord
         errors.add(:main_raffle_id, "must be an active main raffle")
       end
     else
+      # Normal main raffles should not point to another raffle.
       self.main_raffle_id = nil
     end
   end
@@ -147,10 +161,12 @@ class Raffle < ApplicationRecord
   def photos_count_and_type
     return unless photos.attached?
 
+    # Limits raffle uploads to 4 images.
     if photos.count > 4
       errors.add(:photos, "must be 4 images or fewer")
     end
 
+    # Only JPG and PNG image uploads are accepted.
     photos.each do |photo|
       content_type = photo.content_type.to_s
       next if content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"

@@ -20,6 +20,7 @@ export default class extends Controller {
     this._destroyChart()
   }
 
+  // Opens the forecast modal and loads forecast data for the clicked product
   async open(e) {
     const trigger = e.relatedTarget
     const setName = trigger?.dataset?.forecastSetName
@@ -39,7 +40,7 @@ export default class extends Controller {
     try {
       await this._ensureChartJS()
     } catch (err) {
-      this._setError(`Chart.js failed to load: ${this._errMsg(err)}`)
+      this._setError("Future projections are temporarily unavailable.\n\nThe chart could not be loaded. Please come back later and try again.")
       return
     }
 
@@ -53,12 +54,18 @@ export default class extends Controller {
       try {
         json = JSON.parse(text)
       } catch (_) {
-        throw new Error(`Non-JSON response from /forecast: ${text.slice(0, 300)}`)
+        this._setError("Future projections are temporarily unavailable.\n\nThe forecasting service returned an unexpected response. Please come back later and try again.")
+        return
       }
 
-      if (!resp.ok || json?.ok === false) {
-        const detail = json?.detail ? JSON.stringify(json.detail) : JSON.stringify(json)
-        throw new Error(`HTTP ${resp.status} from /forecast: ${detail}`)
+      if (json?.ok === false) {
+        this._setForecastUnavailable(json)
+        return
+      }
+
+      if (!resp.ok) {
+        this._setError("Future projections are temporarily unavailable.\n\nThe forecasting service could not be reached. It may be turned off for testing/maintenance purposes. Please come back later and try again.")
+        return
       }
 
       this._data = json
@@ -70,11 +77,12 @@ export default class extends Controller {
       } else {
         this._setOk("Loaded.")
       }
-    } catch (err) {
-      this._setError(`${this._errMsg(err)}\nRequest URL: ${reqUrl}`)
+    } catch (_) {
+      this._setError("Future projections are temporarily unavailable.\n\nThe forecasting service could not be reached. It may be turned off for testing/maintenance purposes. Please come back later and try again.")
     }
   }
 
+  // Changes the visible forecast range when the user clicks 6m, 1y, 3y or 5y
   changeHorizon(e) {
     const h = e?.currentTarget?.dataset?.horizon
     if (!h) return
@@ -82,6 +90,7 @@ export default class extends Controller {
     this._renderChart()
   }
 
+  // Builds the Rails forecast endpoint URL with product query parameters
   _buildUrl(setName, productName, productCategory, productVariant, origin) {
     const base = (this.endpointValue || "/forecast").toString()
     const u = new URL(base, window.location.origin)
@@ -93,6 +102,7 @@ export default class extends Controller {
     return u.toString()
   }
 
+  // Loads Chart.js through importmap before drawing the forecast graph
   async _ensureChartJS() {
     if (this._chartjsReady) return
     const mod = await import("chart.js")
@@ -108,6 +118,7 @@ export default class extends Controller {
     this._chartjsReady = true
   }
 
+  // Updates the milestone boxes and draws the chart
   _renderAll() {
     const d = this._data || {}
 
@@ -122,13 +133,14 @@ export default class extends Controller {
     this._renderChart()
   }
 
+  // Draws actual history and forecasted values on one line chart
   _renderChart() {
     if (!this._data) return
     const history = Array.isArray(this._data.history) ? this._data.history : []
     const forecast = Array.isArray(this._data.forecast) ? this._data.forecast : []
 
     if (history.length === 0 || forecast.length === 0) {
-      this._setError("No history/forecast points returned.")
+      this._setError("Future projections are temporarily unavailable.\n\nNo history or forecast points were returned for this product. Please come back later and try again.")
       return
     }
 
@@ -173,6 +185,7 @@ export default class extends Controller {
     })
   }
 
+  // Highlights the active horizon button
   _setActiveHorizon(h) {
     this._activeHorizon = h
     this.hbtnTargets.forEach(btn => {
@@ -182,6 +195,7 @@ export default class extends Controller {
     })
   }
 
+  // Removes the old chart before creating a new one
   _destroyChart() {
     if (this._chart) {
       try { this._chart.destroy() } catch (_) {}
@@ -189,18 +203,21 @@ export default class extends Controller {
     }
   }
 
+  // Shows a loading message in the modal
   _setLoading(msg) {
     this.statusTarget.textContent = msg
     this.statusTarget.classList.remove("text-danger")
     this.statusTarget.classList.add("text-muted")
   }
 
+  // Shows a successful loading message in the modal
   _setOk(msg) {
     this.statusTarget.textContent = msg
     this.statusTarget.classList.remove("text-danger")
     this.statusTarget.classList.add("text-muted")
   }
 
+  // Shows an error and clears the previous chart values
   _setError(msg) {
     this.statusTarget.textContent = msg
     this.statusTarget.classList.add("text-danger")
@@ -213,12 +230,20 @@ export default class extends Controller {
     this.m5yTarget.textContent = "—"
   }
 
+  _setForecastUnavailable(json) {
+    const title = json?.title || "Future projections are temporarily unavailable."
+    const message = json?.message || "The forecasting service could not be reached. It may be turned off for testing/maintenance purposes. Please come back later and try again."
+    this._setError(`${title}\n\n${message}`)
+  }
+
+  // Formats forecast values as euro amounts
   _fmtMoney(v) {
     const n = Number(v)
     if (!isFinite(n)) return "—"
     return "€" + n.toFixed(2)
   }
 
+  // Converts an error object into readable text
   _errMsg(err) {
     if (!err) return "Unknown error"
     if (typeof err === "string") return err

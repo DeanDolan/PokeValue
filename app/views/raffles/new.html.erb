@@ -1,5 +1,8 @@
 <%
+# Ensures the mini raffle dropdown has an array even if the controller did not set it
 @running_main_raffles ||= []
+
+# Restores the entered ticket price after validation errors
 ticket_price_value =
   if params[:ticket_price_eur].present?
     params[:ticket_price_eur]
@@ -7,6 +10,7 @@ ticket_price_value =
     @raffle.ticket_price_cents.to_i / 100.0
   end
 
+# Sets the selected raffle type, defaulting to a main raffle
 selected_kind =
   if @raffle.raffle_kind.present?
     @raffle.raffle_kind
@@ -14,6 +18,7 @@ selected_kind =
     "raffle"
   end
 
+# Displays the host's saved Revolut tag as read-only
 host_revolut_tag = current_user&.revolut_tag.to_s
 %>
 
@@ -88,6 +93,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
     <h1 class="rf-form-title">Host Raffle</h1>
     <p class="rf-form-sub">Create a raffle or mini raffle.</p>
 
+    <%# Shows validation errors after an unsuccessful create attempt %>
     <% if @raffle.errors.any? %>
       <div class="alert alert-danger">
         <strong>Please fix the following:</strong>
@@ -99,6 +105,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
       </div>
     <% end %>
 
+    <%# Main raffle creation form %>
     <%= form_with model: @raffle, url: raffles_path, method: :post, local: true, html: { multipart: true } do |f| %>
       <div class="rf-grid">
         <div class="rf-full">
@@ -115,6 +122,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
                 id: "raffle_kind_select" %>
         </div>
 
+        <%# Mini raffles must be linked to an active main raffle %>
         <div id="main_raffle_wrap" style="<%= selected_kind == 'mini' ? '' : 'display:none;' %>">
           <label class="form-label">Main Raffle Title</label>
           <%= f.select :main_raffle_id,
@@ -141,6 +149,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
           <%= f.number_field :total_tickets, min: 1, max: 1000, class: "form-control", required: true %>
         </div>
 
+        <%# Revolut tag is taken from the account and cannot be edited on this form %>
         <div class="rf-full">
           <label class="form-label">Host Revolut Tag</label>
           <%= text_field_tag :revolut_tag_display,
@@ -153,6 +162,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
           <div class="rf-note">This Revolut Tag is taken from your account and cannot be changed here.</div>
         </div>
 
+        <%# Four upload inputs match the four-image limit in the model/controller %>
         <div class="rf-full">
           <label class="form-label">Upload Images</label>
           <div class="rf-upload-grid">
@@ -193,6 +203,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
         if (!kindSelect || !mainWrap || !mainSelect) return
 
         const isMini = kindSelect.value === "mini"
+
         mainWrap.style.display = isMini ? "" : "none"
         mainSelect.required = isMini
 
@@ -204,7 +215,9 @@ host_revolut_tag = current_user&.revolut_tag.to_s
       function initRaffleNewForm() {
         const kindSelect = document.getElementById("raffle_kind_select")
         if (!kindSelect) return
+
         toggleMainRaffleField()
+
         kindSelect.removeEventListener("change", toggleMainRaffleField)
         kindSelect.addEventListener("change", toggleMainRaffleField)
       }

@@ -1,16 +1,27 @@
 <%
+# Main auction object loaded by the controller.
 auction = @auction
 
+# Builds a simple non-overlapping star display from an average score.
 stars = lambda do |avg|
-  a = avg.to_f
-  full = a.floor
-  half = ((a - full) >= 0.5) ? 1 : 0
-  empty = 5 - full - half
-  ("★" * full) + (half == 1 ? "½" : "") + ("☆" * empty)
+  value = avg.to_f
+  value = 0.0 if value < 0
+  value = 5.0 if value > 5
+
+  rounded = ((value * 2).round / 2.0)
+  full = rounded.floor
+  half = (rounded - full) >= 0.5
+
+  parts = []
+  full.times { parts << '<span class="pv-au-rating-star">★</span>' }
+  parts << '<span class="pv-au-rating-half">½</span>' if half
+
+  %(<span class="pv-au-rating-stars">#{parts.join}</span>).html_safe
 end
 
 admin_badge_asset = "badges/adminbadge.png"
 
+# Adds badge images for special seller statuses.
 badge_imgs_for = lambda do |user|
   out = []
   if user && ((user.respond_to?(:admin?) && user.admin?) || (user.respond_to?(:admin) && !!user.admin))
@@ -32,6 +43,7 @@ country_code =
 
 reserve_label = auction.reserve_status.to_s.downcase.include?("no") ? "No Reserve" : "Reserve"
 
+# Converts internal auction status into text for the page.
 status_key = auction.status.to_s
 status_label =
   case status_key
@@ -47,6 +59,7 @@ status_label =
     auction.ends_at.present? && auction.ends_at <= Time.current ? "Ended" : "Running"
   end
 
+# Sets Bootstrap badge colour by status.
 status_badge_class =
   case status_key
   when "sold"
@@ -61,6 +74,7 @@ status_badge_class =
     "bg-success"
   end
 
+# Builds the initial time remaining text before JavaScript starts updating it.
 remaining_text =
   if status_key == "payment_pending"
     "Awaiting Payment"
@@ -92,6 +106,7 @@ remaining_text =
     end
   end
 
+# Page state and permission checks.
 images = auction.photos.attached? ? auction.photos.first(4) : []
 owner_can_end = defined?(current_user) && current_user && auction.can_end_early_by?(current_user)
 winning_bidder = auction.winning_bidder
@@ -102,6 +117,19 @@ can_bid_now = auction.running? && !is_host
 highest_bid_display = auction.current_bid_cents_value.to_i > 0 ? number_to_currency(auction.current_bid_cents_value.to_i / 100.0, unit: "€") : "No bids yet"
 host_revolut_tag = auction.host_revolut_tag.to_s
 winner_revolut_tag = auction.winner_revolut_tag.to_s
+reviews = defined?(@reviews) && @reviews ? @reviews : []
+can_give_review = defined?(@can_give_review) ? @can_give_review : false
+review_form_id = "auction-give-review-form-#{auction.id}"
+
+admin_can_delete =
+  begin
+    current_user.present? && (
+      (current_user.respond_to?(:admin?) && current_user.admin?) ||
+      (current_user.respond_to?(:admin) && !!current_user.admin)
+    )
+  rescue
+    false
+  end
 %>
 
 <div class="container py-4">
@@ -115,18 +143,20 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     .au-show-line{font-size:.88rem;margin:6px 0}
     .au-show-line strong{font-weight:700}
     .au-show-flag{font-size:1.2rem;line-height:1;display:inline-block;position:relative;top:3px}
-    .au-show-rev{white-space:nowrap;color:#f59e0b}
+    .au-show-rev{white-space:nowrap}
     .au-show-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .au-show-btn{padding:6px 10px;font-size:.85rem}
     .au-show-thumbgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
     .au-show-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer;transition:transform .12s ease}
     .au-show-thumb:hover{transform:scale(1.03)}
     .au-show-noimg{color:#6b7280;font-size:.9rem}
-    .au-show-reviews-title{margin:18px 0 8px;font-size:1rem}
+    .au-show-reviews-box{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-top:14px;overflow:visible}
+    .au-show-reviews-title{margin:0 0 10px;font-size:1rem}
     .au-show-review-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:8px}
-    .au-show-review-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
-    .au-show-review-stars{white-space:nowrap;color:#f59e0b}
-    .au-show-review-body{margin-top:6px;color:#111827;font-size:.9rem}
+    .au-show-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .au-show-review-name{font-weight:900;font-size:.9rem}
+    .au-show-review-stars{display:flex;align-items:center;gap:6px;white-space:nowrap}
+    .au-show-review-body{margin-top:6px;color:#111827;font-size:.9rem;white-space:pre-wrap}
     .au-show-review-meta{color:#6b7280;font-size:.8rem}
     .au-show-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
     .au-show-badges img{height:22px;width:22px;display:block;object-fit:contain}
@@ -134,11 +164,118 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     .au-pay-box{margin-top:12px;border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#f9fafb}
     .au-hidden-tag{display:inline-flex;align-items:center;justify-content:center;min-width:150px;height:30px;background:#000;color:#000;border-radius:8px;padding:0 10px;font-weight:800;letter-spacing:.04em;vertical-align:middle;user-select:none}
     .au-hidden-tag.revealed{background:#111827;color:#fff}
-    .au-confirm-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:99999;padding:18px}
-    .au-confirm-box{width:min(420px,100%);background:#fff;border-radius:16px;border:1px solid #e5e7eb;box-shadow:0 24px 80px rgba(15,23,42,.28);padding:16px}
-    .au-confirm-title{font-size:1rem;font-weight:900;margin:0 0 8px}
-    .au-confirm-text{font-size:.9rem;color:#374151;margin:0 0 14px}
-    .au-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+    .pv-au-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
+    .pv-au-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
+    .pv-au-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
+    .au-review-form-wrap{display:none;max-width:460px;margin:8px 0 14px}
+    .au-confirm-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:99999;padding:16px}
+    .au-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000000;background:#ffffff;color:#000000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
+    .au-confirm-text{color:#000000;font-size:.96rem;font-weight:800;line-height:1.45;margin:0 0 18px}
+    .au-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+    .au-confirm-yes,.au-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000000 !important;transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important}
+    .au-confirm-yes{background:#000000 !important;color:#ffffff !important}
+    .au-confirm-no{background:#ffffff !important;color:#000000 !important}
+    .au-confirm-yes:hover,.au-confirm-yes:focus,.au-confirm-yes:active,.au-confirm-no:hover,.au-confirm-no:focus,.au-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
+    :root[data-pv-theme="dark"] .au-confirm-box,
+    html[data-bs-theme="dark"] .au-confirm-box,
+    body[data-bs-theme="dark"] .au-confirm-box,
+    html[data-theme="dark"] .au-confirm-box,
+    body[data-theme="dark"] .au-confirm-box,
+    html.dark .au-confirm-box,
+    body.dark .au-confirm-box,
+    html.dark-mode .au-confirm-box,
+    body.dark-mode .au-confirm-box,
+    body:has(.navbar-dark) .au-confirm-box{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .au-confirm-text,
+    html[data-bs-theme="dark"] .au-confirm-text,
+    body[data-bs-theme="dark"] .au-confirm-text,
+    html[data-theme="dark"] .au-confirm-text,
+    body[data-theme="dark"] .au-confirm-text,
+    html.dark .au-confirm-text,
+    body.dark .au-confirm-text,
+    html.dark-mode .au-confirm-text,
+    body.dark-mode .au-confirm-text,
+    body:has(.navbar-dark) .au-confirm-text{color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .au-confirm-yes,
+    :root[data-pv-theme="dark"] .au-confirm-no,
+    html[data-bs-theme="dark"] .au-confirm-yes,
+    html[data-bs-theme="dark"] .au-confirm-no,
+    body[data-bs-theme="dark"] .au-confirm-yes,
+    body[data-bs-theme="dark"] .au-confirm-no,
+    html[data-theme="dark"] .au-confirm-yes,
+    html[data-theme="dark"] .au-confirm-no,
+    body[data-theme="dark"] .au-confirm-yes,
+    body[data-theme="dark"] .au-confirm-no,
+    html.dark .au-confirm-yes,
+    html.dark .au-confirm-no,
+    body.dark .au-confirm-yes,
+    body.dark .au-confirm-no,
+    html.dark-mode .au-confirm-yes,
+    html.dark-mode .au-confirm-no,
+    body.dark-mode .au-confirm-yes,
+    body.dark-mode .au-confirm-no,
+    body:has(.navbar-dark) .au-confirm-yes,
+    body:has(.navbar-dark) .au-confirm-no{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
+    :root[data-pv-theme="dark"] .au-confirm-yes:hover,
+    :root[data-pv-theme="dark"] .au-confirm-yes:focus,
+    :root[data-pv-theme="dark"] .au-confirm-yes:active,
+    :root[data-pv-theme="dark"] .au-confirm-no:hover,
+    :root[data-pv-theme="dark"] .au-confirm-no:focus,
+    :root[data-pv-theme="dark"] .au-confirm-no:active,
+    html[data-bs-theme="dark"] .au-confirm-yes:hover,
+    html[data-bs-theme="dark"] .au-confirm-yes:focus,
+    html[data-bs-theme="dark"] .au-confirm-yes:active,
+    html[data-bs-theme="dark"] .au-confirm-no:hover,
+    html[data-bs-theme="dark"] .au-confirm-no:focus,
+    html[data-bs-theme="dark"] .au-confirm-no:active,
+    body[data-bs-theme="dark"] .au-confirm-yes:hover,
+    body[data-bs-theme="dark"] .au-confirm-yes:focus,
+    body[data-bs-theme="dark"] .au-confirm-yes:active,
+    body[data-bs-theme="dark"] .au-confirm-no:hover,
+    body[data-bs-theme="dark"] .au-confirm-no:focus,
+    body[data-bs-theme="dark"] .au-confirm-no:active,
+    html[data-theme="dark"] .au-confirm-yes:hover,
+    html[data-theme="dark"] .au-confirm-yes:focus,
+    html[data-theme="dark"] .au-confirm-yes:active,
+    html[data-theme="dark"] .au-confirm-no:hover,
+    html[data-theme="dark"] .au-confirm-no:focus,
+    html[data-theme="dark"] .au-confirm-no:active,
+    body[data-theme="dark"] .au-confirm-yes:hover,
+    body[data-theme="dark"] .au-confirm-yes:focus,
+    body[data-theme="dark"] .au-confirm-yes:active,
+    body[data-theme="dark"] .au-confirm-no:hover,
+    body[data-theme="dark"] .au-confirm-no:focus,
+    body[data-theme="dark"] .au-confirm-no:active,
+    html.dark .au-confirm-yes:hover,
+    html.dark .au-confirm-yes:focus,
+    html.dark .au-confirm-yes:active,
+    html.dark .au-confirm-no:hover,
+    html.dark .au-confirm-no:focus,
+    html.dark .au-confirm-no:active,
+    body.dark .au-confirm-yes:hover,
+    body.dark .au-confirm-yes:focus,
+    body.dark .au-confirm-yes:active,
+    body.dark .au-confirm-no:hover,
+    body.dark .au-confirm-no:focus,
+    body.dark .au-confirm-no:active,
+    html.dark-mode .au-confirm-yes:hover,
+    html.dark-mode .au-confirm-yes:focus,
+    html.dark-mode .au-confirm-yes:active,
+    html.dark-mode .au-confirm-no:hover,
+    html.dark-mode .au-confirm-no:focus,
+    html.dark-mode .au-confirm-no:active,
+    body.dark-mode .au-confirm-yes:hover,
+    body.dark-mode .au-confirm-yes:focus,
+    body.dark-mode .au-confirm-yes:active,
+    body.dark-mode .au-confirm-no:hover,
+    body.dark-mode .au-confirm-no:focus,
+    body.dark-mode .au-confirm-no:active,
+    body:has(.navbar-dark) .au-confirm-yes:hover,
+    body:has(.navbar-dark) .au-confirm-yes:focus,
+    body:has(.navbar-dark) .au-confirm-yes:active,
+    body:has(.navbar-dark) .au-confirm-no:hover,
+    body:has(.navbar-dark) .au-confirm-no:focus,
+    body:has(.navbar-dark) .au-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
   </style>
 
   <div class="mb-3">
@@ -208,7 +345,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
               <span class="au-hidden-tag" data-secret-tag="<%= host_revolut_tag %>">████████</span>
               <button type="button" class="btn btn-outline-dark btn-sm" data-reveal-tag="1">Reveal</button>
             </div>
-            <%= button_to "Confirm Payment", confirm_payment_auction_path(auction), method: :post, class: "btn btn-primary btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to confirm payment?" } } %>
+            <%= button_to "Confirm Payment", confirm_auction_payment_path(auction), method: :post, class: "btn btn-primary btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to confirm payment?" } } %>
           </div>
         <% elsif status_key == "payment_pending" && is_host %>
           <div class="au-pay-box">
@@ -224,7 +361,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
               <button type="button" class="btn btn-outline-dark btn-sm" data-reveal-tag="1">Reveal</button>
             </div>
             <div class="au-show-line"><strong>Send To:</strong> <%= auction.winning_address_text.to_s.presence || "-" %></div>
-            <%= button_to "Verify Payment", verify_payment_auction_path(auction), method: :post, class: "btn btn-success btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to verify this payment?" } } %>
+            <%= button_to "Verify Payment", verify_auction_payment_path(auction), method: :post, class: "btn btn-success btn-sm mt-2", form: { class: "d-inline", data: { confirm_modal: "Do you want to verify this payment?" } } %>
           </div>
         <% elsif status_key == "paid" && is_winner %>
           <div class="au-pay-box">
@@ -250,28 +387,82 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
           <% end %>
 
           <% if owner_can_end %>
-            <%= button_to "End", end_auction_path(auction), method: :post, class: "btn btn-outline-danger au-show-btn", form: { class: "d-inline", data: { confirm_modal: "Do you want to end this auction?" } } %>
+            <%= button_to "End", end_auction_path(auction), method: :post, class: "btn btn-outline-danger au-show-btn", form: { class: "d-inline", data: { confirm_modal: "Are you sure you want to end this auction?" } } %>
+          <% end %>
+
+          <% if admin_can_delete %>
+            <%= button_to "Delete", delete_auction_path(auction), method: :delete, class: "btn btn-outline-danger au-show-btn", form: { class: "d-inline", data: { confirm_modal: "Are you sure you want to delete this auction?", turbo: "false" } } %>
           <% end %>
         </div>
       </div>
 
-      <h3 class="au-show-reviews-title">Recent Reviews</h3>
-      <% if @recent_reviews.present? && @recent_reviews.any? %>
-        <% @recent_reviews.each do |review| %>
-          <div class="au-show-review-card">
-            <div class="au-show-review-top">
-              <div class="au-show-review-stars"><%= stars.call(review.respond_to?(:rating) ? review.rating : 0) %></div>
-              <div class="au-show-review-meta"><%= review.respond_to?(:created_at) ? review.created_at.strftime("%d %b %Y") : "" %></div>
-            </div>
-            <% body = (review.respond_to?(:comment) ? review.comment : (review.respond_to?(:body) ? review.body : "")).to_s %>
-            <% if body.present? %>
-              <div class="au-show-review-body"><%= body %></div>
+      <div class="au-show-reviews-box">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <h3 class="au-show-reviews-title">Reviews</h3>
+
+          <% if can_give_review %>
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm"
+              onclick="var wrap=document.getElementById('<%= review_form_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
+              Give Review
+            </button>
+          <% end %>
+        </div>
+
+        <% if can_give_review %>
+          <div id="<%= review_form_id %>" class="au-review-form-wrap">
+            <%= form_with url: reviews_path, method: :post, local: true do %>
+              <%= hidden_field_tag "review[seller_id]", auction.seller_id %>
+
+              <div class="mb-2">
+                <label class="form-label mb-1" style="font-size:.75rem;">Rating (0 to 5)</label>
+                <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label mb-1" style="font-size:.75rem;">Comment</label>
+                <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
+              </div>
+
+              <div class="d-flex justify-content-end">
+                <%= submit_tag "Submit Review", class: "btn btn-primary btn-sm" %>
+              </div>
             <% end %>
           </div>
         <% end %>
-      <% else %>
-        <div class="text-muted">No reviews yet.</div>
-      <% end %>
+
+        <% if reviews.present? && reviews.any? %>
+          <% reviews.each do |review| %>
+            <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
+            <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{review.reviewer_id}" %>
+
+            <div class="au-show-review-card">
+              <div class="au-show-review-top">
+                <div>
+                  <div class="au-show-review-name"><%= reviewer_name %></div>
+                  <div class="au-show-review-stars">
+                    <%= stars.call(review.respond_to?(:rating) ? review.rating : 0) %>
+                    <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong>
+                  </div>
+                </div>
+
+                <div class="au-show-review-meta"><%= review.respond_to?(:created_at) ? review.created_at.strftime("%d %b %Y") : "" %></div>
+              </div>
+
+              <% body = (review.respond_to?(:comment) ? review.comment : "").to_s %>
+
+              <% if body.present? %>
+                <div class="au-show-review-body"><%= body %></div>
+              <% else %>
+                <div class="au-show-review-body text-muted">No comment left.</div>
+              <% end %>
+            </div>
+          <% end %>
+        <% else %>
+          <div class="text-muted">No reviews yet.</div>
+        <% end %>
+      </div>
     </div>
 
     <div class="au-show-right">
@@ -307,11 +498,10 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
 
 <div class="au-confirm-backdrop" id="auctionConfirmModal">
   <div class="au-confirm-box">
-    <div class="au-confirm-title">Confirm Action</div>
     <p class="au-confirm-text" id="auctionConfirmText">Do you want to confirm this action?</p>
     <div class="au-confirm-actions">
-      <button type="button" class="btn btn-outline-secondary btn-sm" id="auctionConfirmNo">No</button>
-      <button type="button" class="btn btn-primary btn-sm" id="auctionConfirmYes">Yes</button>
+      <button type="button" class="au-confirm-yes" id="auctionConfirmYes">Yes</button>
+      <button type="button" class="au-confirm-no" id="auctionConfirmNo">No</button>
     </div>
   </div>
 </div>
@@ -319,6 +509,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
 <script type="module">
   const modalEl = document.getElementById("auctionImgModalEl");
 
+  // Opens the clicked auction image inside the modal.
   document.addEventListener("click", (e) => {
     const img = e.target.closest("img[data-bs-target='#auctionImgModal']");
     if (!img) return;
@@ -326,6 +517,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     if (modalEl && src) modalEl.src = src;
   });
 
+  // Reveals Revolut tags for 10 seconds.
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-reveal-tag='1']");
     if (!btn) return;
@@ -363,6 +555,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     return minutes + "m " + seconds + "s";
   }
 
+  // Updates the live auction countdown.
   function updateAuctionShowTimer() {
     if (!timerEl) return;
 
@@ -400,6 +593,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     timerEl.textContent = formatRemaining(remaining);
   }
 
+  // Keeps image card height aligned with the information card on desktop.
   function syncAuctionShowCardHeights() {
     const infoCard = document.getElementById("au-show-info-card");
     const imagesCard = document.getElementById("au-show-images-card");
@@ -417,6 +611,7 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
   const confirmYes = document.getElementById("auctionConfirmYes");
   const confirmNo = document.getElementById("auctionConfirmNo");
 
+  // Custom confirmation modal for risky actions.
   document.addEventListener("submit", (e) => {
     const form = e.target.closest("form[data-confirm-modal]");
     if (!form) return;
@@ -438,6 +633,12 @@ winner_revolut_tag = auction.winner_revolut_tag.to_s
     pendingForm.dataset.confirmedSubmit = "1";
     if (confirmModal) confirmModal.style.display = "none";
     pendingForm.requestSubmit();
+  });
+
+  confirmModal?.addEventListener("click", (event) => {
+    if (event.target !== confirmModal) return;
+    pendingForm = null;
+    confirmModal.style.display = "none";
   });
 
   updateAuctionShowTimer();

@@ -1,6 +1,6 @@
 class RafflesController < ApplicationController
-  before_action :require_login, only: [ :new, :create, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle ]
-  before_action :set_raffle, only: [ :show, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle ]
+  before_action :require_login, only: [ :new, :create, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle, :destroy ]
+  before_action :set_raffle, only: [ :show, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle, :destroy ]
 
   def index
     @raffle_filters = {
@@ -11,6 +11,8 @@ class RafflesController < ApplicationController
       max_tickets: params[:max_tickets].to_s.strip,
       ticket_status: params[:ticket_status].to_s.strip
     }
+
+    @admin_can_manage_raffles = raffle_admin_user?
 
     @raffles = apply_raffle_filters(
       Raffle.includes(:host, :winner_user, :main_raffle, :raffle_tickets, photos_attachments: :blob).newest_first
@@ -29,6 +31,7 @@ class RafflesController < ApplicationController
       total_tickets: 10,
       revolut_tag: current_user.revolut_tag.to_s
     )
+
     @running_main_raffles = Raffle.includes(:host).running_main_raffles.order(created_at: :desc)
   end
 
@@ -65,6 +68,7 @@ class RafflesController < ApplicationController
   end
 
   def show
+    @admin_can_manage_raffles = raffle_admin_user?
     @tickets = @raffle.raffle_tickets.includes(:user).ordered
     @available_numbers = @raffle.available_numbers
     @my_tickets = current_user ? @tickets.select { |t| t.user_id.to_i == current_user.id.to_i } : []
@@ -72,6 +76,37 @@ class RafflesController < ApplicationController
     @participant_rows = build_participant_rows(@tickets)
     @winning_ticket = @tickets.find { |t| t.ticket_number.to_i == @raffle.winner_number.to_i } if @raffle.completed?
     @paid_amount_cents = @tickets.select(&:paid?).sum(&:amount_paid_cents)
+
+    @host_stats =
+      if defined?(Review)
+        avg = Review.where(seller_id: @raffle.host_id).average(:rating).to_f
+        count = Review.where(seller_id: @raffle.host_id).count
+        { avg: avg, count: count }
+      else
+        { avg: 0.0, count: 0 }
+      end
+
+    @reviews =
+      if defined?(Review)
+        Review.where(seller_id: @raffle.host_id).includes(:reviewer).order(created_at: :desc).limit(10).to_a
+      else
+        []
+      end
+
+    @viewer_is_raffle_winner =
+      current_user.present? &&
+      @raffle.completed? &&
+      @raffle.winner_user_id.to_i == current_user.id.to_i &&
+      @raffle.host_id.to_i != current_user.id.to_i
+
+    @already_reviewed_host =
+      if defined?(Review) && current_user
+        Review.where(seller_id: @raffle.host_id, reviewer_id: current_user.id).exists?
+      else
+        false
+      end
+
+    @can_give_review = @viewer_is_raffle_winner && !@already_reviewed_host
   end
 
   def purchase_tickets
@@ -80,6 +115,7 @@ class RafflesController < ApplicationController
     buy_all = params[:buy_all_available].to_s == "1"
     numbers = Array(params[:ticket_numbers]).map(&:to_i).reject { |n| n <= 0 }.uniq.sort
     random_count = params[:random_quantity].to_i
+
     assign_name = params[:assigned_name].to_s.strip
     assign_reason = params[:assignment_reason].presence || params[:assign_reason].presence || params[:reason].presence
     assign_reason = assign_reason.to_s.strip
@@ -277,8 +313,26 @@ class RafflesController < ApplicationController
       return redirect_to raffle_path(@raffle), alert: "This raffle cannot be ended."
     end
 
-    @raffle.end_incomplete!
+    move_raffle_to_incompleted!(@raffle)
     redirect_to raffles_path, notice: "Raffle ended and moved to Incompleted."
+  end
+
+  def destroy
+    redirect_target = raffle_return_path
+
+    if raffle_admin_user? && @raffle.host_id.to_i != current_user.id.to_i
+      @raffle.destroy!
+      return redirect_to redirect_target, notice: "Raffle deleted.", status: :see_other
+    end
+
+    unless @raffle.host_id.to_i == current_user.id.to_i
+      return redirect_to redirect_target, alert: "You cannot delete this raffle.", status: :see_other
+    end
+
+    move_raffle_to_incompleted!(@raffle)
+    redirect_to raffles_path, notice: "Raffle moved to Incompleted.", status: :see_other
+  rescue
+    redirect_to raffles_path, alert: "Could not delete raffle.", status: :see_other
   end
 
   private
@@ -347,6 +401,54 @@ class RafflesController < ApplicationController
     redirect_to login_path unless current_user
   end
 
+  def raffle_admin_user?
+    ok = false
+
+    begin
+      ok = true if respond_to?(:admin_signed_in?) && admin_signed_in?
+    rescue
+    end
+
+    return true if ok
+
+    user = current_user
+    return false unless user
+
+    return true if user.respond_to?(:admin?) && user.admin?
+    return true if user.respond_to?(:admin) && !!user.admin
+
+    false
+  rescue
+    false
+  end
+
+  def raffle_return_path
+    return_to = params[:return_to].to_s
+
+    if return_to.present? && return_to.start_with?("/") && !return_to.start_with?("//")
+      return_to
+    else
+      raffles_path
+    end
+  rescue
+    raffles_path
+  end
+
+  def move_raffle_to_incompleted!(raffle)
+    attrs = {
+      status: "incompleted",
+      updated_at: Time.current
+    }
+
+    attrs[:ended_at] = Time.current if Raffle.column_names.include?("ended_at")
+    attrs[:completed_at] = nil if Raffle.column_names.include?("completed_at")
+    attrs[:winner_number] = nil if Raffle.column_names.include?("winner_number")
+    attrs[:winner_name] = nil if Raffle.column_names.include?("winner_name")
+    attrs[:winner_user_id] = nil if Raffle.column_names.include?("winner_user_id")
+
+    raffle.update_columns(attrs)
+  end
+
   def attach_photos(record, photos)
     return unless record.respond_to?(:photos)
     return unless record.photos.respond_to?(:attach)
@@ -358,6 +460,7 @@ class RafflesController < ApplicationController
 
   def money_to_cents(value)
     return 0 if value.blank?
+
     (value.to_s.tr(",", ".").to_f * 100).round
   end
 

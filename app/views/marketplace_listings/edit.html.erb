@@ -1,0 +1,109 @@
+<%#
+References:
+- Rails form helpers:
+  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+- Rails Active Storage display helpers:
+  https://guides.rubyonrails.org/active_storage_overview.html
+- Bootstrap forms and buttons:
+  https://getbootstrap.com/docs/5.3/forms/overview/
+  https://getbootstrap.com/docs/5.3/components/buttons/
+%>
+
+<%
+# Prepares the listing values for the edit form.
+listing = @listing
+condition_options = @condition_options || []
+current_price = listing.price_cents.to_i / 100.0
+current_quantity = listing.quantity.to_i
+current_condition = listing.condition.to_s
+images = listing.respond_to?(:photos) && listing.photos.attached? ? listing.photos.to_a.first(4) : []
+%>
+
+<div class="container py-4">
+  <style>
+    .mledit-wrap{max-width:760px;margin:0 auto}
+    .mledit-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .mledit-title{font-size:1.35rem;font-weight:900;margin:0 0 6px;color:#111827}
+    .mledit-sub{font-size:.88rem;color:#6b7280;margin:0 0 16px}
+    .mledit-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .mledit-img{width:100%;height:110px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb}
+    .mledit-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:16px}
+    @media(max-width:768px){.mledit-grid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+
+  <div class="mledit-wrap">
+    <div class="mb-3">
+      <%= link_to "← Back to Listing", marketplace_listing_path(listing), class: "btn btn-link p-0" %>
+    </div>
+
+    <div class="mledit-card">
+      <h1 class="mledit-title">Edit Listing</h1>
+      <p class="mledit-sub">
+        Update the price, quantity, condition or add extra images. Sold, cancelled or deleted listings cannot be edited.
+      </p>
+
+      <%# Shows existing listing images before adding any extra images. %>
+      <% if images.any? %>
+        <div class="mb-3">
+          <label class="form-label">Current Images</label>
+          <div class="mledit-grid">
+            <% images.each do |image| %>
+              <%= image_tag url_for(image), class: "mledit-img", alt: "Listing image" %>
+            <% end %>
+          </div>
+          <div class="form-text">You can have up to 4 images total.</div>
+        </div>
+      <% end %>
+
+      <%# Main edit form for marketplace listing details. %>
+      <%= form_with url: marketplace_listing_path(listing), method: :patch, local: true, multipart: true do %>
+        <div class="mb-3">
+          <label class="form-label" for="listing_price">Price (€)</label>
+          <%= number_field_tag :price,
+                               current_price,
+                               step: "0.01",
+                               min: "0.01",
+                               class: "form-control",
+                               id: "listing_price",
+                               required: true %>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="listing_quantity">Quantity</label>
+          <%= number_field_tag :quantity,
+                               current_quantity,
+                               min: 1,
+                               step: 1,
+                               class: "form-control",
+                               id: "listing_quantity",
+                               required: true %>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="listing_condition">Condition</label>
+          <%= select_tag :condition,
+                         options_for_select(condition_options, current_condition),
+                         include_blank: "Select condition",
+                         class: "form-select",
+                         id: "listing_condition",
+                         required: true %>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="listing_photos">Add Images</label>
+          <%= file_field_tag "photos[]",
+                             multiple: true,
+                             accept: "image/png,image/jpeg,image/jpg",
+                             class: "form-control",
+                             id: "listing_photos" %>
+          <div class="form-text">Optional. JPG or PNG only. Maximum 4 images total.</div>
+        </div>
+
+        <div class="mledit-actions">
+          <%= link_to "Cancel", marketplace_listing_path(listing), class: "btn btn-outline-secondary" %>
+          <%= submit_tag "Save Changes", class: "btn btn-primary" %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

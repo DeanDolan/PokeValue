@@ -20,15 +20,21 @@
     }
   </style>
 
+  <%# Footer logo links the user back to the main portfolio page %>
   <div class="footer-inner container py-4 text-center">
     <%= link_to portfolio_path, class: "logo d-inline-block mb-2" do %>
+      <%# Light mode logo %>
       <%= image_tag "logos/pokevaluelogolightmode.png",
                     alt: "PokeValue logo",
                     class: "pv-footer-logo pv-logo-light" %>
+
+      <%# Dark mode logo %>
       <%= image_tag "logos/pokevaluelogodarkmode.png",
                     alt: "PokeValue logo",
                     class: "pv-footer-logo pv-logo-dark" %>
     <% end %>
+
+    <%# Small branding line and dynamic copyright year %>
     <p class="footer-tagline mb-1">Pokemon investing since 2025.</p>
     <div class="text-muted small">© <%= Time.current.year %> PokeValue</div>
   </div>

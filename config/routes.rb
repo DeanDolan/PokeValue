@@ -18,11 +18,12 @@ Rails.application.routes.draw do
   get "/auction/:id/bid", to: "auctions#bid", as: :bid_auction
   post "/auction/:id/bid", to: "auctions#create_bid", as: :place_auction_bid
   post "/auction/:id/end", to: "auctions#end_auction", as: :end_auction
+  delete "/auction/:id", to: "auctions#destroy", as: :delete_auction
   post "/auction/:id/confirm_payment", to: "auctions#confirm_payment", as: :confirm_auction_payment
   post "/auction/:id/verify_payment", to: "auctions#verify_payment", as: :verify_auction_payment
 
   # Raffle routes, including ticket and payment actions for a single raffle
-  resources :raffles, only: [ :index, :new, :create, :show ] do
+  resources :raffles, only: [ :index, :new, :create, :show, :destroy ] do
     member do
       post :purchase_tickets
       post :return_tickets
@@ -96,7 +97,7 @@ Rails.application.routes.draw do
   end
 
   # Community post, comment and reaction routes
-  resources :community_posts, only: [ :create, :destroy ] do
+  resources :community_posts, only: [ :create, :update, :destroy ] do
     member do
       post :react, to: "community_reactions#create"
     end
@@ -117,7 +118,7 @@ Rails.application.routes.draw do
   resources :reviews, only: [ :create ]
   resources :funds, only: [ :new, :create ]
 
-  resources :marketplace_listings, only: [ :index, :new, :create, :show, :destroy ] do
+  resources :marketplace_listings, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     member do
       get :checkout
       post :buy

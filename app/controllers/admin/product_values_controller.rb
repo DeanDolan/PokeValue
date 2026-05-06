@@ -27,10 +27,16 @@ module Admin
 
       Product.transaction do
         product = Product.lock.find_or_initialize_by(sku: sku)
-        product.name = name if product.name.blank?
+        product.name = name
+        product.set_name = params[:set_name].to_s.strip if product.respond_to?(:set_name=)
+        product.era = params[:era].to_s.strip if product.respond_to?(:era=)
+        product.product_type = params[:product_type_name].to_s.strip if product.respond_to?(:product_type=)
+        product.image = params[:image_url].to_s.strip if product.respond_to?(:image=)
         old = product.value
         product.value = value
         product.save!
+
+        Product.refresh_holdings_for_product!(product)
 
         AdminAudit.create!(
           user_id: current_user.id,

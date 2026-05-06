@@ -1,6 +1,10 @@
+<%# Shared badge partial for displaying user account badges %>
 <% u = local_assigns[:user] %>
+
+<%# Checks both admin? and admin so the badge works with different user model setups %>
 <% is_admin = u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && u.admin)) %>
 
+<%# Displays the admin badge when the user has admin permissions %>
 <% if is_admin %>
   <span class="pv-badge pv-badge-admin" title="Admin">A</span>
 <% end %>

@@ -1,9 +1,18 @@
 <%
+# Local variables used to keep the bid form readable.
 auction = @auction
 existing_bid = @existing_bid
 selected_address = @selected_address
+
+# First bid requires choosing a saved address.
 first_bid_on_this_auction = existing_bid.blank?
-can_submit = !first_bid_on_this_auction || @saved_addresses.any?
+
+# Later bids can reuse the address selected on the first bid.
+saved_addresses = @saved_addresses || []
+can_submit = !first_bid_on_this_auction || saved_addresses.any?
+
+checked_address_id = params[:saved_address_id].presence || saved_addresses.first&.id.to_s
+
 current_highest = auction.current_bid_cents_value.to_i / 100.0
 minimum_bid = [@minimum_bid_eur.to_f, 0.01].max
 %>
@@ -32,17 +41,17 @@ minimum_bid = [@minimum_bid_eur.to_f, 0.01].max
         · Your bid must be higher than the previous bid.
       </div>
 
-      <%= form_with url: place_auction_bid_path(auction), method: :post, local: true do %>
+      <%= form_with url: place_auction_bid_path(auction), method: :post, local: true, html: { data: { turbo: false } } do %>
         <% if first_bid_on_this_auction %>
           <div class="mb-3">
             <label class="form-label">Choose Address</label>
 
-            <% if @saved_addresses.any? %>
+            <% if saved_addresses.any? %>
               <div class="ab-address-list">
-                <% @saved_addresses.each do |address| %>
+                <% saved_addresses.each do |address| %>
                   <div class="ab-address-item">
                     <label>
-                      <input type="radio" name="saved_address_id" value="<%= address.id %>" <%= "checked" if params[:saved_address_id].to_s == address.id.to_s %>>
+                      <input type="radio" name="saved_address_id" value="<%= address.id %>" required <%= "checked" if checked_address_id.to_s == address.id.to_s %>>
                       <div class="fw-semibold"><%= address.respond_to?(:display_label) ? address.display_label : (address.respond_to?(:label) && address.label.present? ? address.label : "Saved Address") %></div>
                       <div class="ab-address-line"><%= address.respond_to?(:single_line) ? address.single_line : [address.try(:line1), address.try(:line2).presence, address.try(:city), address.try(:county).presence, address.try(:postcode).presence, address.try(:country_code)].compact.join(", ") %></div>
                     </label>
@@ -68,7 +77,7 @@ minimum_bid = [@minimum_bid_eur.to_f, 0.01].max
 
         <div class="mb-3">
           <label class="form-label">Bid Amount (€)</label>
-          <input type="number" name="bid_amount" class="form-control" min="<%= minimum_bid %>" step="0.01" value="<%= params[:bid_amount] %>" placeholder="<%= minimum_bid %>">
+          <input type="number" name="bid_amount" class="form-control" min="<%= minimum_bid %>" step="0.01" value="<%= params[:bid_amount] %>" placeholder="<%= minimum_bid %>" required>
           <div class="form-text">Minimum bid: <%= number_to_currency(minimum_bid, unit: "€") %></div>
         </div>
 

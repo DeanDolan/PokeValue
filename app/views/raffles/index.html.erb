@@ -1,11 +1,100 @@
 <%
+# Collects the raffle groups prepared by the controller
 main_active = @active_raffles || []
 mini_active = @active_mini_raffles || []
 completed = @completed_raffles || []
 incompleted = @incompleted_raffles || []
+
+# Stores the current user id so completed raffle reveal state can be unique per user
 current_user_id_for_reveal = current_user&.id.to_i
+
+# Stores the active filter values so the form keeps the user's selected filters
 filters = @raffle_filters || {}
 
+# Checks whether a user is logged in so the Host Raffle button can either open the form or show the login pop-up
+raffle_logged_in = current_user.present?
+
+# Checks whether the current viewer can delete raffles from the normal raffle pages
+admin_can_manage_raffles = defined?(@admin_can_manage_raffles) && @admin_can_manage_raffles
+
+# Loads review totals for raffle hosts so the Reviews column can match the marketplace and auction style
+all_raffles_for_host_stats = main_active + mini_active + completed + incompleted
+host_ids_for_stats = all_raffles_for_host_stats.map { |raffle| raffle.host_id.to_i }.reject(&:zero?).uniq
+
+review_counts_by_seller_id =
+  if defined?(Review) && host_ids_for_stats.any?
+    Review.where(seller_id: host_ids_for_stats).group(:seller_id).count
+  else
+    {}
+  end
+
+review_avgs_by_seller_id =
+  if defined?(Review) && host_ids_for_stats.any?
+    Review.where(seller_id: host_ids_for_stats).group(:seller_id).average(:rating)
+  else
+    {}
+  end
+
+stars = lambda do |avg|
+  value = avg.to_f
+  value = 0.0 if value < 0
+  value = 5.0 if value > 5
+
+  rounded = ((value * 2).round / 2.0)
+  full = rounded.floor
+  half = (rounded - full) >= 0.5
+
+  parts = []
+  full.times { parts << '<span class="pv-acc-rating-star">★</span>' }
+  parts << '<span class="pv-acc-rating-half">½</span>' if half
+
+  %(<span class="pv-acc-rating-stars">#{parts.join}</span>).html_safe
+end
+
+# Builds the compact review text shown in the Reviews column
+review_data_for = lambda do |user|
+  next { avg: 0.0, count: 0 } unless user
+
+  avg = review_avgs_by_seller_id[user.id].to_f
+  count = review_counts_by_seller_id[user.id].to_i
+
+  { avg: avg, count: count }
+end
+
+# Builds the compact location text shown in the Location column
+location_text_for = lambda do |user|
+  next "-" unless user && user.respond_to?(:country_code)
+
+  code = user.country_code.to_s.strip
+  next "-" if code.blank?
+
+  if defined?(flag_emoji)
+    flag_emoji(code)
+  else
+    code
+  end
+end
+
+# Builds the hover title for the Location column
+location_title_for = lambda do |user|
+  next "" unless user && user.respond_to?(:country_code)
+
+  code = user.country_code.to_s.strip
+  next "" if code.blank?
+
+  if defined?(country_name)
+    country_name(code)
+  else
+    code
+  end
+end
+
+# Checks whether the host has badges that should be displayed beside their raffle
+host_admin_badge_for = lambda do |user|
+  user && ((user.respond_to?(:admin?) && user.admin?) || (user.respond_to?(:admin) && !!user.admin))
+end
+
+# Builds a compact "time ago" label for raffle table rows
 precise_time_ago = lambda do |time|
   next "-" if time.blank?
 
@@ -126,24 +215,44 @@ end
       width:100%;
       border-collapse:collapse;
       min-width:1040px;
-      font-size:.82rem;
+      font-size:.62rem;
+      table-layout:auto;
     }
     .rf-table thead th{
       background:#f9fafb;
-      font-weight:700;
+      font-weight:900;
       text-align:center;
-      font-size:.76rem;
+      font-size:.62rem;
       color:#374151;
-      padding:10px 12px;
+      padding:6px 8px;
       border-bottom:1px solid #e5e7eb;
       white-space:nowrap;
+      vertical-align:middle;
     }
     .rf-table tbody td{
-      padding:10px 12px;
+      padding:6px 8px;
       border-bottom:1px solid #f1f5f9;
-      font-size:.8rem;
+      font-size:.62rem;
       vertical-align:middle;
       text-align:center;
+      line-height:1.15;
+    }
+    .rf-col-host{
+      min-width:92px;
+      white-space:nowrap;
+    }
+    .rf-col-title{
+      min-width:230px;
+      white-space:normal;
+    }
+    .rf-col-actions{
+      min-width:74px;
+      width:74px;
+      white-space:nowrap;
+    }
+    .rf-col-compact{
+      width:1%;
+      white-space:nowrap !important;
     }
     .rf-empty-state{
       padding:18px;
@@ -155,12 +264,13 @@ end
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      padding:.22rem .55rem;
+      padding:.18rem .42rem;
       border-radius:999px;
-      font-size:.68rem;
-      font-weight:700;
+      font-size:.58rem;
+      font-weight:800;
       border:1px solid #d1d5db;
       background:#fff;
+      white-space:nowrap;
     }
     .rf-badge-active{color:#166534;border-color:#86efac;background:#f0fdf4;}
     .rf-badge-completed{color:#1d4ed8;border-color:#93c5fd;background:#eff6ff;}
@@ -168,19 +278,103 @@ end
     .rf-thumb-stack{
       display:flex;
       justify-content:center;
-      gap:6px;
-      flex-wrap:wrap;
+      align-items:center;
+      gap:4px;
+      flex-wrap:nowrap;
+      white-space:nowrap;
     }
     .rf-thumb-stack img{
-      width:38px;
-      height:38px;
+      width:28px;
+      height:28px;
       object-fit:cover;
-      border-radius:8px;
+      border-radius:7px;
       border:1px solid #e5e7eb;
     }
     .rf-link{
       text-decoration:none;
+      font-weight:800;
+    }
+    .rf-host-link{
+      font-weight:800;
+    }
+    .rf-actions{
+      display:flex;
+      gap:3px;
+      justify-content:center;
+      align-items:center;
+      flex-wrap:nowrap;
+      white-space:nowrap;
+    }
+    .rf-actions form{
+      margin:0;
+      display:inline-flex;
+      flex:0 0 auto;
+    }
+    .rf-actions .btn{
+      white-space:nowrap;
+      flex:0 0 auto;
+      font-size:.55rem;
+      padding:.1rem .22rem;
+      line-height:1.05;
+    }
+    .rf-location-cell{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      font-size:.84rem;
+      line-height:1;
+    }
+    .rf-review-cell{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:3px;
+      white-space:nowrap;
       font-weight:700;
+    }
+    .pv-acc-rating-stars{
+      display:inline-flex !important;
+      align-items:center !important;
+      gap:1px !important;
+      white-space:nowrap !important;
+      line-height:1 !important;
+      vertical-align:middle !important;
+      color:#d4a017 !important;
+    }
+    .pv-acc-rating-star{
+      display:inline-block !important;
+      position:static !important;
+      width:auto !important;
+      height:auto !important;
+      overflow:visible !important;
+      color:#d4a017 !important;
+      line-height:1 !important;
+      text-shadow:none !important;
+    }
+    .pv-acc-rating-half{
+      display:inline-block !important;
+      position:static !important;
+      width:auto !important;
+      height:auto !important;
+      overflow:visible !important;
+      color:#d4a017 !important;
+      line-height:1 !important;
+      font-weight:900 !important;
+      font-size:.8em !important;
+      text-shadow:none !important;
+    }
+    .rf-badges-cell{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:20px;
+    }
+    .rf-badges-cell img{
+      height:18px;
+      width:18px;
+      object-fit:contain;
+      display:inline-block;
+      vertical-align:middle;
     }
     .rf-blackout{
       display:inline-block;
@@ -190,6 +384,185 @@ end
       padding:.15rem .45rem;
       min-width:140px;
       user-select:none;
+    }
+    .rf-delete-confirm-overlay{
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      background:rgba(15,23,42,.55);
+    }
+    .rf-delete-confirm-box{
+      width:100%;
+      max-width:430px;
+      border-radius:18px;
+      border:1px solid #000000;
+      background:#ffffff;
+      color:#000000;
+      box-shadow:0 24px 70px rgba(0,0,0,.32);
+      padding:20px;
+      text-align:center;
+    }
+    .rf-delete-confirm-text{
+      color:#000000;
+      font-size:.96rem;
+      font-weight:800;
+      line-height:1.45;
+      margin-bottom:18px;
+    }
+    .rf-delete-confirm-actions{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .rf-delete-confirm-yes,
+    .rf-delete-confirm-no{
+      min-width:86px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:.86rem;
+      padding:.42rem .9rem;
+      border:1px solid #000000 !important;
+      transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important;
+    }
+    .rf-delete-confirm-yes{
+      background:#000000 !important;
+      color:#ffffff !important;
+    }
+    .rf-delete-confirm-no{
+      background:#ffffff !important;
+      color:#000000 !important;
+    }
+    .rf-delete-confirm-yes:hover,
+    .rf-delete-confirm-yes:focus,
+    .rf-delete-confirm-yes:active,
+    .rf-delete-confirm-no:hover,
+    .rf-delete-confirm-no:focus,
+    .rf-delete-confirm-no:active{
+      background:#d4af37 !important;
+      color:#000000 !important;
+      border-color:#d4af37 !important;
+      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important;
+    }
+    :root[data-pv-theme="dark"] .rf-delete-confirm-box,
+    html[data-bs-theme="dark"] .rf-delete-confirm-box,
+    body[data-bs-theme="dark"] .rf-delete-confirm-box,
+    html[data-theme="dark"] .rf-delete-confirm-box,
+    body[data-theme="dark"] .rf-delete-confirm-box,
+    html.dark .rf-delete-confirm-box,
+    body.dark .rf-delete-confirm-box,
+    html.dark-mode .rf-delete-confirm-box,
+    body.dark-mode .rf-delete-confirm-box,
+    body:has(.navbar-dark) .rf-delete-confirm-box{
+      background:#000000 !important;
+      color:#d4af37 !important;
+      border-color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-delete-confirm-text,
+    html[data-bs-theme="dark"] .rf-delete-confirm-text,
+    body[data-bs-theme="dark"] .rf-delete-confirm-text,
+    html[data-theme="dark"] .rf-delete-confirm-text,
+    body[data-theme="dark"] .rf-delete-confirm-text,
+    html.dark .rf-delete-confirm-text,
+    body.dark .rf-delete-confirm-text,
+    html.dark-mode .rf-delete-confirm-text,
+    body.dark-mode .rf-delete-confirm-text,
+    body:has(.navbar-dark) .rf-delete-confirm-text{
+      color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-delete-confirm-yes,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no,
+    html[data-bs-theme="dark"] .rf-delete-confirm-yes,
+    html[data-bs-theme="dark"] .rf-delete-confirm-no,
+    body[data-bs-theme="dark"] .rf-delete-confirm-yes,
+    body[data-bs-theme="dark"] .rf-delete-confirm-no,
+    html[data-theme="dark"] .rf-delete-confirm-yes,
+    html[data-theme="dark"] .rf-delete-confirm-no,
+    body[data-theme="dark"] .rf-delete-confirm-yes,
+    body[data-theme="dark"] .rf-delete-confirm-no,
+    html.dark .rf-delete-confirm-yes,
+    html.dark .rf-delete-confirm-no,
+    body.dark .rf-delete-confirm-yes,
+    body.dark .rf-delete-confirm-no,
+    html.dark-mode .rf-delete-confirm-yes,
+    html.dark-mode .rf-delete-confirm-no,
+    body.dark-mode .rf-delete-confirm-yes,
+    body.dark-mode .rf-delete-confirm-no,
+    body:has(.navbar-dark) .rf-delete-confirm-yes,
+    body:has(.navbar-dark) .rf-delete-confirm-no{
+      background:#000000 !important;
+      color:#d4af37 !important;
+      border-color:#d4af37 !important;
+    }
+    :root[data-pv-theme="dark"] .rf-delete-confirm-yes:hover,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-yes:focus,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-yes:active,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no:hover,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no:focus,
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no:active,
+    html[data-bs-theme="dark"] .rf-delete-confirm-yes:hover,
+    html[data-bs-theme="dark"] .rf-delete-confirm-yes:focus,
+    html[data-bs-theme="dark"] .rf-delete-confirm-yes:active,
+    html[data-bs-theme="dark"] .rf-delete-confirm-no:hover,
+    html[data-bs-theme="dark"] .rf-delete-confirm-no:focus,
+    html[data-bs-theme="dark"] .rf-delete-confirm-no:active,
+    body[data-bs-theme="dark"] .rf-delete-confirm-yes:hover,
+    body[data-bs-theme="dark"] .rf-delete-confirm-yes:focus,
+    body[data-bs-theme="dark"] .rf-delete-confirm-yes:active,
+    body[data-bs-theme="dark"] .rf-delete-confirm-no:hover,
+    body[data-bs-theme="dark"] .rf-delete-confirm-no:focus,
+    body[data-bs-theme="dark"] .rf-delete-confirm-no:active,
+    html[data-theme="dark"] .rf-delete-confirm-yes:hover,
+    html[data-theme="dark"] .rf-delete-confirm-yes:focus,
+    html[data-theme="dark"] .rf-delete-confirm-yes:active,
+    html[data-theme="dark"] .rf-delete-confirm-no:hover,
+    html[data-theme="dark"] .rf-delete-confirm-no:focus,
+    html[data-theme="dark"] .rf-delete-confirm-no:active,
+    body[data-theme="dark"] .rf-delete-confirm-yes:hover,
+    body[data-theme="dark"] .rf-delete-confirm-yes:focus,
+    body[data-theme="dark"] .rf-delete-confirm-yes:active,
+    body[data-theme="dark"] .rf-delete-confirm-no:hover,
+    body[data-theme="dark"] .rf-delete-confirm-no:focus,
+    body[data-theme="dark"] .rf-delete-confirm-no:active,
+    html.dark .rf-delete-confirm-yes:hover,
+    html.dark .rf-delete-confirm-yes:focus,
+    html.dark .rf-delete-confirm-yes:active,
+    html.dark .rf-delete-confirm-no:hover,
+    html.dark .rf-delete-confirm-no:focus,
+    html.dark .rf-delete-confirm-no:active,
+    body.dark .rf-delete-confirm-yes:hover,
+    body.dark .rf-delete-confirm-yes:focus,
+    body.dark .rf-delete-confirm-yes:active,
+    body.dark .rf-delete-confirm-no:hover,
+    body.dark .rf-delete-confirm-no:focus,
+    body.dark .rf-delete-confirm-no:active,
+    html.dark-mode .rf-delete-confirm-yes:hover,
+    html.dark-mode .rf-delete-confirm-yes:focus,
+    html.dark-mode .rf-delete-confirm-yes:active,
+    html.dark-mode .rf-delete-confirm-no:hover,
+    html.dark-mode .rf-delete-confirm-no:focus,
+    html.dark-mode .rf-delete-confirm-no:active,
+    body.dark-mode .rf-delete-confirm-yes:hover,
+    body.dark-mode .rf-delete-confirm-yes:focus,
+    body.dark-mode .rf-delete-confirm-yes:active,
+    body.dark-mode .rf-delete-confirm-no:hover,
+    body.dark-mode .rf-delete-confirm-no:focus,
+    body.dark-mode .rf-delete-confirm-no:active,
+    body:has(.navbar-dark) .rf-delete-confirm-yes:hover,
+    body:has(.navbar-dark) .rf-delete-confirm-yes:focus,
+    body:has(.navbar-dark) .rf-delete-confirm-yes:active,
+    body:has(.navbar-dark) .rf-delete-confirm-no:hover,
+    body:has(.navbar-dark) .rf-delete-confirm-no:focus,
+    body:has(.navbar-dark) .rf-delete-confirm-no:active{
+      background:#d4af37 !important;
+      color:#000000 !important;
+      border-color:#d4af37 !important;
+      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important;
     }
     @media (max-width:1100px){
       .rf-filter-grid{
@@ -229,16 +602,58 @@ end
       <p class="rf-subtitle mb-0">Host raffles, buy ticket numbers, and run completed raffles.</p>
     </div>
 
-    <% if current_user %>
+    <%# Shows the Host Raffle page for logged-in users, or a login pop-up for guests %>
+    <% if raffle_logged_in %>
       <%= link_to "Host Raffle", new_raffle_path, class: "btn btn-success" %>
     <% else %>
-      <%= button_tag "Log in to Host Raffle",
-            type: "button",
-            class: "btn btn-outline-secondary",
-            data: { bs_toggle: "modal", bs_target: "#authModal" } %>
+      <%# Logged-out users see a login pop-up instead of being sent to the protected Host Raffle page %>
+      <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#raffleHostLoginModal">
+        Host Raffle
+      </button>
     <% end %>
   </div>
 
+  <%# Login modal shown when a logged-out user clicks Host Raffle %>
+  <% unless raffle_logged_in %>
+    <div class="modal fade" id="raffleHostLoginModal" tabindex="-1" aria-labelledby="raffleHostLoginModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="raffleHostLoginModalLabel">Log in to host raffle</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+          </div>
+
+          <div class="modal-body">
+            <%= form_with url: login_path, method: :post, local: true do %>
+              <div class="mb-3">
+                <label class="form-label" for="raffle_host_login_username">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", id: "raffle_host_login_username", required: true, autocomplete: "username" %>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label" for="raffle_host_login_password">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", id: "raffle_host_login_password", required: true, autocomplete: "current-password" %>
+              </div>
+
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <%= submit_tag "Log in", class: "btn btn-primary" %>
+              </div>
+            <% end %>
+
+            <hr class="my-3">
+
+            <div class="text-center small">
+              Don't have an account?
+              <%= link_to "Register", register_path, class: "btn btn-link btn-sm" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Filter form used to narrow down raffles by title, price, ticket count and ticket status %>
   <section class="rf-filter-card">
     <%= form_with url: raffles_path, method: :get, local: true do %>
       <div class="rf-filter-title">Filters</div>
@@ -289,6 +704,7 @@ end
     <% end %>
   </section>
 
+  <%# Tab buttons switch between current raffles, mini raffles, completed raffles and incompleted raffles %>
   <div class="rf-tabbar">
     <button type="button" class="active pv-tab-locked" data-rf-tab-target="raffles">Raffles</button>
     <button type="button" data-rf-tab-target="mini_raffles">Mini Raffles</button>
@@ -296,6 +712,7 @@ end
     <button type="button" data-rf-tab-target="incompleted">Incompleted</button>
   </div>
 
+  <%# Active main raffle table %>
   <section class="rf-section active" data-rf-tab-panel="raffles">
     <h2 class="rf-section-title">Raffles</h2>
     <section class="rf-table-card">
@@ -303,23 +720,46 @@ end
         <table class="rf-table">
           <thead>
             <tr>
-              <th>Host</th>
-              <th>Images</th>
-              <th>Title</th>
-              <th>Ticket Price</th>
-              <th>Sold</th>
-              <th>Left</th>
-              <th>Created</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th class="rf-col-host">Host</th>
+              <th class="rf-col-compact">Location</th>
+              <th class="rf-col-compact">Reviews</th>
+              <th class="rf-col-compact">Badges</th>
+              <th class="rf-col-compact">Images</th>
+              <th class="rf-col-title">Title</th>
+              <th class="rf-col-compact">Ticket Price</th>
+              <th class="rf-col-compact">Sold</th>
+              <th class="rf-col-compact">Left</th>
+              <th class="rf-col-compact">Created</th>
+              <th class="rf-col-compact">Status</th>
+              <th class="rf-col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             <% if main_active.any? %>
               <% main_active.each do |raffle| %>
+                <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
+                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
-                  <td><%= raffle.host.username %></td>
-                  <td>
+                  <td class="rf-col-host"><%= raffle.host.username %></td>
+                  <td class="rf-col-compact">
+                    <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
+                      <%= stars.call(review_data[:avg]) %>
+                      (<%= review_data[:count] %>)
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-badges-cell">
+                      <% if host_admin_badge_for.call(raffle.host) %>
+                        <%= image_tag "badges/adminbadge.png", alt: "Admin", title: "Admin" %>
+                      <% else %>
+                        <span>-</span>
+                      <% end %>
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
                     <div class="rf-thumb-stack">
                       <% if raffle.photos.attached? %>
                         <% raffle.photos.first(4).each do |photo| %>
@@ -330,17 +770,28 @@ end
                       <% end %>
                     </div>
                   </td>
-                  <td><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
-                  <td><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
-                  <td><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
-                  <td><%= raffle.tickets_left %></td>
-                  <td><%= precise_time_ago.call(raffle.created_at) %></td>
-                  <td><span class="rf-badge rf-badge-active">Active</span></td>
-                  <td><%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %></td>
+                  <td class="rf-col-title"><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
+                  <td class="rf-col-compact"><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
+                  <td class="rf-col-compact"><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
+                  <td class="rf-col-compact"><%= raffle.tickets_left %></td>
+                  <td class="rf-col-compact"><%= precise_time_ago.call(raffle.created_at) %></td>
+                  <td class="rf-col-compact"><span class="rf-badge rf-badge-active">Active</span></td>
+                  <td class="rf-col-actions">
+                    <div class="rf-actions">
+                      <%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %>
+                      <% if can_delete_raffle %>
+                        <%= button_to "Delete",
+                              raffle_path(raffle),
+                              method: :delete,
+                              class: "btn btn-sm btn-outline-danger",
+                              form: { class: "d-inline mb-0 rf-delete-confirm-form", data: { turbo: "false" } } %>
+                      <% end %>
+                    </div>
+                  </td>
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="9" class="rf-empty-state">No active raffles.</td></tr>
+              <tr><td colspan="12" class="rf-empty-state">No active raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -348,6 +799,7 @@ end
     </section>
   </section>
 
+  <%# Active mini raffle table %>
   <section class="rf-section" data-rf-tab-panel="mini_raffles">
     <h2 class="rf-section-title">Mini Raffles</h2>
     <section class="rf-table-card">
@@ -355,24 +807,47 @@ end
         <table class="rf-table">
           <thead>
             <tr>
-              <th>Host</th>
-              <th>Images</th>
-              <th>Title</th>
-              <th>Main Raffle</th>
-              <th>Ticket Price</th>
-              <th>Sold</th>
-              <th>Left</th>
-              <th>Created</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th class="rf-col-host">Host</th>
+              <th class="rf-col-compact">Location</th>
+              <th class="rf-col-compact">Reviews</th>
+              <th class="rf-col-compact">Badges</th>
+              <th class="rf-col-compact">Images</th>
+              <th class="rf-col-title">Title</th>
+              <th class="rf-col-compact">Main Raffle</th>
+              <th class="rf-col-compact">Ticket Price</th>
+              <th class="rf-col-compact">Sold</th>
+              <th class="rf-col-compact">Left</th>
+              <th class="rf-col-compact">Created</th>
+              <th class="rf-col-compact">Status</th>
+              <th class="rf-col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             <% if mini_active.any? %>
               <% mini_active.each do |raffle| %>
+                <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
+                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
-                  <td><%= raffle.host.username %></td>
-                  <td>
+                  <td class="rf-col-host"><%= raffle.host.username %></td>
+                  <td class="rf-col-compact">
+                    <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
+                      <%= stars.call(review_data[:avg]) %>
+                      (<%= review_data[:count] %>)
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-badges-cell">
+                      <% if host_admin_badge_for.call(raffle.host) %>
+                        <%= image_tag "badges/adminbadge.png", alt: "Admin", title: "Admin" %>
+                      <% else %>
+                        <span>-</span>
+                      <% end %>
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
                     <div class="rf-thumb-stack">
                       <% if raffle.photos.attached? %>
                         <% raffle.photos.first(4).each do |photo| %>
@@ -383,18 +858,29 @@ end
                       <% end %>
                     </div>
                   </td>
-                  <td><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
-                  <td><%= raffle.main_raffle&.title.presence || "-" %></td>
-                  <td><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
-                  <td><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
-                  <td><%= raffle.tickets_left %></td>
-                  <td><%= precise_time_ago.call(raffle.created_at) %></td>
-                  <td><span class="rf-badge rf-badge-active">Active</span></td>
-                  <td><%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %></td>
+                  <td class="rf-col-title"><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
+                  <td class="rf-col-compact"><%= raffle.main_raffle&.title.presence || "-" %></td>
+                  <td class="rf-col-compact"><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
+                  <td class="rf-col-compact"><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
+                  <td class="rf-col-compact"><%= raffle.tickets_left %></td>
+                  <td class="rf-col-compact"><%= precise_time_ago.call(raffle.created_at) %></td>
+                  <td class="rf-col-compact"><span class="rf-badge rf-badge-active">Active</span></td>
+                  <td class="rf-col-actions">
+                    <div class="rf-actions">
+                      <%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %>
+                      <% if can_delete_raffle %>
+                        <%= button_to "Delete",
+                              raffle_path(raffle),
+                              method: :delete,
+                              class: "btn btn-sm btn-outline-danger",
+                              form: { class: "d-inline mb-0 rf-delete-confirm-form", data: { turbo: "false" } } %>
+                      <% end %>
+                    </div>
+                  </td>
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="10" class="rf-empty-state">No active mini raffles.</td></tr>
+              <tr><td colspan="13" class="rf-empty-state">No active mini raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -402,6 +888,7 @@ end
     </section>
   </section>
 
+  <%# Completed raffle table with masked winner details for entrants until reveal %>
   <section class="rf-section" data-rf-tab-panel="completed">
     <h2 class="rf-section-title">Completed</h2>
     <section class="rf-table-card">
@@ -409,50 +896,97 @@ end
         <table class="rf-table">
           <thead>
             <tr>
-              <th>Host</th>
-              <th>Type</th>
-              <th>Title</th>
-              <th>Winner</th>
-              <th>Winning Ticket</th>
-              <th>Created</th>
-              <th>Completed</th>
-              <th>Actions</th>
+              <th class="rf-col-host">Host</th>
+              <th class="rf-col-compact">Location</th>
+              <th class="rf-col-compact">Reviews</th>
+              <th class="rf-col-compact">Badges</th>
+              <th class="rf-col-compact">Type</th>
+              <th class="rf-col-title">Title</th>
+              <th class="rf-col-compact">Winner</th>
+              <th class="rf-col-compact">Winning Ticket</th>
+              <th class="rf-col-compact">Created</th>
+              <th class="rf-col-compact">Completed</th>
+              <th class="rf-col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             <% if completed.any? %>
               <% completed.each do |raffle| %>
                 <%
+                  # Entrants must reveal the completed raffle result manually
                   entrant_can_hide =
                     current_user.present? &&
                     raffle.raffle_tickets.any? { |ticket| ticket.user_id.to_i == current_user.id.to_i }
 
-                  reveal_storage_key = "raffle_quick_reveal_#{raffle.id}_user_#{current_user_id_for_reveal}"
+                  # Checks whether the current viewer is the winner so the host account link only appears after reveal
+                  viewer_won_this_raffle =
+                    current_user.present? &&
+                    raffle.winner_user_id.to_i == current_user.id.to_i &&
+                    raffle.host_id.to_i != current_user.id.to_i
+
+                  # Stores reveal state per raffle and per user in localStorage
+                  reveal_storage_key = "raffle_revealed_#{raffle.id}_user_#{current_user_id_for_reveal}"
+                  can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles)
+                  review_data = review_data_for.call(raffle.host)
                 %>
-                <tr data-raffle-row-id="<%= raffle.id %>" data-reveal-key="<%= reveal_storage_key %>" data-entrant-hide="<%= entrant_can_hide ? '1' : '0' %>">
-                  <td><%= raffle.host.username %></td>
-                  <td><%= raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %></td>
-                  <td><%= raffle.title %></td>
-                  <td>
+                <tr data-raffle-row-id="<%= raffle.id %>" data-reveal-key="<%= reveal_storage_key %>" data-entrant-hide="<%= entrant_can_hide ? '1' : '0' %>" data-viewer-winner="<%= viewer_won_this_raffle ? '1' : '0' %>">
+                  <td class="rf-col-host">
+                    <% if viewer_won_this_raffle %>
+                      <span class="rf-host-plain"><%= raffle.host.username %></span>
+                      <%= link_to raffle.host.username, user_path(raffle.host_id), class: "rf-host-link text-decoration-none", style: "display:none;" %>
+                    <% else %>
+                      <%= raffle.host.username %>
+                    <% end %>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
+                      <%= stars.call(review_data[:avg]) %>
+                      (<%= review_data[:count] %>)
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-badges-cell">
+                      <% if host_admin_badge_for.call(raffle.host) %>
+                        <%= image_tag "badges/adminbadge.png", alt: "Admin", title: "Admin" %>
+                      <% else %>
+                        <span>-</span>
+                      <% end %>
+                    </span>
+                  </td>
+                  <td class="rf-col-compact"><%= raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %></td>
+                  <td class="rf-col-title"><%= raffle.title %></td>
+                  <td class="rf-col-compact">
                     <span class="rf-winner-hidden"><span class="rf-blackout">Hidden</span></span>
                     <span class="rf-winner-shown" style="display:none;"><%= raffle.winner_name.presence || "-" %></span>
                   </td>
-                  <td>
+                  <td class="rf-col-compact">
                     <span class="rf-ticket-hidden"><span class="rf-blackout">Hidden</span></span>
                     <span class="rf-ticket-shown" style="display:none;">#<%= raffle.winner_number %></span>
                   </td>
-                  <td><%= precise_time_ago.call(raffle.created_at) %></td>
-                  <td><%= raffle.completed_at.present? ? precise_time_ago.call(raffle.completed_at) : "-" %></td>
-                  <td class="d-flex gap-2 justify-content-center flex-wrap">
-                    <%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %>
-                    <% if entrant_can_hide %>
-                      <button type="button" class="btn btn-sm btn-primary rf-reveal-index-btn" data-raffle-id="<%= raffle.id %>">Reveal</button>
-                    <% end %>
+                  <td class="rf-col-compact"><%= precise_time_ago.call(raffle.created_at) %></td>
+                  <td class="rf-col-compact"><%= raffle.completed_at.present? ? precise_time_ago.call(raffle.completed_at) : "-" %></td>
+                  <td class="rf-col-actions">
+                    <div class="rf-actions">
+                      <%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %>
+                      <% if entrant_can_hide %>
+                        <button type="button" class="btn btn-sm btn-primary rf-reveal-index-btn" data-raffle-id="<%= raffle.id %>">Reveal</button>
+                      <% end %>
+                      <% if can_delete_raffle %>
+                        <%= button_to "Delete",
+                              raffle_path(raffle),
+                              method: :delete,
+                              class: "btn btn-sm btn-outline-danger",
+                              form: { class: "d-inline mb-0 rf-delete-confirm-form", data: { turbo: "false" } } %>
+                      <% end %>
+                    </div>
                   </td>
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="8" class="rf-empty-state">No completed raffles.</td></tr>
+              <tr><td colspan="11" class="rf-empty-state">No completed raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -460,6 +994,7 @@ end
     </section>
   </section>
 
+  <%# Incompleted raffle table %>
   <section class="rf-section" data-rf-tab-panel="incompleted">
     <h2 class="rf-section-title">Incompleted</h2>
     <section class="rf-table-card">
@@ -467,32 +1002,66 @@ end
         <table class="rf-table">
           <thead>
             <tr>
-              <th>Host</th>
-              <th>Type</th>
-              <th>Title</th>
-              <th>Sold</th>
-              <th>Left</th>
-              <th>Created</th>
-              <th>Ended</th>
-              <th>Actions</th>
+              <th class="rf-col-host">Host</th>
+              <th class="rf-col-compact">Location</th>
+              <th class="rf-col-compact">Reviews</th>
+              <th class="rf-col-compact">Badges</th>
+              <th class="rf-col-compact">Type</th>
+              <th class="rf-col-title">Title</th>
+              <th class="rf-col-compact">Sold</th>
+              <th class="rf-col-compact">Left</th>
+              <th class="rf-col-compact">Created</th>
+              <th class="rf-col-compact">Ended</th>
+              <th class="rf-col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             <% if incompleted.any? %>
               <% incompleted.each do |raffle| %>
+                <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
+                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
-                  <td><%= raffle.host.username %></td>
-                  <td><%= raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %></td>
-                  <td><%= raffle.title %></td>
-                  <td><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
-                  <td><%= raffle.tickets_left %></td>
-                  <td><%= precise_time_ago.call(raffle.created_at) %></td>
-                  <td><%= raffle.ended_at.present? ? precise_time_ago.call(raffle.ended_at) : "-" %></td>
-                  <td><%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %></td>
+                  <td class="rf-col-host"><%= raffle.host.username %></td>
+                  <td class="rf-col-compact">
+                    <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
+                      <%= stars.call(review_data[:avg]) %>
+                      (<%= review_data[:count] %>)
+                    </span>
+                  </td>
+                  <td class="rf-col-compact">
+                    <span class="rf-badges-cell">
+                      <% if host_admin_badge_for.call(raffle.host) %>
+                        <%= image_tag "badges/adminbadge.png", alt: "Admin", title: "Admin" %>
+                      <% else %>
+                        <span>-</span>
+                      <% end %>
+                    </span>
+                  </td>
+                  <td class="rf-col-compact"><%= raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %></td>
+                  <td class="rf-col-title"><%= raffle.title %></td>
+                  <td class="rf-col-compact"><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
+                  <td class="rf-col-compact"><%= raffle.tickets_left %></td>
+                  <td class="rf-col-compact"><%= precise_time_ago.call(raffle.created_at) %></td>
+                  <td class="rf-col-compact"><%= raffle.ended_at.present? ? precise_time_ago.call(raffle.ended_at) : "-" %></td>
+                  <td class="rf-col-actions">
+                    <div class="rf-actions">
+                      <%= link_to "View", raffle_path(raffle), class: "btn btn-sm btn-outline-primary" %>
+                      <% if can_delete_raffle %>
+                        <%= button_to "Delete",
+                              raffle_path(raffle),
+                              method: :delete,
+                              class: "btn btn-sm btn-outline-danger",
+                              form: { class: "d-inline mb-0 rf-delete-confirm-form", data: { turbo: "false" } } %>
+                      <% end %>
+                    </div>
+                  </td>
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="8" class="rf-empty-state">No incompleted raffles.</td></tr>
+              <tr><td colspan="11" class="rf-empty-state">No incompleted raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -500,8 +1069,21 @@ end
     </section>
   </section>
 
+  <%# Custom confirmation pop-up used before deleting raffles %>
+  <div class="rf-delete-confirm-overlay" id="raffleDeleteConfirmOverlay" aria-hidden="true">
+    <div class="rf-delete-confirm-box">
+      <div class="rf-delete-confirm-text">Are you sure you want to delete this raffle?</div>
+      <div class="rf-delete-confirm-actions">
+        <button type="button" class="rf-delete-confirm-yes" id="raffleDeleteConfirmYes">Yes</button>
+        <button type="button" class="rf-delete-confirm-no" id="raffleDeleteConfirmNo">No</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function () {
+      let pendingRaffleDeleteForm = null
+
       function initRaffleTabs() {
         const buttons = Array.from(document.querySelectorAll("[data-rf-tab-target]"));
         const panels = Array.from(document.querySelectorAll("[data-rf-tab-panel]"));
@@ -513,11 +1095,15 @@ end
 
           button.addEventListener("click", function () {
             const target = button.getAttribute("data-rf-tab-target");
+
             buttons.forEach(function (btn) {
               btn.classList.remove("active", "pv-tab-locked");
               btn.setAttribute("aria-pressed", "false");
             });
-            panels.forEach(function (panel) { panel.classList.remove("active"); });
+
+            panels.forEach(function (panel) {
+              panel.classList.remove("active");
+            });
 
             button.classList.add("active", "pv-tab-locked");
             button.setAttribute("aria-pressed", "true");
@@ -538,6 +1124,8 @@ end
         const ticketHidden = row.querySelector(".rf-ticket-hidden");
         const ticketShown = row.querySelector(".rf-ticket-shown");
         const revealButton = row.querySelector(".rf-reveal-index-btn");
+        const hostPlain = row.querySelector(".rf-host-plain");
+        const hostLink = row.querySelector(".rf-host-link");
 
         if (!entrantHide) {
           if (winnerHidden) winnerHidden.style.display = "none";
@@ -545,6 +1133,8 @@ end
           if (ticketHidden) ticketHidden.style.display = "none";
           if (ticketShown) ticketShown.style.display = "";
           if (revealButton) revealButton.style.display = "none";
+          if (hostPlain) hostPlain.style.display = "";
+          if (hostLink) hostLink.style.display = "none";
           return;
         }
 
@@ -554,12 +1144,16 @@ end
           if (ticketHidden) ticketHidden.style.display = "none";
           if (ticketShown) ticketShown.style.display = "";
           if (revealButton) revealButton.style.display = "none";
+          if (hostPlain) hostPlain.style.display = "none";
+          if (hostLink) hostLink.style.display = "";
         } else {
           if (winnerHidden) winnerHidden.style.display = "";
           if (winnerShown) winnerShown.style.display = "none";
           if (ticketHidden) ticketHidden.style.display = "";
           if (ticketShown) ticketShown.style.display = "none";
           if (revealButton) revealButton.style.display = "";
+          if (hostPlain) hostPlain.style.display = "";
+          if (hostLink) hostLink.style.display = "none";
         }
       }
 
@@ -588,10 +1182,72 @@ end
         });
       }
 
+      function closeRaffleDeleteConfirm() {
+        pendingRaffleDeleteForm = null
+
+        const overlay = document.getElementById("raffleDeleteConfirmOverlay")
+        if (!overlay) return
+
+        overlay.style.display = "none"
+        overlay.setAttribute("aria-hidden", "true")
+      }
+
+      function initRaffleDeleteConfirm() {
+        const overlay = document.getElementById("raffleDeleteConfirmOverlay")
+        const yesButton = document.getElementById("raffleDeleteConfirmYes")
+        const noButton = document.getElementById("raffleDeleteConfirmNo")
+
+        if (!overlay || !yesButton || !noButton) return
+        if (overlay.dataset.bound === "1") return
+
+        overlay.dataset.bound = "1"
+
+        document.addEventListener("submit", function (event) {
+          const form = event.target.closest(".rf-delete-confirm-form")
+          if (!form) return
+          if (form.dataset.confirmedDelete === "1") return
+
+          event.preventDefault()
+
+          pendingRaffleDeleteForm = form
+          overlay.style.display = "flex"
+          overlay.setAttribute("aria-hidden", "false")
+        })
+
+        noButton.addEventListener("click", function () {
+          closeRaffleDeleteConfirm()
+        })
+
+        yesButton.addEventListener("click", function () {
+          if (!pendingRaffleDeleteForm) return
+
+          const form = pendingRaffleDeleteForm
+          pendingRaffleDeleteForm = null
+
+          overlay.style.display = "none"
+          overlay.setAttribute("aria-hidden", "true")
+          form.dataset.confirmedDelete = "1"
+
+          if (form.requestSubmit) {
+            form.requestSubmit()
+          } else {
+            form.submit()
+          }
+        })
+
+        overlay.addEventListener("click", function (event) {
+          if (event.target !== overlay) return
+
+          closeRaffleDeleteConfirm()
+        })
+      }
+
       document.addEventListener("DOMContentLoaded", initRaffleTabs);
       document.addEventListener("turbo:load", initRaffleTabs);
       document.addEventListener("DOMContentLoaded", initCompletedRevealState);
       document.addEventListener("turbo:load", initCompletedRevealState);
+      document.addEventListener("DOMContentLoaded", initRaffleDeleteConfirm);
+      document.addEventListener("turbo:load", initRaffleDeleteConfirm);
     })();
   </script>
 </div>

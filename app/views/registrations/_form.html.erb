@@ -1,18 +1,19 @@
-<%= form_with url: register_path, method: :post, local: true do %>
+<%= form_with url: register_path, method: :post, local: true, class: "register-form-card", html: { novalidate: true } do %>
+  <%# Username field with length and character restrictions for safer account creation %>
   <div class="mb-3">
     <label class="form-label">Username</label>
     <%= text_field_tag :username,
       params[:username],
       class: "form-control",
-      required: true,
-      minlength: 5,
-      maxlength: 15,
-      autocomplete: "username" %>
+      autocomplete: "username",
+      autocapitalize: "none",
+      spellcheck: false %>
     <div class="form-text">
-      Username must be between 5 and 15 characters long.
+      Username must be 5-15 characters. Do not use your real name. Use letters, numbers, dots, underscores or dashes only.
     </div>
   </div>
 
+  <%# Country selector uses the original dropdown while allowing typing to jump/search through countries %>
   <div class="mb-3">
     <label class="form-label">Country</label>
     <%= select_tag :country_code,
@@ -22,59 +23,128 @@
       ),
       include_blank: "Select country",
       class: "form-select",
-      required: true,
       id: "country-select" %>
+    <div class="form-text">
+      Click the dropdown and type the country name to jump to it. Your country may be shown on your profile, listings, auctions and raffles to help users understand seller location.
+    </div>
   </div>
 
+  <%# Revolut Tag field is stored on the account and reused later during marketplace, auction and raffle payment flows %>
   <div class="mb-3">
     <label class="form-label">Revolut Tag</label>
     <%= text_field_tag :revolut_tag,
       params[:revolut_tag],
       class: "form-control",
-      required: true,
-      minlength: 4,
-      maxlength: 31,
       placeholder: "@yourtag",
       autocomplete: "off",
       autocapitalize: "none",
-      spellcheck: false,
-      pattern: '@?[A-Za-z0-9._-]{3,30}',
-      title: "Enter your Revolut Tag, for example @dola123." %>
+      spellcheck: false %>
     <div class="form-text">
-      Your Revolut Tag is encrypted and only used when payment verification is needed.
+      Your Revolut tag is encrypted in storage, but it may be automatically shown later to buyers, winning bidders or raffle ticket buyers when payment is required.
     </div>
   </div>
 
+  <%# Password field requires a stronger password before the form can submit %>
   <div class="mb-3">
     <label class="form-label">Password</label>
     <%= password_field_tag :password,
       nil,
       class: "form-control",
-      required: true,
-      autocomplete: "new-password",
-      minlength: 12,
-      maxlength: 20,
-      pattern: '(?=.*\d)(?=.*[^A-Za-z0-9]).{12,20}',
-      title: "Password must be 12–20 characters long and include at least one digit and one symbol." %>
+      autocomplete: "new-password" %>
     <div class="form-text">
-      Password must be 12–20 characters long and include at least one number (0–9)
-      and at least one symbol (for example: ! ? @ # € &).
+      Password must be 12-20 characters and include uppercase, lowercase, number and symbol. Do not use your real name or username.
     </div>
   </div>
 
+  <%# Confirmation field helps prevent the user entering the wrong password by mistake %>
   <div class="mb-3">
     <label class="form-label">Confirm Password</label>
     <%= password_field_tag :password_confirmation,
       nil,
       class: "form-control",
-      required: true,
-      autocomplete: "new-password",
-      minlength: 12,
-      maxlength: 20 %>
+      autocomplete: "new-password" %>
+  </div>
+
+  <%# Required account safety checkbox confirms the user has been warned not to use real names or personal details %>
+  <div class="form-check register-check mb-3">
+    <%= check_box_tag :account_safety_accepted,
+      "1",
+      params[:account_safety_accepted] == "1",
+      class: "form-check-input",
+      id: "account-safety-accepted" %>
+    <label class="form-check-label" for="account-safety-accepted">
+      I understand that I should not use my real name in my username or password, and I should avoid adding personal details that are not required.
+    </label>
+  </div>
+
+  <%# Required Revolut visibility checkbox confirms the user understands their Revolut tag can be shown during payment flows %>
+  <div class="form-check register-check mb-3">
+    <%= check_box_tag :revolut_tag_visibility_accepted,
+      "1",
+      params[:revolut_tag_visibility_accepted] == "1",
+      class: "form-check-input",
+      id: "revolut-tag-visibility-accepted" %>
+    <label class="form-check-label" for="revolut-tag-visibility-accepted">
+      I understand that my registered Revolut tag may be automatically shown to buyers, winning bidders or raffle ticket buyers when payment is required.
+    </label>
+  </div>
+
+  <%# Required platform terms checkbox confirms the user accepts the visible safety, privacy and payment notices %>
+  <div class="form-check register-check mb-4">
+    <%= check_box_tag :platform_terms_accepted,
+      "1",
+      params[:platform_terms_accepted] == "1",
+      class: "form-check-input",
+      id: "platform-terms-accepted" %>
+    <label class="form-check-label" for="platform-terms-accepted">
+      I have read and agree to the account safety notice, payment visibility notice, security notice and platform terms shown on this page.
+    </label>
+  </div>
+
+  <%# Terms summary gives the user clear information before creating the account %>
+  <div class="register-terms-box mb-3">
+    <h2>Platform Terms Summary</h2>
+    <p>
+      PokeValue is a portfolio tracking, community and marketplace-style application. Users are responsible for the information they choose to provide.
+    </p>
+    <p>
+      Public or semi-public areas may display usernames, country, badges, reviews, listings, auctions, raffles, posts, comments, reactions and payment-related details where needed.
+    </p>
+    <p>
+      Users should not enter real names, private contact details, home addresses or sensitive personal information into usernames, passwords, posts, comments, listings, auctions, raffles or public profile areas.
+    </p>
+    <p class="mb-0">
+      PokeValue may use your registered Revolut tag during payment-related flows connected to marketplace listings, accepted offers, auctions and raffles.
+    </p>
+  </div>
+
+  <%# Revolut visibility notice sits directly under the Platform Terms Summary inside the register popup window %>
+  <div class="register-notice register-payment-notice mb-3">
+    <strong>Revolut Tag Visibility Notice</strong>
+    <p>
+      Your Revolut tag is collected during registration because it is used later for marketplace, auction and raffle payment flows.
+    </p>
+    <p>
+      When you create a listing, host an auction or host a raffle, the system may automatically display your registered Revolut tag to the buyer, winning bidder or raffle ticket buyer when payment is required.
+    </p>
+    <p class="mb-0">
+      Only register with a Revolut tag that you are comfortable being shown to other users during payment-related actions.
+    </p>
+  </div>
+
+  <%# Security notice sits under the Platform Terms Summary and Revolut visibility notice inside the register popup window %>
+  <div class="register-notice register-security-notice mb-4">
+    <strong>Security Notice</strong>
+    <p>
+      PokeValue uses password hashing, session management, admin MFA, account lockout rules and encrypted Revolut tag storage to reduce account and payment-detail risk.
+    </p>
+    <p class="mb-0">
+      No web application can guarantee complete protection from every possible security issue. Users should use a strong, unique password and avoid entering personal information that is not required.
+    </p>
   </div>
 
   <div class="d-grid">
-    <%= submit_tag "Register", class: "btn btn-success" %>
+    <%= submit_tag "Register", class: "btn btn-success btn-lg" %>
   </div>
 <% end %>
 
@@ -83,43 +153,109 @@
     const select = document.getElementById("country-select");
     if (!select) return;
 
-    const allOptions = Array.from(select.options);
-    const countryOptions = allOptions.filter(o => o.value !== "");
+    const options = Array.from(select.options).filter(option => option.value !== "");
 
     let typed = "";
-    let timer = null;
+    let clearTimer = null;
 
-    select.addEventListener("keydown", (e) => {
-      const key = e.key;
+    // Keeps the original select dropdown and lets typing search the visible country list
+    select.addEventListener("keydown", (event) => {
+      const key = event.key;
 
       if (key === "Backspace") {
         typed = typed.slice(0, -1);
-      } else if (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        typed += key.toLowerCase();
       } else if (key === "Escape") {
         typed = "";
-        countryOptions.forEach(o => { o.hidden = false; });
         return;
+      } else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        typed += key.toLowerCase();
       } else {
         return;
       }
 
-      clearTimeout(timer);
-      timer = setTimeout(() => {
+      clearTimeout(clearTimer);
+
+      clearTimer = setTimeout(() => {
         typed = "";
-        countryOptions.forEach(o => { o.hidden = false; });
-      }, 800);
+      }, 1000);
 
-      countryOptions.forEach(o => { o.hidden = false; });
+      const cleanCountryText = (text) => {
+        return text
+          .toLowerCase()
+          .replace(/^[^\p{L}\p{N}]+/u, "")
+          .trim();
+      };
 
-      if (typed.length === 0) return;
-
-      countryOptions.forEach(o => {
-        const text = o.text.toLowerCase();
-        if (!text.includes(typed)) {
-          o.hidden = true;
-        }
+      const startsWithMatch = options.find(option => {
+        return cleanCountryText(option.text).startsWith(typed);
       });
+
+      const containsMatch = options.find(option => {
+        return cleanCountryText(option.text).includes(typed);
+      });
+
+      const match = startsWithMatch || containsMatch;
+
+      if (match) {
+        select.value = match.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+  });
+
+  document.addEventListener("turbo:load", () => {
+    const select = document.getElementById("country-select");
+    if (!select || select.dataset.typingSearchReady === "true") return;
+
+    select.dataset.typingSearchReady = "true";
+
+    const options = Array.from(select.options).filter(option => option.value !== "");
+
+    let typed = "";
+    let clearTimer = null;
+
+    // Keeps the original select dropdown and lets typing search the visible country list after Turbo navigation
+    select.addEventListener("keydown", (event) => {
+      const key = event.key;
+
+      if (key === "Backspace") {
+        typed = typed.slice(0, -1);
+      } else if (key === "Escape") {
+        typed = "";
+        return;
+      } else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        typed += key.toLowerCase();
+      } else {
+        return;
+      }
+
+      clearTimeout(clearTimer);
+
+      clearTimer = setTimeout(() => {
+        typed = "";
+      }, 1000);
+
+      const cleanCountryText = (text) => {
+        return text
+          .toLowerCase()
+          .replace(/^[^\p{L}\p{N}]+/u, "")
+          .trim();
+      };
+
+      const startsWithMatch = options.find(option => {
+        return cleanCountryText(option.text).startsWith(typed);
+      });
+
+      const containsMatch = options.find(option => {
+        return cleanCountryText(option.text).includes(typed);
+      });
+
+      const match = startsWithMatch || containsMatch;
+
+      if (match) {
+        select.value = match.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
   });
 </script>

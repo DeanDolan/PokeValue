@@ -1,4 +1,59 @@
-<div class="container py-4">
-  <h1 class="mb-3">Register</h1>
-  <%= render "registrations/form" %>
+<%# Registration page wrapper with privacy, payment visibility and account safety messaging %>
+<div class="container py-4 register-page">
+  <div class="register-hero mb-4">
+    <div>
+      <p class="register-eyebrow mb-1">Create your PokeValue account</p>
+      <h1 class="mb-2">Register</h1>
+      <p class="register-hero-text mb-0">
+        Create a private account for tracking your portfolio, joining the marketplace, hosting auctions and joining raffles.
+      </p>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <%= render "registrations/form" %>
+    </div>
+
+    <div class="col-lg-5">
+      <%# Safety notice explaining what users should avoid putting into their account details %>
+      <div class="register-info-card mb-3">
+        <h2>Account Safety Notice</h2>
+        <p>
+          Do not use your real name as your username or password. Choose a username that does not personally identify you.
+        </p>
+        <p>
+          Your password should be unique to PokeValue and should not be reused from another website or application.
+        </p>
+        <p class="mb-0">
+          PokeValue will never ask you to enter your real name during registration.
+        </p>
+      </div>
+
+      <%# Payment visibility notice explaining how the Revolut tag is reused later by the platform %>
+      <div class="register-info-card register-warning-card mb-3">
+        <h2>Revolut Tag Visibility Notice</h2>
+        <p>
+          Your Revolut tag is collected during registration because it is used later for marketplace, auction and raffle payment flows.
+        </p>
+        <p>
+          When you create a listing, host an auction or host a raffle, the system may automatically display your registered Revolut tag to the buyer, winning bidder or raffle ticket buyer when payment is required.
+        </p>
+        <p class="mb-0">
+          Only register with a Revolut tag that you are comfortable being shown to other users during payment-related actions.
+        </p>
+      </div>
+
+      <%# Security notice avoids promising perfect protection while explaining the measures used by the app %>
+      <div class="register-info-card">
+        <h2>Security Notice</h2>
+        <p>
+          PokeValue uses password hashing, session management, admin MFA, account lockout rules and encrypted Revolut tag storage to reduce account and payment-detail risk.
+        </p>
+        <p class="mb-0">
+          No web application can guarantee complete protection from every possible security issue. Users should avoid entering personal information that is not required.
+        </p>
+      </div>
+    </div>
+  </div>
 </div>

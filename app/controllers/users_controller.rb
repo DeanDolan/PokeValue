@@ -1,12 +1,15 @@
 class UsersController < ApplicationController
+  # Shows another user's public account page by reusing the account view template
   def show
     @user = User.find_by(id: params[:id])
     return redirect_to(root_path, alert: "User not found.") unless @user
 
+    # Forces the account page into public-profile mode instead of self-account mode
     @is_self = false
     @tab = "current"
     @watchlist_items = []
 
+    # Loads only active marketplace listings for the selected user
     @current_listings =
       if defined?(MarketplaceListing)
         scope =

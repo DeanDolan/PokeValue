@@ -1,4 +1,5 @@
-<% 
+<%
+  # Splits the community channel buttons into two rows so the layout stays neat
   second_row_channel_values = %w[card_shows content_creators app_suggestions application_problems]
   selected_channel_value = @selected_channel.presence || "general"
   first_row_channels = @community_channels.reject { |_, value| second_row_channel_values.include?(value) }
@@ -78,6 +79,7 @@
     <p class="community-subtitle">Post in channels, share images, react, and comment on posts (without spamming).</p>
   </div>
 
+  <%# Channel navigation keeps the selected channel highlighted %>
   <div class="community-channel-groups">
     <div class="community-channels-top">
       <% first_row_channels.each do |label, value| %>
@@ -92,6 +94,7 @@
     </div>
   </div>
 
+  <%# Post creation card shown only to logged-in users %>
   <section class="community-card community-create-card">
     <% if current_user %>
       <%= form_with model: @community_post, url: community_posts_path, local: true do |f| %>
@@ -121,6 +124,7 @@
 
             <div class="community-hint">You can keep selecting more images and they will be added. Up to 10 images. Max 2000 characters.</div>
 
+            <%# Client-side image preview area for selected post images %>
             <div id="community-selected-files" class="community-selected-files">
               <div class="community-selected-files-top">
                 <div id="community-selected-files-title" class="community-selected-files-title"></div>
@@ -136,6 +140,7 @@
         </div>
       <% end %>
     <% else %>
+      <%# Logged-out users are prompted to open the login/register modal %>
       <div class="community-login-prompt">
         <div class="community-login-copy">
           <h2>Join the conversation</h2>
@@ -148,6 +153,7 @@
     <% end %>
   </section>
 
+  <%# Main community feed for the selected channel %>
   <section class="community-feed">
     <% if @community_posts.any? %>
       <%= render partial: "community_posts/post", collection: @community_posts, as: :post, locals: { selected_channel: selected_channel_value } %>
@@ -159,6 +165,7 @@
   </section>
 </div>
 
+<%# Full-screen image viewer used when users click post images %>
 <div class="modal fade" id="communityImageViewerModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-fullscreen-sm-down modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content bg-dark text-white border-0">
@@ -186,10 +193,12 @@
 
 <script>
   (function(){
+    // Creates a stable key so the same selected file is not added twice
     function keyForFile(file){
       return [file.name, file.size, file.lastModified].join("__");
     }
 
+    // Escapes dynamic text before inserting it into HTML strings
     function escapeHtml(value){
       return String(value || "")
         .replace(/&/g, "&amp;")
@@ -199,6 +208,7 @@
         .replace(/'/g, "&#039;");
     }
 
+    // Converts a two-letter country code into a flag emoji
     function flagEmoji(countryCode){
       const code = (countryCode || "").toUpperCase();
       if(!/^[A-Z]{2}$/.test(code)) return "";
@@ -207,11 +217,13 @@
       });
     }
 
+    // Builds the badge HTML used inside the reaction modal rows
     function badgeHtml(badge){
       const klass = badge === "Admin" ? "community-badge community-badge-admin" : "community-badge community-badge-default";
       return '<span class="' + klass + '">' + escapeHtml(badge) + '</span>';
     }
 
+    // Builds one person row for a post or comment reaction modal
     function reactorRowHtml(reactor, emoji, label){
       const badges = (reactor.badges || []).map(badgeHtml).join("");
       const flag = flagEmoji(reactor.country_code);
@@ -229,6 +241,7 @@
         '</div>';
     }
 
+    // Handles image selection, previews, duplicate prevention, and clearing selected files
     function initCommunityCreateForm(){
       const input = document.getElementById("community-post-images-input");
       const status = document.getElementById("community-post-images-status");
@@ -321,6 +334,7 @@
       render();
     }
 
+    // Allows users to filter reaction modals by reaction type
     function initReactionModals(){
       document.addEventListener("click", function(event){
         const filterButton = event.target.closest(".community-reactions-filter");
@@ -351,6 +365,7 @@
       }, { passive: true });
     }
 
+    // Reveals hidden comments in batches when a More Comments button is used
     function initViewMoreComments(){
       if(document.body.dataset.communityViewMoreReady === "true") return;
       document.body.dataset.communityViewMoreReady = "true";
@@ -375,6 +390,7 @@
       });
     }
 
+    // Updates all visible reaction counts and modal content after a post reaction is submitted by AJAX
     function updatePostReactionUi(postId, counts, totalReactions, currentReaction, reactors){
       document.querySelectorAll('.community-post-react-form[data-community-post-id="' + postId + '"]').forEach(function(form){
         const button = form.querySelector("[data-post-reaction-kind]");
@@ -443,6 +459,7 @@
       }
     }
 
+    // Updates all visible reaction counts and modal content after a comment reaction is submitted by AJAX
     function updateCommentReactionUi(commentId, counts, totalReactions, currentReaction, reactors){
       document.querySelectorAll('.community-comment-react-form[data-community-comment-id="' + commentId + '"]').forEach(function(form){
         const button = form.querySelector("[data-comment-reaction-kind]");
@@ -493,6 +510,7 @@
       }
     }
 
+    // Sends reaction forms with fetch so the page does not need a full reload
     function submitReactionForm(form, onSuccess){
       const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
       const submitButton = form.querySelector("button[type='submit']");
@@ -517,6 +535,7 @@
       });
     }
 
+    // Intercepts post and comment reaction forms and updates the UI from JSON responses
     function initAjaxReactionForms(){
       if(document.body.dataset.communityAjaxReactionReady === "true") return;
       document.body.dataset.communityAjaxReactionReady = "true";
@@ -541,6 +560,7 @@
       });
     }
 
+    // Sets up the image viewer modal with zoom, drag, touch pinch, and next/previous controls
     function initImageViewer(){
       const modalEl = document.getElementById("communityImageViewerModal");
       const stage = document.getElementById("community-image-viewer-stage");
@@ -717,6 +737,7 @@
       });
     }
 
+    // Runs all community page JavaScript after the normal page load or Turbo navigation
     function initCommunityPage(){
       initCommunityCreateForm();
       initReactionModals();
