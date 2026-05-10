@@ -2,33 +2,95 @@ class PagesController < ApplicationController
   require "json"
   require "date"
 
-  # Maps product type codes from sets.json into readable names for the views.
   PRODUCT_TYPE_NAMES = {
-    "etb"                      => "Elite Trainer Box",
-    "pc_etb"                   => "Pokemon Center Elite Trainer Box",
-    "booster_box"              => "Booster Box",
-    "half_booster_box"         => "Half Booster Box",
-    "booster_pack"             => "Booster Pack",
-    "booster_bundle"           => "Booster Bundle",
-    "booster_bundle_display"   => "Booster Bundle Display",
-    "enhanced_booster_box"     => "Enhanced Booster Box",
+    "etb" => "Elite Trainer Box",
+    "pc_etb" => "Pokemon Center Elite Trainer Box",
+    "booster_box" => "Booster Box",
+    "half_booster_box" => "Half Booster Box",
+    "booster_pack" => "Booster Pack",
+    "booster_bundle" => "Booster Bundle",
+    "booster_bundle_display" => "Booster Bundle Display",
+    "enhanced_booster_box" => "Enhanced Booster Box",
     "ultra_premium_collection" => "Ultra Premium Collection",
-    "upc"                      => "Ultra Premium Collection",
-    "spc"                      => "Super Premium Collection",
-    "collection_box"           => "Collection Box",
-    "tin"                      => "Tin",
-    "mini_tin"                 => "Mini Tin",
-    "mini_tin_display"         => "Mini Tin Display",
-    "blister_pack"             => "Blister Pack",
-    "blister_pack_display"     => "Blister Pack Display"
-  }
+    "upc" => "Ultra Premium Collection",
+    "spc" => "Super Premium Collection",
+    "collection_box" => "Collection Box",
+    "tin" => "Tin",
+    "mini_tin" => "Mini Tin",
+    "mini_tin_display" => "Mini Tin Display",
+    "blister_pack" => "Blister Pack",
+    "blister_pack_display" => "Blister Pack Display"
+  }.freeze
 
-  def home; end
-  def marketplace; end
-  def auction; end
-  def raffle; end
+  ERAS = [
+    "Mega Evolution",
+    "Scarlet & Violet",
+    "Sword & Shield"
+  ].freeze
 
-  # Loads community posts for the selected channel.
+  PRODUCT_SLUG_TYPES = [
+    "collection_box",
+    "tin",
+    "mini_tin",
+    "mini_tin_display",
+    "booster_pack",
+    "blister_pack",
+    "blister_pack_display",
+    "half_booster_box"
+  ].freeze
+
+  CONDITION_OPTIONS = [
+    "Mint Sealed",
+    "Loosely Sealed",
+    "Mini Tear/Hole (<2cm)",
+    "Unsealed",
+    "Small Tear (>2cm)",
+    "Big Tear (>1 inch)",
+    "Small Imperfections",
+    "Big Imperfections",
+    "Pressure Marks",
+    "Slightly Dented",
+    "Heavy Dented",
+    "Damaged",
+    "Box Only",
+    "Contents Only"
+  ].freeze
+
+  OUT_OF_PRINT_NOW = [
+    "scarlet & violet base",
+    "paldea evolved",
+    "obsidian flames",
+    "151",
+    "paradox rift",
+    "paldean fates"
+  ].freeze
+
+  OUT_OF_PRINT_BY_DATE = {
+    Date.new(2027, 4, 30) => [
+      "temporal forces",
+      "twilight masquerade",
+      "shrouded fable",
+      "stellar crown",
+      "surging sparks",
+      "prismatic evolutions"
+    ],
+    Date.new(2028, 4, 30) => [
+      "journey together",
+      "destined rivals",
+      "black bolt",
+      "white flare",
+      "mega evolution base",
+      "phantasmal flames",
+      "ascended heroes"
+    ],
+    Date.new(2029, 4, 30) => [
+      "perfect order"
+    ]
+  }.freeze
+
+  def auction
+  end
+
   def community
     @community_channels = CommunityPost::CHANNELS.map { |channel| [ CommunityPost.channel_label(channel), channel ] }
     requested_channel = params[:channel].to_s
@@ -37,461 +99,98 @@ class PagesController < ApplicationController
     @community_posts = CommunityPost.includes(:user, :community_reactions, { community_comments: :user }, { images_attachments: :blob }).where(channel: @selected_channel).order(created_at: :desc)
   end
 
-  # Redirects the old showcase route to the community page.
-  def showcase
-    redirect_to community_path
-  end
-
-  # Loads the full set list and prepares set images for the sets page.
   def sets
-    data        = load_sets_data
-    images_sets = Rails.root.join("app", "assets", "images", "sets")
+    @eras = ERAS
+    @era_badges = era_badges
 
-    @eras = [ "Mega Evolution", "Scarlet & Violet", "Sword & Shield" ]
-
-    @era_badges = {
-      "Mega Evolution"   => safe_asset_path("sets/megaevolution.png"),
-      "Scarlet & Violet" => safe_asset_path("sets/scarletandviolet.png"),
-      "Sword & Shield"   => safe_asset_path("sets/swordandshield.png")
-    }
-
-    @sets = data.values.map do |s|
-      box = File.basename(s["boxImage"].to_s) rescue nil
-      img =
-        if box.present? && File.exist?(images_sets.join(box))
-          safe_asset_path("sets/#{box}")
-        else
-          safe_asset_path("pokevaluelogo.png")
-        end
-
-      { name: s["name"], era: s["era"], image_url: img, slug: s["slug"] }
+    @sets = sets_data.values.map do |set|
+      {
+        name: set["name"].to_s,
+        era: set["era"].to_s,
+        slug: set["slug"].to_s,
+        image_url: set_card_image_url(set)
+      }
     end
   end
 
-  # Loads one set page, including set metadata, urgency status, and sealed products.
   def set
-    slug = params[:slug].to_s
-    data = load_sets_data
+    set = find_set!(params[:slug])
+    assign_set_details(set)
+    apply_set_override
 
-    s = data.values.find { |x| x["slug"].to_s == slug }
-    raise ActiveRecord::RecordNotFound unless s
-
-    images_sets   = Rails.root.join("app", "assets", "images", "sets")
-    images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-
-    @set_slug     = slug
-    @set_name     = s["name"]
-    @era          = s["era"]
-    raw_release   = s["releaseDate"]
-    @release_date = raw_release
-    @total_value  = s["totalValue"]
-    @total_cards  = s["totalCards"]
-    @cards        = s["cards"]
-    @secret       = s["secretCards"]
-
-    # Applies admin overrides for set statistics where the override table exists.
-    begin
-      if defined?(SetOverride)
-        cols = SetOverride.column_names rescue []
-        ov =
-          if cols.include?("set_slug")
-            SetOverride.find_by(set_slug: slug)
-          elsif cols.include?("slug")
-            SetOverride.find_by(slug: slug)
-          else
-            nil
-          end
-
-        if ov
-          @total_value = ov.total_value if ov.respond_to?(:total_value) && ov.total_value.present?
-          @total_cards = ov.total_cards if ov.respond_to?(:total_cards) && ov.total_cards.present?
-          @cards       = ov.cards if ov.respond_to?(:cards) && ov.cards.present?
-          @secret      = ov.secret_cards if ov.respond_to?(:secret_cards) && ov.secret_cards.present?
-        end
-      end
-    rescue
-    end
-
-    # Uses an override logo first, then the JSON logo, then the app fallback logo.
-    logo_override = set_logo_override_filename(slug: slug)
-    logo_base = File.basename(s["logo"].to_s) rescue nil
-    @logo_url =
-      if logo_override.present? && File.exist?(images_sets.join(logo_override))
-        safe_asset_path("sets/#{logo_override}")
-      elsif logo_base.present? && File.exist?(images_sets.join(logo_base))
-        safe_asset_path("sets/#{logo_base}")
-      else
-        safe_asset_path("pokevaluelogo.png")
-      end
-
-    release_date_obj =
-      begin
-        raw_release.present? ? Date.parse(raw_release.to_s) : nil
-      rescue ArgumentError
-        nil
-      end
-
-    @urgency_label = "Unknown"
-    @urgency_class = "urgency-unknown"
-
-    # Calculates how close the set is to likely out-of-print status based on release age.
-    if release_date_obj
-      today  = Date.current
-      months = (today.year - release_date_obj.year) * 12 + (today.month - release_date_obj.month)
-
-      if months < 6
-        @urgency_label = "Very Low (0–6 months)"
-        @urgency_class = "urgency-green"
-      elsif months < 12
-        @urgency_label = "Low (6–12 months)"
-        @urgency_class = "urgency-yellow"
-      elsif months < 18
-        @urgency_label = "Medium (12–18 months)"
-        @urgency_class = "urgency-orange"
-      elsif months < 24
-        @urgency_label = "High (18–24 months)"
-        @urgency_class = "urgency-red"
-      elsif months < 36
-        @urgency_label = "Very High (2–3 years)"
-        @urgency_class = "urgency-brown"
-      else
-        @urgency_label = "Out Of Print (>3 years)"
-        @urgency_class = "urgency-black"
-      end
-    end
-
-    sealed_files = begin
-      Dir.children(images_sealed)
-    rescue
-      []
-    end
-
-    products_src = s["products"] || s["sealed"] || []
-    @products =
-      Array(products_src).filter_map do |prod|
-        next if hidden_product?(slug: slug, product: prod)
-
-        img_key  = prod["img"]  || prod[:img]
-        name_key = prod["name"] || prod[:name]
-        type_key = (prod["type"] || prod[:type]).to_s
-
-        # Chooses the correct sealed image while falling back safely if the image is missing.
-        override = sealed_override_filename(set_name: @set_name, type_key: type_key)
-        img_url =
-          if override.present? && File.exist?(images_sealed.join(override))
-            safe_asset_path("sealed/#{override}")
-          else
-            requested_img = img_key.to_s
-            img_base = begin
-              File.basename(requested_img)
-            rescue
-              ""
-            end
-
-            actual_img = nil
-            if img_base.present?
-              down = img_base.downcase
-              actual_img = sealed_files.find { |f| f.downcase == down }
-            end
-
-            if actual_img.present?
-              safe_asset_path("sealed/#{actual_img}")
-            else
-              safe_asset_path("pokevaluelogo.png")
-            end
-          end
-
-        # Builds the route type so variants, duplicate product types and Pokemon Center products have unique URLs.
-        route_type = build_route_type_for_product(type_key: type_key, name: name_key.to_s)
-
-        {
-          type:    type_key,
-          name:    name_key.to_s,
-          img_url: img_url,
-          link:    set_product_path(slug: slug, type: route_type)
-        }
-      end
+    @set_logo_url = set_logo_url(set)
+    @urgency_label, @urgency_class, @urgency_subtitle = urgency_for_set(@set_name, @era, @release_date)
+    @products = products_for_set(set)
   end
 
-  # Loads an individual sealed product page.
   def product
-    slug      = params[:slug].to_s
-    want_type = params[:type].to_s
+    set = find_set!(params[:slug])
+    product = find_product_in_set!(set, params[:type])
 
-    data = load_sets_data
-    s = data.values.find { |x| x["slug"].to_s == slug }
-    raise ActiveRecord::RecordNotFound unless s
+    @set_slug = set["slug"].to_s
+    @set_name = set["name"].to_s
+    @era = set["era"].to_s
+    @release_date = display_date(set["releaseDate"])
+    @set_logo_url = set_logo_url(set)
 
-    products_src = s["products"] || s["sealed"] || []
-
-    # Splits the route type into base type, variant, origin and exact product slug.
-    parsed = parse_route_type(want_type)
-    base_type = parsed[:base_type]
-    want_variant_slug = parsed[:variant_slug]
-    want_origin_slug = parsed[:origin_slug]
-    want_product_slug = parsed[:product_slug]
-
-    # Finds the exact product from the set JSON using type, product slug, variant and origin.
-    p =
-      Array(products_src).find do |prod|
-        next if hidden_product?(slug: slug, product: prod)
-
-        prod_type = (prod["type"] || prod[:type]).to_s
-        next false unless normalize_type(prod_type) == base_type
-
-        prod_name = (prod["name"] || prod[:name]).to_s
-        v = extract_variant(prod_name)
-        o = infer_origin(type_key: prod_type, name: prod_name)
-
-        v_slug = v.present? ? slugify(v) : nil
-        o_slug = o.present? ? slugify(o) : nil
-        p_slug = slugify(prod_name)
-
-        ok_product = want_product_slug.present? ? (p_slug == want_product_slug) : true
-        ok_variant = want_variant_slug.present? ? (v_slug == want_variant_slug) : true
-        ok_origin  = want_origin_slug.present?  ? (o_slug == want_origin_slug)  : true
-
-        ok_product && ok_variant && ok_origin
-      end
-
-    raise ActiveRecord::RecordNotFound unless p
-
-    images_sets   = Rails.root.join("app", "assets", "images", "sets")
-    images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-
-    sealed_files = begin
-      Dir.children(images_sealed)
-    rescue
-      []
-    end
-
-    @set_slug = slug
-    @set_name = s["name"]
-
-    raw_release = s["releaseDate"].to_s.presence
-    release_date_obj =
-      if raw_release
-        begin
-          Date.parse(raw_release)
-        rescue ArgumentError
-          nil
-        end
-      else
-        nil
-      end
-
-    @release_date = release_date_obj ? release_date_obj.strftime("%Y-%m-%d") : (raw_release || "TBD")
-    @era          = s["era"].to_s
-
-    # Loads the set logo for the product page.
-    set_logo_override = set_logo_override_filename(slug: slug)
-    set_logo_base = File.basename(s["logo"].to_s) rescue nil
-    @set_logo_url =
-      if set_logo_override.present? && File.exist?(images_sets.join(set_logo_override))
-        safe_asset_path("sets/#{set_logo_override}")
-      elsif set_logo_base.present? && File.exist?(images_sets.join(set_logo_base))
-        safe_asset_path("sets/#{set_logo_base}")
-      else
-        safe_asset_path("pokevaluelogo.png")
-      end
-
-    @product_name      = (p["name"] || p[:name]).to_s
-    @product_type      = (p["type"] || p[:type]).to_s
-
-    # Loads the product image from app/assets/images/sealed, with override support.
-    override = sealed_override_filename(set_name: @set_name, type_key: @product_type)
-    if override.present? && File.exist?(images_sealed.join(override))
-      @product_img_url = safe_asset_path("sealed/#{override}")
-    else
-      requested_img = (p["img"] || p[:img]).to_s
-      img_base = begin
-        File.basename(requested_img)
-      rescue
-        ""
-      end
-
-      actual_img = nil
-      if img_base.present?
-        down = img_base.downcase
-        actual_img = sealed_files.find { |f| f.downcase == down }
-      end
-
-      @product_img_url =
-        if actual_img.present?
-          safe_asset_path("sealed/#{actual_img}")
-        else
-          safe_asset_path("pokevaluelogo.png")
-        end
-    end
-
+    @product_name = product["name"].to_s
+    @product_type = product["type"].to_s
     @product_type_name = PRODUCT_TYPE_NAMES[normalize_type(@product_type)] || @product_name
-    fallback_value     = p["value"]    || p[:value]
-    @product_listings  = p["listings"] || p[:listings]
+    @product_img_url = sealed_image_url(@set_name, product)
 
-    # Uses a Product row as the admin-editable value override for this product.
-    @admin_value_sku = build_value_override_sku(set_slug: slug, route_type: want_type)
-    override_row = find_product_value_override(set_slug: slug, route_type: want_type, product_type: @product_type, product_name: @product_name)
-    @product_value = override_row&.value || fallback_value
+    @current_route_type = params[:type].to_s
+    @watchlist_sku = "#{@set_slug}:#{@current_route_type}"
+    @admin_value_sku = value_override_sku(@set_slug, @current_route_type)
 
-    @urgency_label = "Unknown"
-    @urgency_class = "urgency-unknown"
+    override = product_value_override(@set_slug, @current_route_type, @product_type, @product_name)
+    @product_value = override&.value || product["value"] || 0
 
-    # Reuses the same urgency calculation used on the set page.
-    if release_date_obj
-      today  = Date.current
-      months = (today.year - release_date_obj.year) * 12 + (today.month - release_date_obj.month)
-
-      if months < 6
-        @urgency_label = "Very Low (0–6 months)"
-        @urgency_class = "urgency-green"
-      elsif months < 12
-        @urgency_label = "Low (6–12 months)"
-        @urgency_class = "urgency-yellow"
-      elsif months < 18
-        @urgency_label = "Medium (12–18 months)"
-        @urgency_class = "urgency-orange"
-      elsif months < 24
-        @urgency_label = "High (18–24 months)"
-        @urgency_class = "urgency-red"
-      elsif months < 36
-        @urgency_label = "Very High (2–3 years)"
-        @urgency_class = "urgency-brown"
-      else
-        @urgency_label = "Out Of Print (>3 years)"
-        @urgency_class = "urgency-black"
-      end
-    end
-
-    @eras = [ "Mega Evolution", "Scarlet & Violet", "Sword & Shield" ]
-    @types = [
-      "Booster Box", "Half Booster Box", "Booster Pack",
-      "Elite Trainer Box", "Pokemon Center Elite Trainer Box",
-      "Booster Bundle", "Booster Bundle Display",
-      "Ultra Premium Collection", "Super Premium Collection",
-      "Collection Box", "Tin", "Mini Tin", "Mini Tin Display",
-      "Blister Pack", "Blister Pack Display"
-    ]
-    @conditions = [
-      "Mint Sealed", "Loosely Sealed", "Unsealed",
-      "Big Tear", "Small Tear", "Big Imperfections", "Small Imperfections",
-      "Pressure Marks", "Slightly Dented", "Heavy Dented", "Damaged",
-      "Box Only", "Contents Only"
-    ]
-
-    # Shows the logged-in user's matching holdings under the product page.
-    @holdings =
-      if defined?(current_user) && current_user
-        current_user.holdings.where(set_name: @set_name).order(created_at: :desc).select do |holding|
-          holding_name = normalize_text(holding.product_type)
-          exact_name = normalize_text(@product_name)
-          type_name = normalize_text(@product_type_name)
-
-          holding_name == exact_name ||
-            (holding_name == type_name && same_image_file?(holding.image, @product_img_url))
-        end
-      else
-        []
-      end
+    @marketplace_listing_quantity = marketplace_listing_count
+    @is_watchlisted = product_watchlisted?
+    @holdings = matching_holdings
+    @holdings_qty = @holdings.sum { |holding| holding.quantity.to_i }
+    @condition_options = CONDITION_OPTIONS
   end
 
-  # Returns JSON search results for the navbar/global search.
   def search_index
     q = params[:q].to_s.strip
     return render json: { sets: [], products: [] } if q.blank?
 
-    tokens        = q.downcase.split(/\s+/)
-    data          = load_sets_data
-    images_sets   = Rails.root.join("app", "assets", "images", "sets")
-    images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-
-    sealed_files = begin
-      Dir.children(images_sealed)
-    rescue
-      []
-    end
-
-    sets     = []
+    tokens = q.downcase.split(/\s+/)
+    sets = []
     products = []
 
-    data.values.each do |s|
-      set_name = s["name"].to_s
-      era      = s["era"].to_s
-      slug     = s["slug"].to_s
+    sets_data.values.each do |set|
+      set_name = set["name"].to_s
+      era = set["era"].to_s
+      slug = set["slug"].to_s
 
-      # Picks the best available image for each set search result.
-      logo_base = File.basename(s["logo"].to_s) rescue nil
-      box_base  = File.basename(s["boxImage"].to_s) rescue nil
-      set_img =
-        if logo_base.present? && File.exist?(images_sets.join(logo_base))
-          safe_asset_path("sets/#{logo_base}")
-        elsif box_base.present? && File.exist?(images_sets.join(box_base))
-          safe_asset_path("sets/#{box_base}")
-        else
-          safe_asset_path("pokevaluelogo.png")
-        end
-
-      hay_set     = "#{set_name} #{era}".downcase
-      set_matches = tokens.all? { |t| hay_set.include?(t) }
-
-      if set_matches
+      if matches_tokens?("#{set_name} #{era}", tokens)
         sets << {
-          kind:      "set",
-          label:     set_name,
-          subtitle:  "Set · #{era}",
-          image_url: set_img,
-          href:      set_path(slug: slug),
-          era:       era
+          kind: "set",
+          label: set_name,
+          subtitle: "Set · #{era}",
+          image_url: set_search_image_url(set),
+          href: set_path(slug: slug),
+          era: era
         }
       end
 
-      Array(s["products"] || s["sealed"]).each do |prod|
-        next if hidden_product?(slug: slug, product: prod)
+      sealed_products(set).each do |product|
+        name = product["name"].to_s
+        type = product["type"].to_s
+        label = name.presence || PRODUCT_TYPE_NAMES[normalize_type(type)] || type
 
-        type_code = (prod["type"] || prod[:type]).to_s
-        prod_name = (prod["name"] || prod[:name]).to_s
-        friendly  = prod_name.presence || PRODUCT_TYPE_NAMES[normalize_type(type_code)] || type_code
+        next unless matches_tokens?("#{set_name} #{era} #{label} #{type}", tokens)
 
-        # Picks the best available image for each product search result.
-        override = sealed_override_filename(set_name: set_name, type_key: type_code)
-        prod_img =
-          if override.present? && File.exist?(images_sealed.join(override))
-            safe_asset_path("sealed/#{override}")
-          else
-            requested_img = (prod["img"] || prod[:img]).to_s
-            img_base = begin
-              File.basename(requested_img)
-            rescue
-              ""
-            end
-
-            actual_img = nil
-            if img_base.present?
-              down = img_base.downcase
-              actual_img = sealed_files.find { |f| f.downcase == down }
-            end
-
-            if actual_img.present?
-              safe_asset_path("sealed/#{actual_img}")
-            else
-              safe_asset_path("pokevaluelogo.png")
-            end
-          end
-
-        route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
-
-        hay_prod     = "#{set_name} #{era} #{friendly} #{type_code} #{prod_name}".downcase
-        prod_matches = tokens.all? { |t| hay_prod.include?(t) }
-
-        if prod_matches
-          products << {
-            kind:      "product",
-            label:     friendly,
-            subtitle:  "Product · #{set_name}",
-            image_url: prod_img,
-            href:      set_product_path(slug: slug, type: route_type),
-            set_name:  set_name
-          }
-        end
+        products << {
+          kind: "product",
+          label: label,
+          subtitle: "Product · #{set_name}",
+          image_url: sealed_image_url(set_name, product),
+          href: set_product_path(slug: slug, type: route_type_for_product(type, name)),
+          set_name: set_name
+        }
       end
     end
 
@@ -500,419 +199,435 @@ class PagesController < ApplicationController
 
   private
 
-  # Returns a safe asset URL and falls back to the app logo if the requested file cannot be found.
-  def safe_asset_path(path, fallback = "pokevaluelogo.png")
-    begin
-      view_context.asset_path(path)
-    rescue
-      begin
-        view_context.asset_path(fallback)
-      rescue
-        "/assets/#{fallback}"
-      end
-    end
+  # Loads all set and sealed product data from config/sets.json.
+  def sets_data
+    @sets_data ||= JSON.parse(File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8"))
   end
 
-  # Loads set data from config/sets.json and merges in manual sets and products that are not in the JSON file yet.
-  def load_sets_data
-    path = Rails.root.join("config", "sets.json")
-    data = JSON.parse(File.read(path, encoding: "bom|utf-8"))
-    data = manual_extra_sets_data.merge(data)
-    merge_manual_extra_products(data)
+  # Finds one set by slug or returns a normal Rails not-found page.
+  def find_set!(slug)
+    set = sets_data.values.find { |item| item["slug"].to_s == slug.to_s }
+    raise ActiveRecord::RecordNotFound unless set
+
+    set
   end
 
-  # Manually adds upcoming or custom sets before they are fully present in config/sets.json.
-  def manual_extra_sets_data
-    {
-      "perfectorder" => {
-        "slug" => "perfectorder",
-        "name" => "Perfect Order",
-        "era" => "Mega Evolution",
-        "releaseDate" => "March 27 2026",
-        "totalValue" => nil,
-        "totalCards" => 203,
-        "cards" => 203,
-        "secretCards" => 0,
-        "logo" => "images/sets/perfectorderlogo.png",
-        "boxImage" => "images/sets/perfectorder.png",
-        "pokedataUrl" => "https://www.pokedata.io/sets#ENGLISH",
-        "sealed" => [
-          {
-            "type" => "etb",
-            "name" => "Elite Trainer Box",
-            "img" => "images/sealed/perfectorder_etb.png"
-          },
-          {
-            "type" => "pc_etb",
-            "name" => "Pokemon Center Elite Trainer Box",
-            "img" => "images/sealed/perfectorder_pcetb.png"
-          },
-          {
-            "type" => "booster_box",
-            "name" => "Booster Box",
-            "img" => "images/sealed/perfectorder_boosterbox.png"
-          },
-          {
-            "type" => "booster_bundle",
-            "name" => "Booster Bundle",
-            "img" => "images/sealed/perfectorder_boosterbundle.png"
-          }
-        ]
-      },
-      "ascendedheroes" => {
-        "slug" => "ascendedheroes",
-        "name" => "Ascended Heroes",
-        "era" => "Mega Evolution",
-        "releaseDate" => "January 30 2026",
-        "totalValue" => nil,
-        "totalCards" => 615,
-        "cards" => 615,
-        "secretCards" => 0,
-        "logo" => "images/sets/ascendedheroeslogo.png",
-        "boxImage" => "images/sets/ascendedheroes.png",
-        "pokedataUrl" => "https://www.pokedata.io/sets#ENGLISH",
-        "sealed" => [
-          {
-            "type" => "etb",
-            "name" => "Elite Trainer Box",
-            "img" => "images/sealed/ascendedheroes_etb.png"
-          },
-          {
-            "type" => "pc_etb",
-            "name" => "Pokemon Center Elite Trainer Box",
-            "img" => "images/sealed/ascendedheroes_pcetb.png"
-          },
-          {
-            "type" => "booster_bundle",
-            "name" => "Booster Bundle",
-            "img" => "images/sealed/ascendedheroes_boosterbundle.png"
-          }
-        ]
-      }
-    }
+  # Copies the selected set values into instance variables for the view.
+  def assign_set_details(set)
+    @set_slug = set["slug"].to_s
+    @set_name = set["name"].to_s
+    @era = set["era"].to_s
+    @release_date = set["releaseDate"].to_s
+    @total_value = set["totalValue"] || set["total_value"]
+    @cards = set["cards"] || set["totalCards"] || 0
+    @secret = set["secretCards"] || set["secret_cards"] || 0
   end
 
-  # Manually adds sealed products to existing sets without needing to replace the full sets.json file.
-  def merge_manual_extra_products(data)
-    manual_extra_products_by_slug.each do |slug, products|
-      target = data[slug.to_s] || data.values.find { |x| x["slug"].to_s == slug.to_s }
-      next unless target
+  # Applies admin-edited set values when a SetOverride row exists.
+  def apply_set_override
+    return unless defined?(SetOverride)
 
-      key = target.key?("products") ? "products" : "sealed"
-      target[key] = Array(target[key] || target["sealed"] || target["products"])
+    key = SetOverride.column_names.include?("set_slug") ? :set_slug : :slug
+    override = SetOverride.find_by(key => @set_slug)
 
-      products.each do |product|
-        exists = target[key].any? do |existing|
-          normalize_text(existing["name"] || existing[:name]) == normalize_text(product["name"]) &&
-            normalize_type(existing["type"] || existing[:type]) == normalize_type(product["type"])
-        end
+    return unless override
 
-        target[key] << product unless exists
-      end
-    end
-
-    data
-  end
-
-  # Product additions requested for Phantasmal Flames, Destined Rivals, 151, Prismatic Evolutions and Ascended Heroes.
-  def manual_extra_products_by_slug
-    {
-      "phantasmalflames" => [
-        {
-          "type" => "collection_box",
-          "name" => "First Partner Illustration Collection Series 1",
-          "img" => "images/sealed/phantasmalflames_firstpartnerseries1.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Pokémon Day 2026 Collection",
-          "img" => "images/sealed/phantasmalflames_pokemonday2026collection.png"
-        },
-        {
-          "type" => "tin",
-          "name" => "Mega Charizard Y Ex Tin",
-          "img" => "images/sealed/phantasmalflames_megacharizardyextin.png"
-        },
-        {
-          "type" => "tin",
-          "name" => "Mega Charizard X Ex Tin",
-          "img" => "images/sealed/phantasmalflames_megacharizardxextin.png"
-        }
-      ],
-      "destinedrivals" => [
-        {
-          "type" => "booster_pack",
-          "name" => "Booster Pack",
-          "img" => "images/sealed/destinedrivals_booster.png"
-        },
-        {
-          "type" => "ultra_premium_collection",
-          "name" => "Team Rocket's Moltres Ultra Premium Collection",
-          "img" => "images/sealed/destinedrivals_teamrocketsmoltresultrapremiumcollection.png"
-        },
-        {
-          "type" => "half_booster_box",
-          "name" => "Half Booster Box (18 Packs)",
-          "img" => "images/sealed/destinedrivals_halfboosterbox.png"
-        }
-      ],
-      "151" => [
-        {
-          "type" => "mini_tin",
-          "name" => "Mini Tin",
-          "img" => "images/sealed/151_minitin.png"
-        },
-        {
-          "type" => "mini_tin_display",
-          "name" => "Mini Tin Display",
-          "img" => "images/sealed/151_minitindisplay.png"
-        }
-      ],
-      "prismaticevolutions" => [
-        {
-          "type" => "mini_tin",
-          "name" => "Mini Tin",
-          "img" => "images/sealed/prismaticevolutions_minitin.png"
-        },
-        {
-          "type" => "mini_tin_display",
-          "name" => "Mini Tin Display",
-          "img" => "images/sealed/prismaticevolutions_minitindisplay.png"
-        }
-      ],
-      "ascendedheroes" => [
-        {
-          "type" => "mini_tin",
-          "name" => "Mini Tin",
-          "img" => "images/sealed/ascendedheroes_minitin.png"
-        },
-        {
-          "type" => "mini_tin_display",
-          "name" => "Mini Tin Display",
-          "img" => "images/sealed/ascendedheroes_minitindisplay.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Mega Feraligatr Ex Box",
-          "img" => "images/sealed/ascendedheroes_megaferaligatrexbox.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Mega Meganium Ex Box",
-          "img" => "images/sealed/ascendedheroes_megameganiumexbox.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Mega Emboar Ex Box",
-          "img" => "images/sealed/ascendedheroes_megaemboarexbox.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "First Partners Deluxe Pin Collection",
-          "img" => "images/sealed/ascendedheroes_firstpartnersdeluxepincollection.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Mega Lucario Premium Poster Collection",
-          "img" => "images/sealed/ascendedheroes_megalucariopremiumpostercollection.png"
-        },
-        {
-          "type" => "collection_box",
-          "name" => "Mega Gardevoir Premium Poster Collection",
-          "img" => "images/sealed/ascendedheroes_megagardevoirpremiumpostercollection.png"
-        },
-        {
-          "type" => "blister_pack",
-          "name" => "Charmander Tech Sticker Collection",
-          "img" => "images/sealed/ascendedheroes_charmandertechstickercollection.png"
-        },
-        {
-          "type" => "blister_pack",
-          "name" => "Gastly Tech Sticker Collection",
-          "img" => "images/sealed/ascendedheroes_gastlytechstickercollection.png"
-        },
-        {
-          "type" => "blister_pack",
-          "name" => "Erika's Tangela 2-Pack Blister",
-          "img" => "images/sealed/ascendedheroes_erikastangela2packblister.png"
-        },
-        {
-          "type" => "blister_pack",
-          "name" => "Larry's Komala 2-Pack Blister",
-          "img" => "images/sealed/ascendedheroes_larryskomala2packblister.png"
-        },
-        {
-          "type" => "blister_pack_display",
-          "name" => "2-Pack Blister Display",
-          "img" => "images/sealed/ascendedheroes2packblisterdisplay.png"
-        },
-        {
-          "type" => "blister_pack_display",
-          "name" => "Tech Sticker Collection Display",
-          "img" => "images/sealed/ascendedheroes_techstickercollectiondisplay.png"
-        }
-      ]
-    }
-  end
-
-  # Handles one-off set logo filename fixes.
-  def set_logo_override_filename(slug:)
-    s = normalize_text(slug)
-    return "celebrationsclassiccollection.png" if s == "celebrationsclassiccollection"
-    nil
-  end
-
-  # Handles one-off sealed product image filename fixes.
-  def sealed_override_filename(set_name:, type_key:)
-    sn = normalize_text(set_name)
-    base = normalize_type(type_key)
-
-    if sn == normalize_text("Scarlet & Violet Base")
-      return "scarletandviolet_boosterbox.png" if base == "booster_box"
-      return "scarletandviolet_boosterbundle.png" if base == "booster_bundle"
-    end
-
-    nil
-  end
-
-  # Hides products that should not be shown in the app.
-  def hidden_product?(slug:, product:)
-    false
-  end
-
-  # Normalises text for safer comparisons.
-  def normalize_text(s)
-    s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
-  end
-
-  # Normalises product type codes into the app's standard format.
-  def normalize_type(t)
-    x = t.to_s.strip.downcase
-    x = x.tr("-", "_")
-    x = x.gsub(/\s+/, "_")
-    x
-  end
-
-  # Converts a name or variant into a URL-safe slug.
-  def slugify(s)
-    normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
-  end
-
-  # Extracts product variants such as Lucario from names like Elite Trainer Box (Lucario).
-  def extract_variant(name)
-    m = name.to_s.match(/\(([^)]+)\)/)
-    m ? m[1].to_s.strip : nil
-  end
-
-  # Detects whether a product is a Pokemon Center version.
-  def infer_origin(type_key:, name:)
-    t = normalize_type(type_key)
-    n = normalize_text(name)
-    return "Pokemon Center" if t == "pc_etb"
-    return "Pokemon Center" if n.include?("pokemon center")
-    nil
-  end
-
-  # Checks whether a product type should include the product name in its route to avoid duplicate links.
-  def route_needs_product_slug?(base)
-    [
-      "collection_box",
-      "tin",
-      "mini_tin",
-      "mini_tin_display",
-      "booster_pack",
-      "blister_pack",
-      "blister_pack_display",
-      "half_booster_box"
-    ].include?(base.to_s)
-  end
-
-  # Builds unique route types for normal products, duplicate product types, variant products, and Pokemon Center products.
-  def build_route_type_for_product(type_key:, name:)
-    base   = normalize_type(type_key)
-    variant = extract_variant(name)
-    origin  = infer_origin(type_key: type_key, name: name)
-
-    out = base.dup
-    out << "--v-#{slugify(variant)}" if variant.present?
-    out << "--o-#{slugify(origin)}"  if origin.present?
-    out << "--p-#{slugify(name)}" if route_needs_product_slug?(base) && name.to_s.present?
-    out
-  end
-
-  # Parses a route type back into its base type, variant slug, origin slug and product slug.
-  def parse_route_type(route_type)
-    raw = route_type.to_s.strip
-    parts = raw.split("--")
-
-    base = normalize_type(parts.shift || "")
-    v = nil
-    o = nil
-    p = nil
-
-    parts.each do |part|
-      if part.start_with?("v-")
-        v = part.delete_prefix("v-").to_s.strip
-      elsif part.start_with?("o-")
-        o = part.delete_prefix("o-").to_s.strip
-      elsif part.start_with?("p-")
-        p = part.delete_prefix("p-").to_s.strip
-      end
-    end
-
-    { base_type: base, variant_slug: v.presence, origin_slug: o.presence, product_slug: p.presence }
-  end
-
-  # Creates a safe SKU key for admin product value overrides.
-  def build_value_override_sku(set_slug:, route_type:)
-    a = set_slug.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
-    b = route_type.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
-    "#{a}--#{b}"
-  end
-
-  # Finds a product value override using the current SKU first, then older SKU formats.
-  def find_product_value_override(set_slug:, route_type:, product_type:, product_name:)
-    return nil unless defined?(Product)
-
-    candidates = []
-    candidates << build_value_override_sku(set_slug: set_slug, route_type: route_type)
-    candidates << "#{set_slug}:#{route_type}"
-
-    unless route_needs_product_slug?(normalize_type(product_type)) && route_type.to_s.include?("--p-")
-      candidates << build_value_override_sku(set_slug: set_slug, route_type: normalize_type(product_type))
-      candidates << "#{set_slug}:#{normalize_type(product_type)}"
-    end
-
-    candidates.map(&:to_s).uniq.each do |sku|
-      product = Product.find_by(sku: sku)
-      return product if product.present?
-    end
-
-    if Product.column_names.include?("set_name") && Product.column_names.include?("name")
-      product = Product.where(set_name: @set_name.to_s, name: product_name.to_s).order(updated_at: :desc).first
-      return product if product.present?
-    end
-
-    nil
+    @total_value = override.total_value if override.respond_to?(:total_value) && override.total_value.present?
+    @cards = override.cards if override.respond_to?(:cards) && override.cards.present?
+    @secret = override.secret_cards if override.respond_to?(:secret_cards) && override.secret_cards.present?
   rescue
     nil
   end
 
+  # Returns the list of sealed products for one set.
+  def sealed_products(set)
+    Array(set["products"] || set["sealed"] || [])
+  end
+
+  # Builds product cards for the set detail page.
+  def products_for_set(set)
+    sealed_products(set).map do |product|
+      type = product["type"].to_s
+      name = product["name"].to_s
+
+      {
+        type: type,
+        name: name,
+        img_url: sealed_image_url(@set_name, product),
+        link: set_product_path(slug: @set_slug, type: route_type_for_product(type, name))
+      }
+    end
+  end
+
+  # Finds the exact product requested by the route type.
+  def find_product_in_set!(set, route_type)
+    parsed = parse_route_type(route_type)
+
+    product = sealed_products(set).find do |item|
+      type = item["type"].to_s
+      name = item["name"].to_s
+
+      next false unless normalize_type(type) == parsed[:base_type]
+
+      product_slug_matches = parsed[:product_slug].blank? || slugify(name) == parsed[:product_slug]
+      variant_slug_matches = parsed[:variant_slug].blank? || slugify(extract_variant(name)) == parsed[:variant_slug]
+      origin_slug_matches = parsed[:origin_slug].blank? || slugify(infer_origin(type, name)) == parsed[:origin_slug]
+
+      product_slug_matches && variant_slug_matches && origin_slug_matches
+    end
+
+    raise ActiveRecord::RecordNotFound unless product
+
+    product
+  end
+
+  # Uses the era badge images shown on the sets page.
+  def era_badges
+    {
+      "Mega Evolution" => asset_from_folder("sets", "megaevolution.png"),
+      "Scarlet & Violet" => asset_from_folder("sets", "scarletandviolet.png"),
+      "Sword & Shield" => asset_from_folder("sets", "swordandshield.png")
+    }
+  end
+
+  # Uses the set box image for the main sets grid.
+  def set_card_image_url(set)
+    asset_from_folder("sets", set["boxImage"])
+  end
+
+  # Uses logo first for search, then box art, then the app logo.
+  def set_search_image_url(set)
+    logo = file_in_folder("sets", set["logo"])
+    return safe_asset_path("sets/#{logo}") if logo
+
+    set_card_image_url(set)
+  end
+
+  # Uses the set logo image at the top of set and product pages.
+  def set_logo_url(set)
+    override = set_logo_override(set["slug"])
+    return safe_asset_path("sets/#{override}") if override && file_in_folder("sets", override)
+
+    asset_from_folder("sets", set["logo"])
+  end
+
+  # Uses a sealed product image, including known filename overrides.
+  def sealed_image_url(set_name, product)
+    override = sealed_image_override(set_name, product["type"])
+    return safe_asset_path("sealed/#{override}") if override && file_in_folder("sealed", override)
+
+    asset_from_folder("sealed", product["img"])
+  end
+
+  # Finds an image inside app/assets/images without causing Propshaft missing-asset errors.
+  def asset_from_folder(folder, source)
+    file = file_in_folder(folder, source)
+    return safe_asset_path("#{folder}/#{file}") if file
+
+    safe_asset_path("pokevaluelogo.png")
+  end
+
+  # Looks for exact filename matches first, then case-insensitive matches.
+  def file_in_folder(folder, source)
+    file = File.basename(source.to_s)
+    return nil if file.blank?
+
+    path = Rails.root.join("app", "assets", "images", folder)
+    exact = path.join(file)
+    return file if File.file?(exact)
+
+    files = asset_files(folder)
+    files.find { |name| name.downcase == file.downcase }
+  rescue
+    nil
+  end
+
+  # Caches folder filenames during one request so repeated image checks stay simple.
+  def asset_files(folder)
+    @asset_files ||= {}
+    @asset_files[folder] ||= Dir.children(Rails.root.join("app", "assets", "images", folder))
+  rescue
+    []
+  end
+
+  # Returns an asset URL, falling back to the PokeValue logo if the requested asset is missing.
+  def safe_asset_path(path)
+    view_context.asset_path(path)
+  rescue
+    begin
+      view_context.asset_path("pokevaluelogo.png")
+    rescue
+      "/assets/pokevaluelogo.png"
+    end
+  end
+
+  # Handles the one set logo that has used more than one filename.
+  def set_logo_override(slug)
+    return "celebrationsclassiccollection.png" if normalize_text(slug) == "celebrationsclassiccollection"
+
+    nil
+  end
+
+  # Handles older image names that differ from the JSON value.
+  def sealed_image_override(set_name, type)
+    return nil unless normalize_text(set_name) == "scarlet & violet base"
+
+    case normalize_type(type)
+    when "booster_box"
+      "scarletandviolet_boosterbox.png"
+    when "booster_bundle"
+      "scarletandviolet_boosterbundle.png"
+    end
+  end
+
+  # Calculates the visible urgency label and colour class for a set.
+  def urgency_for_set(set_name, era, release_date)
+    today = Date.current
+    name = normalize_text(set_name)
+    era_name = normalize_text(era)
+    release = parse_date(release_date)
+
+    out_date = out_of_print_date(name, era_name, release)
+    out_now = era_name == "sword & shield" || OUT_OF_PRINT_NOW.include?(name)
+    out_now = true if out_date && out_date <= today
+
+    return [ "Out of Print", "urgency-black", nil ] if out_now
+    return [ "Unknown", "urgency-unknown", nil ] unless out_date
+
+    years, months, days = date_parts_between(today, out_date)
+    days_left = (out_date - today).to_i
+    age_days = release ? (today - release).to_i : nil
+
+    css =
+      if days_left <= 183
+        "urgency-dark-red"
+      elsif days_left <= 365
+        "urgency-red"
+      elsif age_days && age_days < 183
+        "urgency-green"
+      else
+        "urgency-orange"
+      end
+
+    [ "#{years} Years #{months} Months #{days} Days", css, "Until Out of Print" ]
+  end
+
+  # Finds a fixed out-of-print date or estimates one from the release year.
+  def out_of_print_date(name, era_name, release_date)
+    OUT_OF_PRINT_BY_DATE.each do |date, names|
+      return date if names.include?(name)
+    end
+
+    return nil unless release_date
+    return nil if era_name == "sword & shield" || OUT_OF_PRINT_NOW.include?(name)
+
+    date = Date.new(release_date.year + 3, 4, 30)
+    date <= release_date ? Date.new(release_date.year + 4, 4, 30) : date
+  end
+
+  # Splits two dates into years, months and days for the urgency tile.
+  def date_parts_between(from_date, to_date)
+    return [ 0, 0, 0 ] if to_date <= from_date
+
+    years = to_date.year - from_date.year
+    months = to_date.month - from_date.month
+    days = to_date.day - from_date.day
+
+    if days.negative?
+      months -= 1
+      previous_month = to_date.month - 1
+      previous_year = to_date.year
+
+      if previous_month.zero?
+        previous_month = 12
+        previous_year -= 1
+      end
+
+      days += Date.new(previous_year, previous_month, -1).day
+    end
+
+    if months.negative?
+      years -= 1
+      months += 12
+    end
+
+    [ years, months, days ]
+  end
+
+  # Formats product release dates as YYYY-MM-DD when possible.
+  def display_date(value)
+    date = parse_date(value)
+    date ? date.strftime("%Y-%m-%d") : value.to_s.presence || "TBD"
+  end
+
+  # Safely parses loose date strings from config/sets.json.
+  def parse_date(value)
+    Date.parse(value.to_s)
+  rescue
+    nil
+  end
+
+  # Builds route types that can handle duplicate product types like multiple ETBs.
+  def route_type_for_product(type, name)
+    base = normalize_type(type)
+    variant = extract_variant(name)
+    origin = infer_origin(type, name)
+
+    route = base.dup
+    route << "--v-#{slugify(variant)}" if variant.present?
+    route << "--o-#{slugify(origin)}" if origin.present?
+    route << "--p-#{slugify(name)}" if PRODUCT_SLUG_TYPES.include?(base) && name.present?
+    route
+  end
+
+  # Reads the base type, variant, origin and product slug from a product route.
+  def parse_route_type(route_type)
+    parts = route_type.to_s.strip.split("--")
+    parsed = {
+      base_type: normalize_type(parts.shift),
+      variant_slug: nil,
+      origin_slug: nil,
+      product_slug: nil
+    }
+
+    parts.each do |part|
+      parsed[:variant_slug] = part.delete_prefix("v-") if part.start_with?("v-")
+      parsed[:origin_slug] = part.delete_prefix("o-") if part.start_with?("o-")
+      parsed[:product_slug] = part.delete_prefix("p-") if part.start_with?("p-")
+    end
+
+    parsed
+  end
+
+  # Pulls the text inside brackets from product names like Elite Trainer Box (Lucario).
+  def extract_variant(name)
+    name.to_s[/\(([^)]+)\)/, 1].to_s.strip.presence
+  end
+
+  # Detects Pokemon Center products.
+  def infer_origin(type, name)
+    return "Pokemon Center" if normalize_type(type) == "pc_etb"
+    return "Pokemon Center" if normalize_text(name).include?("pokemon center")
+
+    nil
+  end
+
+  # Normalises text for matching and searching.
+  def normalize_text(value)
+    value.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
+  end
+
+  # Normalises product type codes used in routes and JSON.
+  def normalize_type(value)
+    value.to_s.strip.downcase.tr("-", "_").gsub(/\s+/, "_")
+  end
+
+  # Converts text into a safe route slug.
+  def slugify(value)
+    normalize_text(value).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
+  # Checks if every search token appears in the text.
+  def matches_tokens?(text, tokens)
+    haystack = text.to_s.downcase
+    tokens.all? { |token| haystack.include?(token) }
+  end
+
+  # Builds the same admin product-value SKU used by product value forms.
+  def value_override_sku(set_slug, route_type)
+    clean_set = set_slug.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
+    clean_type = route_type.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
+
+    "#{clean_set}--#{clean_type}"
+  end
+
+  # Finds any admin-edited value for this product.
+  def product_value_override(set_slug, route_type, product_type, product_name)
+    return nil unless defined?(Product)
+
+    candidates = [
+      value_override_sku(set_slug, route_type),
+      "#{set_slug}:#{route_type}"
+    ]
+
+    base_type = normalize_type(product_type)
+
+    unless PRODUCT_SLUG_TYPES.include?(base_type) && route_type.to_s.include?("--p-")
+      candidates << value_override_sku(set_slug, base_type)
+      candidates << "#{set_slug}:#{base_type}"
+    end
+
+    product = Product.where(sku: candidates.uniq).order(updated_at: :desc).first
+    return product if product
+
+    return nil unless Product.column_names.include?("set_name") && Product.column_names.include?("name")
+
+    Product.where(set_name: @set_name.to_s, name: product_name.to_s).order(updated_at: :desc).first
+  rescue
+    nil
+  end
+
+  # Counts active marketplace listings for the selected product.
+  def marketplace_listing_count
+    return 0 unless defined?(MarketplaceListing)
+
+    scopes = [
+      MarketplaceListing.active.where(set_slug: @set_slug, route_type: @current_route_type),
+      MarketplaceListing.active.where(product_sku: "#{@set_slug}:#{@current_route_type}"),
+      MarketplaceListing.active.where(product_sku: "#{@set_slug}--#{@current_route_type}"),
+      MarketplaceListing.active.where(set_slug: @set_slug, product_type_name: @product_name),
+      MarketplaceListing.active.where(set_slug: @set_slug, product_type_name: @product_type_name)
+    ]
+
+    scopes.each do |scope|
+      quantity = scope.sum(:quantity).to_i
+      return quantity if quantity.positive?
+    end
+
+    0
+  rescue
+    0
+  end
+
+  # Checks if this product is already saved to the current user's watchlist.
+  def product_watchlisted?
+    user_signed_in? && current_user.watchlists.exists?(product_sku: @watchlist_sku)
+  rescue
+    false
+  end
+
+  # Finds the current user's matching holdings for the selected product.
+  def matching_holdings
+    return [] unless user_signed_in?
+
+    current_user.holdings.where(set_name: @set_name).order(created_at: :desc).select do |holding|
+      holding_name = normalize_text(holding.product_type)
+      product_name = normalize_text(@product_name)
+      type_name = normalize_text(@product_type_name)
+
+      holding_name == product_name || (holding_name == type_name && same_image_file?(holding.image, @product_img_url))
+    end
+  rescue
+    []
+  end
+
+  # Extracts only the image filename for image comparisons.
   def image_file_key(value)
     value.to_s.split("?").first.split("/").last.to_s.downcase.strip
   rescue
     ""
   end
 
-  def same_image_file?(a, b)
-    aa = a.to_s
-    bb = b.to_s
-    a_key = image_file_key(aa)
-    b_key = image_file_key(bb)
+  # Compares two image paths by filename.
+  def same_image_file?(left, right)
+    left_key = image_file_key(left)
+    right_key = image_file_key(right)
 
-    return false if a_key.blank? || b_key.blank?
+    return false if left_key.blank? || right_key.blank?
 
-    a_key == b_key || aa.downcase.include?(b_key) || bb.downcase.include?(a_key)
+    left_key == right_key ||
+      left.to_s.downcase.include?(right_key) ||
+      right.to_s.downcase.include?(left_key)
   rescue
     false
   end

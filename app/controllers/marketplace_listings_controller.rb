@@ -1,206 +1,99 @@
 class MarketplaceListingsController < ApplicationController
-  helper_method :current_user
+  class MarketplaceError < StandardError; end
 
-  # Shows either current marketplace listings or sold listings
+  before_action :require_login!, except: [ :index, :show ]
+  before_action :set_listing, only: [
+    :show,
+    :edit,
+    :update,
+    :create_offer,
+    :accept_offer,
+    :pay,
+    :confirm_payment,
+    :confirm_paid,
+    :cancel,
+    :destroy
+  ]
+
+  # Shows active listings or sold listings depending on the selected tab.
   def index
     @tab = params[:tab].to_s == "sold" ? "sold" : "current"
-    @admin_can_delete = admin_can_manage_marketplace?
+    @admin_can_delete = admin_user?
+
     prepare_filter_data
 
     if @tab == "sold"
-      load_sold_index_rows
+      load_sold_listings
     else
-      load_current_index_rows
+      load_current_listings
     end
   end
 
-  # Opens the create listing page for logged-in users
+  # Opens the create-listing form.
   def new
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
+    prepare_filter_data
     @holdings = selectable_holdings
     @listing_form = listing_form_from_params
   end
 
-  # Creates a marketplace listing from either the catalogue or the user's holdings
+  # Creates a listing from either a catalogue product or one of the user's holdings.
   def create
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
+    prepare_filter_data
     @listing_form = listing_form_from_params
 
-    country_code =
-      if current_user.respond_to?(:country_code) && current_user.country_code.present?
-        current_user.country_code.to_s
-      else
-        "IE"
-      end
-
-    price_str = params[:price].to_s.strip
-
-    begin
-      price = BigDecimal(price_str.tr(",", "."))
-    rescue
-      return render_new_with_error("Enter a valid price.")
-    end
-
-    price_cents = (price * 100).round
+    price_cents = parse_price_cents(params[:price])
     return render_new_with_error("Price must be greater than 0.") if price_cents <= 0
 
-    qty = params[:quantity].to_i
-    return render_new_with_error("Quantity must be at least 1.") if qty <= 0
+    quantity = params[:quantity].to_i
+    return render_new_with_error("Quantity must be at least 1.") if quantity <= 0
 
-    uploads = Array(params[:photos]).compact.reject { |f| f.respond_to?(:blank?) && f.blank? }
-    return render_new_with_error("You can upload up to 4 images.") if uploads.length > 4
+    uploads = uploaded_photos
+    photo_error = validate_photo_uploads(uploads)
+    return render_new_with_error(photo_error) if photo_error
 
-    uploads.each do |f|
-      ct = f.content_type.to_s
-      unless ct == "image/png" || ct == "image/jpeg" || ct == "image/jpg"
-        return render_new_with_error("Images must be .jpg or .png.")
-      end
+    if catalogue_mode?
+      create_catalogue_listing!(price_cents, quantity, uploads)
+    else
+      create_holding_listing!(price_cents, quantity, uploads)
     end
 
-    is_catalog = params[:mode].to_s.strip == "catalog"
-    listing = nil
-
-    ActiveRecord::Base.transaction do
-      if is_catalog
-        set_slug = params[:catalog_set_slug].to_s.strip
-        type_code = params[:catalog_route_type].to_s.strip
-        return render_new_with_error("Choose a product.") if set_slug.blank? || type_code.blank?
-
-        condition = params[:catalog_condition].to_s.strip
-        return render_new_with_error("Choose a condition.") if condition.blank?
-
-        meta = listing_meta_for_slug_type(set_slug, type_code)
-
-        listing = MarketplaceListing.create!(
-          seller_id: current_user.id,
-          holding_id: nil,
-          product_sku: "#{set_slug}:#{type_code}",
-          set_slug: set_slug,
-          route_type: type_code,
-          set_name: meta[:set_name],
-          product_type_name: meta[:product_type_name],
-          condition: condition,
-          country_code: country_code,
-          price_cents: price_cents,
-          quantity: qty,
-          status: "active"
-        )
-      else
-        holding = Holding.find_by(id: params[:holding_id])
-        return render_new_with_error("Invalid holding.") unless holding
-        return render_new_with_error("That holding is not yours.") unless holding.respond_to?(:user_id) && holding.user_id == current_user.id
-
-        condition =
-          if holding.respond_to?(:condition) && holding.condition.present?
-            holding.condition.to_s
-          else
-            ""
-          end
-
-        return render_new_with_error("This holding has no condition set.") if condition.blank?
-
-        meta = listing_meta_for_holding(holding)
-
-        h = Holding.lock.find(holding.id)
-        h_qty = h.respond_to?(:quantity) ? h.quantity.to_i : 0
-        h_listed = h.respond_to?(:listed_quantity) ? h.listed_quantity.to_i : 0
-        available = h_qty - h_listed
-        return render_new_with_error("Not enough available quantity.") if qty > available
-
-        h.update!(listed_quantity: h_listed + qty)
-
-        listing = MarketplaceListing.create!(
-          seller_id: current_user.id,
-          holding_id: h.id,
-          product_sku: meta[:sku],
-          set_slug: meta[:slug],
-          route_type: meta[:type_code],
-          set_name: meta[:set_name],
-          product_type_name: meta[:product_type_name],
-          condition: condition,
-          country_code: country_code,
-          price_cents: price_cents,
-          quantity: qty,
-          status: "active"
-        )
-      end
-
-      if listing && listing.respond_to?(:photos) && listing.photos.respond_to?(:attach) && uploads.any?
-        uploads.each { |f| listing.photos.attach(f) }
-      end
-    end
-
-    redirect_to(marketplace_path, notice: "Listing created.")
+    redirect_to marketplace_path, notice: "Listing created.", status: :see_other
+  rescue MarketplaceError => e
+    render_new_with_error(e.message)
   rescue ActiveRecord::RecordInvalid => e
-    msg =
-      if e.respond_to?(:record) && e.record && e.record.respond_to?(:errors) && e.record.errors.any?
-        e.record.errors.full_messages.join(", ")
-      else
-        "Could not create listing."
-      end
-
-    render_new_with_error(msg)
+    render_new_with_error(e.record.errors.full_messages.to_sentence)
   rescue
     render_new_with_error("Could not create listing.")
   end
 
-  # Opens the edit listing form for the seller or an admin
+  # Opens the edit form for the seller or an admin.
   def edit
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
-    @listing = MarketplaceListing.includes(:seller).find(params[:id])
-
-    unless can_edit_listing?(@listing)
-      return redirect_to(marketplace_listing_path(@listing), alert: "You cannot edit this listing.")
-    end
-
-    unless @listing.status.to_s == "active"
-      return redirect_to(marketplace_listing_path(@listing), alert: "Only active listings can be edited.")
-    end
-
-    if @listing.marketplace_offers.where(status: [ "accepted", "paid", "confirmed_paid" ]).exists?
-      return redirect_to(marketplace_listing_path(@listing), alert: "This listing cannot be edited because payment or sale activity has already started.")
-    end
-
-    @condition_options = editable_condition_options
+    ensure_listing_can_be_edited!
+    @condition_options = marketplace_conditions
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
   end
 
-  # Updates safe editable listing fields without touching payment, offers or sold listing logic
+  # Updates price, quantity, condition and optional extra images.
   def update
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
+    ensure_listing_can_be_edited!
 
-    listing = nil
+    price_cents = parse_price_cents(params[:price])
+    raise MarketplaceError, "Price must be greater than €0." if price_cents <= 0
+
+    quantity = params[:quantity].to_i
+    raise MarketplaceError, "Quantity must be at least 1." if quantity <= 0
+
+    condition = params[:condition].to_s.strip
+    raise MarketplaceError, "Condition is required." if condition.blank?
+
+    uploads = uploaded_photos
+    photo_error = validate_photo_uploads(uploads, @listing)
+    raise MarketplaceError, photo_error if photo_error
 
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
-
-      unless can_edit_listing?(listing)
-        raise "not_allowed"
-      end
-
-      unless listing.status.to_s == "active"
-        raise "listing_not_active"
-      end
-
-      if listing.marketplace_offers.where(status: [ "accepted", "paid", "confirmed_paid" ]).exists?
-        raise "listing_has_sale_activity"
-      end
-
-      price_cents = parse_price_cents(params[:price])
-      raise "invalid_price" if price_cents <= 0
-
-      quantity = params[:quantity].to_i
-      raise "invalid_quantity" if quantity <= 0
-
-      condition = params[:condition].to_s.strip
-      raise "invalid_condition" if condition.blank?
-
-      uploads = Array(params[:photos]).compact.reject { |f| f.respond_to?(:blank?) && f.blank? }
-      validate_listing_uploads!(listing, uploads)
-
-      update_holding_listed_quantity_for_edit!(listing, quantity)
+      listing = MarketplaceListing.lock.find(@listing.id)
+      update_holding_listed_quantity!(listing, quantity)
 
       listing.update!(
         price_cents: price_cents,
@@ -208,177 +101,61 @@ class MarketplaceListingsController < ApplicationController
         condition: condition
       )
 
-      uploads.each { |file| listing.photos.attach(file) } if uploads.any?
+      uploads.each { |file| listing.photos.attach(file) }
     end
 
-    redirect_to marketplace_listing_path(listing), notice: "Listing updated."
-  rescue => e
-    @listing = MarketplaceListing.includes(:seller).find_by(id: params[:id])
-    @condition_options = editable_condition_options
-
-    if @listing
-      flash.now[:alert] = edit_error_message(e)
-      render :edit, status: :unprocessable_entity
-    else
-      redirect_to marketplace_path, alert: "Could not update listing."
-    end
+    redirect_to marketplace_listing_path(@listing), notice: "Listing updated.", status: :see_other
+  rescue MarketplaceError => e
+    @condition_options = marketplace_conditions
+    flash.now[:alert] = e.message
+    render :edit, status: :unprocessable_entity
+  rescue ActiveRecord::RecordInvalid => e
+    @condition_options = marketplace_conditions
+    flash.now[:alert] = e.record.errors.full_messages.to_sentence
+    render :edit, status: :unprocessable_entity
+  rescue
+    @condition_options = marketplace_conditions
+    flash.now[:alert] = "Could not update listing."
+    render :edit, status: :unprocessable_entity
   end
 
-  # Shows one marketplace listing, its images, reviews and offer information
+  # Shows one listing with seller reviews and offer information.
   def show
-    @listing = MarketplaceListing.includes(:seller, marketplace_offers: [ :buyer ]).find(params[:id])
+    @seller_stats = seller_stats(@listing.seller_id)
+    @recent_reviews = recent_reviews(@listing.seller_id)
+    @admin_can_delete = admin_user?
+    @is_seller = current_user && current_user.id.to_i == @listing.seller_id.to_i
 
-    @seller_stats =
-      if defined?(Review)
-        avg = Review.where(seller_id: @listing.seller_id).average(:rating).to_f
-        cnt = Review.where(seller_id: @listing.seller_id).count
-        { avg: avg, count: cnt }
-      else
-        { avg: 0.0, count: 0 }
-      end
-
-    @recent_reviews =
-      if defined?(Review)
-        Review.where(seller_id: @listing.seller_id).order(created_at: :desc).limit(10)
+    @my_offers =
+      if current_user
+        @listing.marketplace_offers.where(buyer_id: current_user.id).order(created_at: :desc).to_a
       else
         []
       end
 
-    @admin_can_delete = admin_can_manage_marketplace?
-    @is_seller = current_user && current_user.id.to_i == @listing.seller_id.to_i
-    @my_offers = current_user ? @listing.marketplace_offers.where(buyer_id: current_user.id).order(created_at: :desc).to_a : []
     @has_active_offer = @my_offers.any? { |offer| %w[pending accepted paid confirmed_paid].include?(offer.status.to_s) }
     @can_offer = current_user.present? && !@is_seller && @listing.active? && !@has_active_offer
     @seller_offers = @is_seller ? @listing.marketplace_offers.includes(:buyer).order(created_at: :desc).to_a : []
   end
 
-  # Opens the older checkout page if direct purchase flow is used
-  def checkout
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
-    @listing = MarketplaceListing.includes(:seller).find(params[:id])
-
-    if @listing.seller_id.to_i == current_user.id.to_i
-      return redirect_to(marketplace_listing_path(@listing), alert: "You cannot purchase your own product.")
-    end
-
-    unless @listing.status.to_s == "active"
-      return redirect_to(marketplace_listing_path(@listing), alert: "This listing is not active.")
-    end
-
-    @quantity = params[:quantity].to_i
-    @quantity = 1 if @quantity <= 0
-    max_qty = @listing.respond_to?(:quantity) ? @listing.quantity.to_i : 1
-    max_qty = 1 if max_qty <= 0
-    @quantity = max_qty if @quantity > max_qty
-
-    @address = address_from_params
-    @saved_addresses = load_saved_addresses(current_user)
-    @seller_stats =
-      if defined?(Review)
-        avg = Review.where(seller_id: @listing.seller_id).average(:rating).to_f
-        cnt = Review.where(seller_id: @listing.seller_id).count
-        { avg: avg, count: cnt }
-      else
-        { avg: 0.0, count: 0 }
-      end
-  rescue
-    redirect_to marketplace_path, alert: "Could not open checkout."
-  end
-
-  # Validates checkout details, but current buying flow now uses offers
-  def buy
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
-    @listing = MarketplaceListing.includes(:seller).find(params[:id])
-
-    if @listing.seller_id.to_i == current_user.id.to_i
-      return redirect_to(marketplace_listing_path(@listing), alert: "You cannot purchase your own product.")
-    end
-
-    unless @listing.status.to_s == "active"
-      return redirect_to(marketplace_listing_path(@listing), alert: "This listing is not active.")
-    end
-
-    @quantity = params[:quantity].to_i
-    @quantity = 1 if @quantity <= 0
-    max_qty = @listing.respond_to?(:quantity) ? @listing.quantity.to_i : 1
-    max_qty = 1 if max_qty <= 0
-    @quantity = max_qty if @quantity > max_qty
-
-    @address = address_from_params
-    @saved_addresses = load_saved_addresses(current_user)
-    @seller_stats =
-      if defined?(Review)
-        avg = Review.where(seller_id: @listing.seller_id).average(:rating).to_f
-        cnt = Review.where(seller_id: @listing.seller_id).count
-        { avg: avg, count: cnt }
-      else
-        { avg: 0.0, count: 0 }
-      end
-
-    return render_checkout_with_error("Full name is required.") if @address[:name].blank?
-    return render_checkout_with_error("Address Line 1 is required.") if @address[:line1].blank?
-    return render_checkout_with_error("City/Town is required.") if @address[:city].blank?
-    return render_checkout_with_error("County/State is required.") if @address[:county].blank?
-    return render_checkout_with_error("Eircode is required.") if @address[:postcode].blank?
-    return render_checkout_with_error("Country is required.") if @address[:country_code].blank?
-
-    redirect_to marketplace_listing_path(@listing), alert: "Purchases now use the offer system."
-  rescue
-    if defined?(@listing) && @listing
-      @address ||= address_from_params
-      @saved_addresses ||= load_saved_addresses(current_user)
-      @seller_stats ||= { avg: 0.0, count: 0 }
-      render_checkout_with_error("Could not complete purchase.")
-    else
-      redirect_to marketplace_path, alert: "Could not complete purchase."
-    end
-  end
-
-  # Lets a buyer send an offer to the seller
+  # Buyer sends an offer to the seller.
   def create_offer
-    return redirect_to(root_path, alert: "Please log in.", status: :see_other) unless current_user
-
-    listing = nil
-    error_message = nil
+    offer_cents = parse_price_cents(params[:offer_amount])
+    raise MarketplaceError, "Offer must be greater than €0." if offer_cents <= 0
 
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
+      listing = MarketplaceListing.lock.find(@listing.id)
 
-      unless listing.active?
-        error_message = "This listing is not active."
-        raise ActiveRecord::Rollback
-      end
+      raise MarketplaceError, "This listing is not active." unless listing.active?
+      raise MarketplaceError, "You cannot make an offer on your own listing." if listing.seller_id.to_i == current_user.id.to_i
 
-      if listing.seller_id.to_i == current_user.id.to_i
-        error_message = "You cannot make an offer on your own listing."
-        raise ActiveRecord::Rollback
-      end
-
-      existing_active_offer = MarketplaceOffer.lock.where(
+      active_offer = MarketplaceOffer.lock.where(
         marketplace_listing_id: listing.id,
         buyer_id: current_user.id,
-        status: [ "pending", "accepted", "paid", "confirmed_paid" ]
-      ).first
+        status: %w[pending accepted paid confirmed_paid]
+      ).exists?
 
-      if existing_active_offer
-        error_message = "You already have an active offer on this listing."
-        raise ActiveRecord::Rollback
-      end
-
-      offer_amount = params[:offer_amount].to_s.strip
-
-      begin
-        offer_cents = (BigDecimal(offer_amount.tr(",", ".")) * 100).round
-      rescue
-        offer_cents = 0
-      end
-
-      if offer_cents <= 0
-        error_message = "Offer must be greater than €0."
-        raise ActiveRecord::Rollback
-      end
+      raise MarketplaceError, "You already have an active offer on this listing." if active_offer
 
       MarketplaceOffer.create!(
         marketplace_listing_id: listing.id,
@@ -389,294 +166,213 @@ class MarketplaceListingsController < ApplicationController
       )
     end
 
-    if error_message.present?
-      redirect_to marketplace_listing_path(listing || params[:id]), alert: error_message, status: :see_other
-    else
-      redirect_to marketplace_listing_path(listing), notice: "Offer sent.", status: :see_other
-    end
+    redirect_to marketplace_listing_path(@listing), notice: "Offer sent.", status: :see_other
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to marketplace_listing_path(params[:id]), alert: e.record.errors.full_messages.to_sentence, status: :see_other
+    redirect_to marketplace_listing_path(@listing), alert: e.record.errors.full_messages.to_sentence, status: :see_other
   rescue
-    redirect_to marketplace_listing_path(params[:id]), alert: "Could not send offer.", status: :see_other
+    redirect_to marketplace_listing_path(@listing), alert: "Could not send offer.", status: :see_other
   end
 
-  # Allows the seller to accept one pending offer
+  # Seller accepts one pending offer and rejects the other open offers.
   def accept_offer
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
+      listing = MarketplaceListing.lock.find(@listing.id)
       offer = MarketplaceOffer.lock.find_by!(id: params[:offer_id], marketplace_listing_id: listing.id)
 
-      unless listing.active?
-        raise "listing_not_active"
-      end
+      raise MarketplaceError, "This listing is not active." unless listing.active?
+      raise MarketplaceError, "You cannot accept offers for this listing." unless listing.seller_id.to_i == current_user.id.to_i
+      raise MarketplaceError, "Only pending offers can be accepted." unless offer.pending?
 
-      unless listing.seller_id.to_i == current_user.id.to_i
-        raise "not_seller"
-      end
+      listing.marketplace_offers
+             .where(status: %w[pending accepted])
+             .where.not(id: offer.id)
+             .update_all(status: "rejected", updated_at: Time.current)
 
-      unless offer.pending?
-        raise "offer_not_pending"
-      end
+      offer.update!(status: "accepted", accepted_at: Time.current)
+    end
 
-      listing.marketplace_offers.where(status: [ "pending", "accepted" ]).where.not(id: offer.id).update_all(status: "rejected", updated_at: Time.current)
+    redirect_to marketplace_listing_path(@listing), notice: "Offer accepted.", status: :see_other
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
+  rescue
+    redirect_to marketplace_listing_path(@listing), alert: "Could not accept offer.", status: :see_other
+  end
+
+  # Opens the manual Revolut payment page for an accepted offer.
+  def pay
+    raise MarketplaceError, "You cannot pay for your own listing." if @listing.seller_id.to_i == current_user.id.to_i
+
+    @offer = MarketplaceOffer.find_by!(
+      id: params[:offer_id],
+      marketplace_listing_id: @listing.id,
+      buyer_id: current_user.id
+    )
+
+    raise MarketplaceError, "This offer has not been accepted." unless @offer.accepted? || @offer.paid?
+
+    @seller_revolut_tag = @listing.seller&.revolut_tag.to_s
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
+  rescue
+    redirect_to marketplace_listing_path(@listing), alert: "Could not open payment page.", status: :see_other
+  end
+
+  # Buyer confirms that the Revolut payment was sent.
+  def confirm_payment
+    ActiveRecord::Base.transaction do
+      listing = MarketplaceListing.lock.find(@listing.id)
+      raise MarketplaceError, "You cannot pay for your own listing." if listing.seller_id.to_i == current_user.id.to_i
+
+      offer = MarketplaceOffer.lock.find_by!(
+        id: params[:offer_id],
+        marketplace_listing_id: listing.id,
+        buyer_id: current_user.id
+      )
+
+      raise MarketplaceError, "This offer has not been accepted." unless offer.accepted?
+
+      buyer_tag = current_user.revolut_tag.to_s.strip
+      raise MarketplaceError, "Add your Revolut tag to your account before confirming payment." if buyer_tag.blank?
 
       offer.update!(
-        status: "accepted",
-        accepted_at: Time.current
+        buyer_revolut_tag: buyer_tag,
+        status: "paid",
+        paid_at: Time.current
       )
     end
 
-    redirect_to marketplace_listing_path(params[:id]), notice: "Offer accepted."
+    redirect_to marketplace_listing_path(@listing), notice: "Payment marked as sent. The seller must now confirm payment.", status: :see_other
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
   rescue
-    redirect_to marketplace_listing_path(params[:id]), alert: "Could not accept offer."
+    redirect_to marketplace_listing_path(@listing), alert: "Could not confirm payment.", status: :see_other
   end
 
-  # Opens the manual Revolut payment page for an accepted offer
-  def pay
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
-    @listing = MarketplaceListing.includes(:seller).find(params[:id])
-
-    if @listing.seller_id.to_i == current_user.id.to_i
-      return redirect_to(marketplace_listing_path(@listing), alert: "You cannot pay for your own listing.")
-    end
-
-    @offer = MarketplaceOffer.find_by!(id: params[:offer_id], marketplace_listing_id: @listing.id, buyer_id: current_user.id)
-
-    unless @offer.accepted? || @offer.paid?
-      return redirect_to marketplace_listing_path(@listing), alert: "This offer has not been accepted."
-    end
-
-    @seller_revolut_tag = @listing.seller&.revolut_tag.to_s
-  rescue
-    redirect_to marketplace_listing_path(params[:id]), alert: "Could not open payment page."
-  end
-
-  # Buyer marks the Revolut payment as sent
-  def confirm_payment
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
-    ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
-      raise "cannot_pay_own_listing" if listing.seller_id.to_i == current_user.id.to_i
-
-      offer = MarketplaceOffer.lock.find_by!(id: params[:offer_id], marketplace_listing_id: listing.id, buyer_id: current_user.id)
-
-      unless offer.accepted?
-        raise "offer_not_accepted"
-      end
-
-      buyer_revolut_tag = current_user.revolut_tag.to_s.strip
-      raise "missing_revolut_tag" if buyer_revolut_tag.blank?
-
-      offer.buyer_revolut_tag = buyer_revolut_tag
-      offer.status = "paid"
-      offer.paid_at = Time.current
-      offer.save!
-    end
-
-    redirect_to marketplace_listing_path(params[:id]), notice: "Payment marked as sent. The seller must now confirm payment."
-  rescue
-    redirect_to marketplace_listing_path(params[:id]), alert: "Could not confirm payment."
-  end
-
-  # Seller confirms payment and completes the sale
+  # Seller confirms payment, moves the item into sold listings and adds it to the buyer portfolio.
   def confirm_paid
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
+      listing = MarketplaceListing.lock.find(@listing.id)
       offer = MarketplaceOffer.lock.find_by!(id: params[:offer_id], marketplace_listing_id: listing.id)
 
-      unless listing.seller_id.to_i == current_user.id.to_i
-        raise "not_seller"
-      end
-
-      unless offer.paid?
-        raise "offer_not_paid"
-      end
+      raise MarketplaceError, "You cannot confirm payment for this listing." unless listing.seller_id.to_i == current_user.id.to_i
+      raise MarketplaceError, "The buyer has not marked this payment as sent." unless offer.paid?
 
       seller = User.lock.find(listing.seller_id)
       buyer = User.lock.find(offer.buyer_id)
 
-      qty_sold = listing.quantity.to_i
-      qty_sold = 1 if qty_sold <= 0
+      quantity_sold = listing.quantity.to_i
+      quantity_sold = 1 if quantity_sold <= 0
 
-      unit_cents = offer.offer_cents.to_i / qty_sold
+      unit_cents = offer.offer_cents.to_i / quantity_sold
       unit_cents = offer.offer_cents.to_i if unit_cents <= 0
 
-      if listing.holding_id.present?
-        seller_holding = Holding.lock.find_by(id: listing.holding_id)
+      seller_holding = listing.holding_id.present? ? Holding.lock.find_by(id: listing.holding_id) : nil
 
-        if seller_holding && seller_holding.respond_to?(:user_id) && seller_holding.user_id.to_i == seller.id.to_i
-          sh_qty = seller_holding.respond_to?(:quantity) ? seller_holding.quantity.to_i : 0
-          sh_listed = seller_holding.respond_to?(:listed_quantity) ? seller_holding.listed_quantity.to_i : 0
-
-          new_qty = sh_qty - qty_sold
-          new_qty = 0 if new_qty < 0
-
-          new_listed = sh_listed - qty_sold
-          new_listed = 0 if new_listed < 0
-
-          attrs = {}
-          attrs[:quantity] = new_qty if seller_holding.respond_to?(:quantity=)
-          attrs[:listed_quantity] = new_listed if seller_holding.respond_to?(:listed_quantity=)
-
-          seller_holding.update!(attrs) if attrs.any?
-          add_to_buyer_holdings_safe(buyer, seller_holding, qty_sold, unit_cents, SecureRandom.hex(8))
-        end
+      if seller_holding
+        reduce_seller_holding!(seller_holding, quantity_sold)
+        add_holding_to_buyer!(buyer, seller_holding, quantity_sold, unit_cents)
       else
-        add_catalog_to_buyer_holdings_safe(buyer, listing, qty_sold, unit_cents, SecureRandom.hex(8))
+        add_catalogue_listing_to_buyer!(buyer, listing, quantity_sold, unit_cents)
       end
 
-      listing.update!(
-        quantity: 0,
-        status: "sold"
-      )
+      listing.update!(quantity: 0, status: "sold")
+      offer.update!(status: "confirmed_paid", confirmed_paid_at: Time.current)
 
-      offer.update!(
-        status: "confirmed_paid",
-        confirmed_paid_at: Time.current
-      )
+      listing.marketplace_offers
+             .where(status: %w[pending accepted])
+             .where.not(id: offer.id)
+             .update_all(status: "rejected", updated_at: Time.current)
 
-      listing.marketplace_offers.where(status: [ "pending", "accepted" ]).where.not(id: offer.id).update_all(status: "rejected", updated_at: Time.current)
-
-      create_purchase_log_safe(listing, buyer, seller, qty_sold, unit_cents, offer.offer_cents.to_i, {}, SecureRandom.hex(8))
+      create_purchase_log!(listing, buyer, seller, seller_holding, quantity_sold, unit_cents, offer.offer_cents.to_i)
     end
 
-    redirect_to marketplace_path(tab: "sold"), notice: "Payment confirmed. Listing moved to Sold Listings."
+    redirect_to marketplace_path(tab: "sold"), notice: "Payment confirmed. Listing moved to Sold Listings.", status: :see_other
+  rescue MarketplaceError => e
+    redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
   rescue
-    redirect_to marketplace_listing_path(params[:id]), alert: "Could not confirm payment."
+    redirect_to marketplace_listing_path(@listing), alert: "Could not confirm payment.", status: :see_other
   end
 
-  # Seller cancels an active listing and frees the listed holding quantity
+  # Seller cancels an active listing and frees any listed holding quantity.
   def cancel
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
-
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.lock.find(params[:id])
-      raise "invalid" unless listing.status.to_s == "active"
-      raise "invalid" unless listing.seller_id == current_user.id
+      listing = MarketplaceListing.lock.find(@listing.id)
 
-      if listing.holding_id.present?
-        h = Holding.lock.find(listing.holding_id)
-        h_listed = h.respond_to?(:listed_quantity) ? h.listed_quantity.to_i : 0
-        new_listed = h_listed - listing.quantity.to_i
-        new_listed = 0 if new_listed < 0
-        h.update!(listed_quantity: new_listed) if h.respond_to?(:listed_quantity=)
-      end
+      raise MarketplaceError, "Only active listings can be deleted." unless listing.status.to_s == "active"
+      raise MarketplaceError, "You cannot delete this listing." unless listing.seller_id.to_i == current_user.id.to_i
 
-      listing.marketplace_offers.where(status: [ "pending", "accepted" ]).update_all(status: "cancelled", updated_at: Time.current)
+      release_listed_quantity!(listing)
+      listing.marketplace_offers.where(status: %w[pending accepted]).update_all(status: "cancelled", updated_at: Time.current)
       listing.update!(status: "cancelled")
     end
 
-    redirect_to(marketplace_path, notice: "Listing cancelled.")
+    redirect_to marketplace_path, notice: "Listing deleted.", status: :see_other
+  rescue MarketplaceError => e
+    redirect_to marketplace_path, alert: e.message, status: :see_other
   rescue
-    redirect_to(marketplace_path, alert: "Could not cancel listing.")
+    redirect_to marketplace_path, alert: "Could not delete listing.", status: :see_other
   end
 
-  # Admin moves a listing from current listings into sold listings and cancels active offers
+  # Admin moves a listing into sold listings.
   def destroy
-    return redirect_to(marketplace_path, alert: "Forbidden.") unless admin_can_manage_marketplace?
+    return redirect_to(marketplace_path, alert: "Forbidden.", status: :see_other) unless admin_user?
 
-    debug_id = SecureRandom.hex(8)
-
-    begin
-      ActiveRecord::Base.transaction do
-        listing = MarketplaceListing.lock.find_by(id: params[:id])
-        unless listing
-          next
-        end
-
-        if listing.status.to_s == "active" && listing.respond_to?(:holding_id) && listing.holding_id.present?
-          h = Holding.lock.find_by(id: listing.holding_id)
-          if h && h.respond_to?(:listed_quantity)
-            h_listed = h.listed_quantity.to_i
-            dec = listing.respond_to?(:quantity) ? listing.quantity.to_i : 0
-            new_listed = h_listed - dec
-            new_listed = 0 if new_listed < 0
-
-            begin
-              h.update!(listed_quantity: new_listed) if h.respond_to?(:listed_quantity=)
-            rescue
-              begin
-                h.update_columns(listed_quantity: new_listed) if h.respond_to?(:listed_quantity)
-              rescue
-              end
-            end
-          end
-        end
-
-        listing.marketplace_offers.where(status: [ "pending", "accepted" ]).update_all(status: "cancelled", updated_at: Time.current)
-
-        attrs = { status: "sold", updated_at: Time.current }
-        attrs[:sold_at] = Time.current if listing.has_attribute?(:sold_at)
-        listing.update_columns(attrs)
-      end
-    rescue => e
-      Rails.logger.error("ADMIN_LISTING_DELETE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-      Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-      return redirect_to(marketplace_path, alert: "Could not delete listing. [#{debug_id}]")
+    ActiveRecord::Base.transaction do
+      listing = MarketplaceListing.lock.find(@listing.id)
+      release_listed_quantity!(listing) if listing.status.to_s == "active"
+      listing.marketplace_offers.where(status: %w[pending accepted]).update_all(status: "cancelled", updated_at: Time.current)
+      listing.update!(status: "sold", quantity: 0)
     end
 
-    redirect_to(marketplace_path(tab: "sold"), notice: "Listing moved to Sold Listings.")
+    redirect_to marketplace_path(tab: "sold"), notice: "Listing moved to Sold Listings.", status: :see_other
+  rescue
+    redirect_to marketplace_path, alert: "Could not delete listing.", status: :see_other
   end
 
   private
 
-  # Keeps form values available when the create listing form has an error
-  def listing_form_from_params
-    {
-      mode: params[:mode].to_s.presence || params[:ml_mode_choice].to_s.presence || "catalog",
-      holding_id: params[:holding_id].to_s,
-      catalog_set_slug: params[:catalog_set_slug].to_s,
-      catalog_route_type: params[:catalog_route_type].to_s,
-      catalog_condition: params[:catalog_condition].to_s.presence || params[:holding_condition].to_s,
-      price: params[:price].to_s,
-      quantity: params[:quantity].to_s.presence || "1"
-    }
+  # Finds the listing for member actions.
+  def set_listing
+    @listing = MarketplaceListing.includes(:seller).find(params[:id])
   end
 
-  # Re-renders the new listing form with an error message
-  def render_new_with_error(message)
-    @holdings = selectable_holdings
-    @listing_form = listing_form_from_params
-    flash.now[:alert] = message
-    render :new, status: :unprocessable_entity
-  end
-
-  # Re-renders checkout with the current address data and error message
-  def render_checkout_with_error(message)
-    flash.now[:alert] = message
-    @address ||= address_from_params
-    @saved_addresses ||= load_saved_addresses(current_user)
-    @seller_stats ||= { avg: 0.0, count: 0 }
-    render :checkout, status: :unprocessable_entity
-  end
-
-  # Allows the seller or admin to edit an active listing
-  def can_edit_listing?(listing)
-    return false unless current_user
-    return true if listing.seller_id.to_i == current_user.id.to_i
-    return true if admin_can_manage_marketplace?
-
-    false
+  # Checks whether the logged-in user is an admin.
+  def admin_user?
+    return true if respond_to?(:admin_signed_in?) && admin_signed_in?
+    current_user&.respond_to?(:admin?) && current_user.admin?
   rescue
     false
   end
 
-  # Converts the submitted euro price into cents
-  def parse_price_cents(raw)
-    value = BigDecimal(raw.to_s.strip.tr(",", "."))
-    (value * 100).round.to_i
-  rescue
-    0
+  # Loads catalogue values for filters and create-listing dropdowns.
+  def prepare_filter_data
+    @sets_data = sets_data
+    @eras = @sets_data.values.map { |set| set["era"].to_s }.reject(&:blank?).uniq.sort
+    @sets_for_era = sets_for_era(params[:era])
+    @condition_options = marketplace_conditions
   end
 
-  # Condition dropdown used by the edit form
-  def editable_condition_options
+  # Reads the product catalogue from config/sets.json.
+  def sets_data
+    @sets_data ||= JSON.parse(File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8"))
+  rescue
+    {}
+  end
+
+  # Returns sets belonging to one selected era.
+  def sets_for_era(era)
+    return [] if era.to_s.blank?
+
+    sets_data.values
+             .select { |set| set["era"].to_s == era.to_s }
+             .sort_by { |set| set["name"].to_s }
+             .map { |set| { "slug" => set["slug"].to_s, "name" => set["name"].to_s } }
+  end
+
+  # Conditions used by marketplace create/edit forms.
+  def marketplace_conditions
     [
       "Mint Condition",
       "Mint Sealed",
@@ -698,259 +394,178 @@ class MarketplaceListingsController < ApplicationController
     ].uniq
   end
 
-  # Validates uploaded listing photos before attaching them
-  def validate_listing_uploads!(listing, uploads)
-    return if uploads.blank?
+  # Keeps submitted values in the new-listing form after validation errors.
+  def listing_form_from_params
+    {
+      mode: params[:mode].to_s.presence || params[:ml_mode_choice].to_s.presence || "catalog",
+      holding_id: params[:holding_id].to_s,
+      catalog_set_slug: params[:catalog_set_slug].to_s,
+      catalog_route_type: params[:catalog_route_type].to_s,
+      catalog_condition: params[:catalog_condition].to_s.presence || params[:holding_condition].to_s,
+      price: params[:price].to_s,
+      quantity: params[:quantity].to_s.presence || "1"
+    }
+  end
 
-    current_count =
-      if listing.respond_to?(:photos) && listing.photos.respond_to?(:attached?) && listing.photos.attached?
-        listing.photos.count
-      else
-        0
-      end
+  # Re-renders the create-listing form with an error message.
+  def render_new_with_error(message)
+    @holdings = selectable_holdings
+    @listing_form = listing_form_from_params
+    flash.now[:alert] = message
+    render :new, status: :unprocessable_entity
+  end
 
-    if current_count + uploads.length > 4
-      raise "too_many_photos"
-    end
+  # Checks which listing mode the form is using.
+  def catalogue_mode?
+    params[:mode].to_s != "holding"
+  end
+
+  # Converts euro text into integer cents.
+  def parse_price_cents(value)
+    (BigDecimal(value.to_s.strip.tr(",", ".")) * 100).round.to_i
+  rescue
+    0
+  end
+
+  # Gets uploaded listing photos from the form.
+  def uploaded_photos
+    Array(params[:photos]).compact.reject { |file| file.respond_to?(:blank?) && file.blank? }
+  end
+
+  # Validates image count and content type before Active Storage attaches files.
+  def validate_photo_uploads(uploads, listing = nil)
+    return nil if uploads.blank?
+
+    current_count = listing&.photos&.attached? ? listing.photos.count : 0
+    return "You can upload up to 4 images." if current_count + uploads.length > 4
 
     uploads.each do |file|
-      content_type = file.content_type.to_s
+      next if %w[image/png image/jpeg image/jpg].include?(file.content_type.to_s)
+      return "Images must be JPG or PNG."
+    end
 
-      unless content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
-        raise "invalid_photo_type"
-      end
+    nil
+  end
+
+  # Creates a listing directly from the product catalogue.
+  def create_catalogue_listing!(price_cents, quantity, uploads)
+    set_slug = params[:catalog_set_slug].to_s.strip
+    route_type = params[:catalog_route_type].to_s.strip
+    condition = params[:catalog_condition].to_s.strip
+
+    raise MarketplaceError, "Choose a product." if set_slug.blank? || route_type.blank?
+    raise MarketplaceError, "Choose a condition." if condition.blank?
+
+    meta = listing_meta_for_slug_type(set_slug, route_type)
+
+    ActiveRecord::Base.transaction do
+      listing = MarketplaceListing.create!(
+        seller_id: current_user.id,
+        holding_id: nil,
+        product_sku: "#{set_slug}:#{route_type}",
+        set_slug: set_slug,
+        route_type: route_type,
+        set_name: meta[:set_name],
+        product_type_name: meta[:product_type_name],
+        condition: condition,
+        country_code: marketplace_country_code,
+        price_cents: price_cents,
+        quantity: quantity,
+        status: "active"
+      )
+
+      uploads.each { |file| listing.photos.attach(file) }
     end
   end
 
-  # Keeps holding listed quantity accurate when the seller edits quantity
-  def update_holding_listed_quantity_for_edit!(listing, new_quantity)
-    return if listing.holding_id.blank?
-    return unless defined?(Holding)
+  # Creates a listing from a user's portfolio holding.
+  def create_holding_listing!(price_cents, quantity, uploads)
+    holding = Holding.find_by(id: params[:holding_id])
+    raise MarketplaceError, "Choose a holding." unless holding
+    raise MarketplaceError, "That holding is not yours." unless holding.user_id.to_i == current_user.id.to_i
+    raise MarketplaceError, "This holding has no condition set." if holding.condition.to_s.blank?
 
-    holding = Holding.lock.find_by(id: listing.holding_id)
-    return unless holding
-    return unless holding.respond_to?(:listed_quantity)
+    meta = listing_meta_for_holding(holding)
 
-    old_quantity = listing.quantity.to_i
-    listed_quantity = holding.listed_quantity.to_i
-    total_quantity = holding.respond_to?(:quantity) ? holding.quantity.to_i : 0
+    ActiveRecord::Base.transaction do
+      locked_holding = Holding.lock.find(holding.id)
+      available = locked_holding.quantity.to_i - locked_holding.listed_quantity.to_i
+      raise MarketplaceError, "Not enough available quantity." if quantity > available
 
-    available_for_this_listing = total_quantity - listed_quantity + old_quantity
-    available_for_this_listing = 0 if available_for_this_listing < 0
+      locked_holding.update!(listed_quantity: locked_holding.listed_quantity.to_i + quantity)
 
-    raise "not_enough_available_quantity" if new_quantity > available_for_this_listing
+      listing = MarketplaceListing.create!(
+        seller_id: current_user.id,
+        holding_id: locked_holding.id,
+        product_sku: meta[:sku],
+        set_slug: meta[:set_slug],
+        route_type: meta[:route_type],
+        set_name: meta[:set_name],
+        product_type_name: meta[:product_type_name],
+        condition: locked_holding.condition.to_s,
+        country_code: marketplace_country_code,
+        price_cents: price_cents,
+        quantity: quantity,
+        status: "active"
+      )
 
-    new_listed_quantity = listed_quantity - old_quantity + new_quantity
-    new_listed_quantity = 0 if new_listed_quantity < 0
-
-    if holding.respond_to?(:listed_quantity=)
-      holding.update!(listed_quantity: new_listed_quantity)
+      uploads.each { |file| listing.photos.attach(file) }
     end
   end
 
-  # Converts internal edit errors into user-friendly flash messages
-  def edit_error_message(error)
-    message = error.message.to_s
+  # Uses the seller account country, falling back to Ireland.
+  def marketplace_country_code
+    current_user.respond_to?(:country_code) && current_user.country_code.present? ? current_user.country_code.to_s : "IE"
+  end
 
-    case message
-    when "not_allowed"
-      "You cannot edit this listing."
-    when "listing_not_active"
-      "Only active listings can be edited."
-    when "listing_has_sale_activity"
-      "This listing cannot be edited because payment or sale activity has already started."
-    when "invalid_price"
-      "Price must be greater than €0."
-    when "invalid_quantity"
-      "Quantity must be at least 1."
-    when "invalid_condition"
-      "Condition is required."
-    when "too_many_photos"
-      "A listing can only have up to 4 images."
-    when "invalid_photo_type"
-      "Images must be JPG or PNG."
-    when "not_enough_available_quantity"
-      "Not enough available quantity in your holding."
-    else
-      "Could not update listing."
+  # Only holdings with available quantity can be listed.
+  def selectable_holdings
+    Holding.where(user_id: current_user.id).select do |holding|
+      holding.quantity.to_i - holding.listed_quantity.to_i > 0
     end
   end
 
-  # Safely extracts address fields from submitted params
-  def address_from_params
-    raw = params[:address]
-    h =
-      if raw.is_a?(ActionController::Parameters)
-        raw.to_unsafe_h
-      elsif raw.is_a?(Hash)
-        raw
-      else
-        {}
-      end
-
-    {
-      name: h["name"].to_s.strip,
-      line1: h["line1"].to_s.strip,
-      line2: h["line2"].to_s.strip,
-      city: h["city"].to_s.strip,
-      county: h["county"].to_s.strip,
-      postcode: h["postcode"].to_s.strip,
-      country_code: h["country_code"].to_s.strip
-    }
-  rescue
-    { name: "", line1: "", line2: "", city: "", county: "", postcode: "", country_code: "" }
-  end
-
-  # Loads the user's saved addresses if the saved address table exists
-  def load_saved_addresses(user)
-    return [] unless user
-    return [] unless defined?(SavedAddress)
-    return [] unless SavedAddress.respond_to?(:table_name)
-    return [] unless ActiveRecord::Base.connection.data_source_exists?(SavedAddress.table_name)
-
-    SavedAddress.where(user_id: user.id).order(created_at: :desc).limit(5).to_a
-  rescue
-    []
-  end
-
-  # Prepares dropdown data used by the marketplace filters
-  def prepare_filter_data
-    data = sets_data
-    @eras = data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq.sort
-
-    selected_era = params[:era].to_s.strip
-    @sets_for_era =
-      if selected_era.present?
-        data.values
-            .select { |s| s["era"].to_s == selected_era }
-            .sort_by { |s| s["name"].to_s }
-            .map { |s| { "slug" => s["slug"].to_s, "name" => s["name"].to_s } }
-      else
-        []
-      end
-
-    @condition_options = [
-      "Mint Condition",
-      "Loosely Sealed",
-      "Unsealed",
-      "Big Tear",
-      "Small Tear",
-      "Big Imperfections",
-      "Small Imperfections",
-      "Pressure Marks",
-      "Slightly Dented",
-      "Heavy Dented",
-      "Damaged",
-      "Box Only",
-      "Contents Only"
-    ]
-  end
-
-  # Loads active marketplace listings for the current tab
-  def load_current_index_rows
+  # Loads active listings and seller review stats.
+  def load_current_listings
     scope = MarketplaceListing.active.includes(:seller)
-    scope = apply_current_scope_filters(scope)
+    scope = apply_current_filters(scope)
 
     @listings = scope.to_a
     @sold_rows = []
     @sold_listing_map = {}
-    @review_stats = review_stats_for_seller_ids(@listings.map(&:seller_id).uniq)
+    @review_stats = review_stats_for(@listings.map(&:seller_id))
   end
 
-  # Loads sold listings and completed marketplace purchase records for the sold tab
-  def load_sold_index_rows
-    rows = []
+  # Applies database filters to active listings.
+  def apply_current_filters(scope)
+    if params[:q].to_s.strip.present?
+      term = "%#{params[:q].to_s.downcase.strip}%"
 
-    if marketplace_purchase_available?
-      scope = MarketplacePurchase.all
-
-      if col_exists?(MarketplacePurchase, "status")
-        scope = scope.where(status: "sold")
-      elsif col_exists?(MarketplacePurchase, "refunded")
-        scope = scope.where(refunded: false)
-      elsif col_exists?(MarketplacePurchase, "refunded_at")
-        scope = scope.where(refunded_at: nil)
-      end
-
-      purchase_rows = scope.order(created_at: :desc).limit(2000).to_a
-      purchase_listing_ids = purchase_rows.map do |row|
-        if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
-          row.marketplace_listing_id.to_i
-        elsif row.respond_to?(:listing_id) && row.listing_id.present?
-          row.listing_id.to_i
-        end
-      end.compact.uniq
-
-      sold_listing_scope = MarketplaceListing.where(status: "sold").includes(:seller)
-      sold_listing_scope = sold_listing_scope.where.not(id: purchase_listing_ids) if purchase_listing_ids.any?
-      sold_listing_rows = sold_listing_scope.order(updated_at: :desc).limit(2000).to_a
-
-      rows = purchase_rows + sold_listing_rows
-      @sold_listing_map = build_sold_listing_map(rows)
-      rows = apply_sold_row_filters(rows, @sold_listing_map)
-      @sold_rows = rows.first(500)
-    else
-      rows = MarketplaceListing.where(status: "sold").includes(:seller).order(updated_at: :desc).limit(2000).to_a
-      @sold_listing_map = {}
-      rows = apply_sold_row_filters(rows, @sold_listing_map)
-      @sold_rows = rows.first(500)
-    end
-
-    @listings = []
-    seller_ids = @sold_rows.map { |row| seller_id_for_sold_row(row, @sold_listing_map) }.compact.uniq
-    @review_stats = review_stats_for_seller_ids(seller_ids)
-  end
-
-  # Applies search, dropdown, price and sort filters to active listings
-  def apply_current_scope_filters(scope)
-    q = params[:q].to_s.strip
-    if q.present?
-      term = "%#{q.downcase}%"
       scope = scope.joins(:seller).where(
-        "LOWER(marketplace_listings.set_name) LIKE :t OR LOWER(marketplace_listings.product_type_name) LIKE :t OR LOWER(marketplace_listings.product_sku) LIKE :t OR LOWER(users.username) LIKE :t",
-        t: term
+        "LOWER(marketplace_listings.set_name) LIKE :term OR LOWER(marketplace_listings.product_type_name) LIKE :term OR LOWER(marketplace_listings.product_sku) LIKE :term OR LOWER(users.username) LIKE :term",
+        term: term
       )
     end
 
-    country = params[:country].to_s.strip
-    scope = scope.where(country_code: country) if country.present?
+    scope = scope.where(country_code: params[:country]) if params[:country].to_s.present?
 
-    era = params[:era].to_s.strip
-    if era.present?
-      slugs = set_slugs_for_era(era)
-      scope = slugs.any? ? scope.where(set_slug: slugs) : scope.where(id: nil)
+    if params[:era].to_s.present?
+      slugs = set_slugs_for_era(params[:era])
+      scope = slugs.any? ? scope.where(set_slug: slugs) : scope.none
     end
 
-    set_slug = params[:set_slug].to_s.strip
-    scope = scope.where(set_slug: set_slug) if set_slug.present?
+    scope = scope.where(set_slug: params[:set_slug]) if params[:set_slug].to_s.present?
 
-    product_type = params[:product_type].to_s.strip
-    if product_type.present?
-      scope = scope.where("route_type = ? OR route_type LIKE ?", product_type, "#{product_type}--v-%")
+    if params[:product_type].to_s.present?
+      type = params[:product_type].to_s
+      scope = scope.where("route_type = ? OR route_type LIKE ?", type, "#{type}--%")
     end
 
-    condition = params[:condition].to_s.strip
-    scope = scope.where(condition: condition) if condition.present?
+    scope = scope.where(condition: params[:condition]) if params[:condition].to_s.present?
+    scope = scope.where("price_cents >= ?", parse_price_cents(params[:min_price])) if parse_price_cents(params[:min_price]) > 0
+    scope = scope.where("price_cents <= ?", parse_price_cents(params[:max_price])) if parse_price_cents(params[:max_price]) > 0
 
-    min_price = params[:min_price].to_s.strip
-    if min_price.present?
-      begin
-        min_cents = (BigDecimal(min_price) * 100).to_i
-        scope = scope.where("price_cents >= ?", min_cents)
-      rescue
-      end
-    end
-
-    max_price = params[:max_price].to_s.strip
-    if max_price.present?
-      begin
-        max_cents = (BigDecimal(max_price) * 100).to_i
-        scope = scope.where("price_cents <= ?", max_cents)
-      rescue
-      end
-    end
-
-    case params[:sort].to_s.strip
+    case params[:sort].to_s
     when "oldest"
       scope.order(created_at: :asc)
     when "price-asc"
@@ -962,754 +577,432 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
-  # Applies filters to sold rows after purchase rows are loaded
-  def apply_sold_row_filters(rows, listing_map)
-    filtered = Array(rows).select { |row| sold_row_matches_filters?(row, listing_map) }
+  # Loads purchase rows plus sold listing rows for the sold tab.
+  def load_sold_listings
+    purchase_rows = MarketplacePurchase.order(created_at: :desc).limit(2000).to_a
+    purchase_listing_ids = purchase_rows.map(&:marketplace_listing_id).compact.uniq
 
-    case params[:sort].to_s.strip
-    when "oldest"
-      filtered.sort_by { |row| sold_row_date(row, listing_map) || Time.at(0) }
-    when "price-asc"
-      filtered.sort_by { |row| [ sold_row_unit_cents(row, listing_map), -(sold_row_date(row, listing_map)&.to_i || 0) ] }
-    when "price-desc"
-      filtered.sort_by { |row| [ -sold_row_unit_cents(row, listing_map), -(sold_row_date(row, listing_map)&.to_i || 0) ] }
-    else
-      filtered.sort_by { |row| -(sold_row_date(row, listing_map)&.to_i || 0) }
-    end
+    sold_listings = MarketplaceListing.where(status: "sold").includes(:seller)
+    sold_listings = sold_listings.where.not(id: purchase_listing_ids) if purchase_listing_ids.any?
+
+    rows = purchase_rows + sold_listings.order(updated_at: :desc).limit(2000).to_a
+    @sold_listing_map = MarketplaceListing.where(id: purchase_listing_ids).includes(:seller).index_by(&:id)
+    rows = rows.select { |row| sold_row_matches_filters?(row) }
+    rows = sort_sold_rows(rows)
+
+    @sold_rows = rows.first(500)
+    @listings = []
+    @review_stats = review_stats_for(@sold_rows.map { |row| sold_row_seller_id(row) })
   end
 
-  # Checks whether one sold row matches the selected marketplace filters
-  def sold_row_matches_filters?(row, listing_map)
-    listing = sold_listing_for_row(row, listing_map)
+  # Checks sold rows against the current filters.
+  def sold_row_matches_filters?(row)
+    searchable = [
+      sold_row_seller_name(row),
+      sold_row_set_name(row),
+      sold_row_product_name(row),
+      sold_row_product_sku(row)
+    ].join(" ").downcase
 
-    q = params[:q].to_s.strip.downcase
-    if q.present?
-      seller_name =
-        if row.respond_to?(:seller_id) && row.seller_id.present?
-          seller = User.find_by(id: row.seller_id)
-          seller&.respond_to?(:username) ? seller.username.to_s.downcase : ""
-        elsif listing&.respond_to?(:seller) && listing.seller&.respond_to?(:username)
-          listing.seller.username.to_s.downcase
-        else
-          ""
-        end
+    return false if params[:q].to_s.present? && !searchable.include?(params[:q].to_s.downcase.strip)
+    return false if params[:country].to_s.present? && sold_row_country(row) != params[:country].to_s
+    return false if params[:era].to_s.present? && set_era_for_slug(sold_row_set_slug(row)) != params[:era].to_s
+    return false if params[:set_slug].to_s.present? && sold_row_set_slug(row) != params[:set_slug].to_s
 
-      set_name =
-        if row.respond_to?(:set_name) && row.set_name.present?
-          row.set_name.to_s.downcase
-        elsif listing&.respond_to?(:set_name) && listing.set_name.present?
-          listing.set_name.to_s.downcase
-        else
-          ""
-        end
-
-      product_name =
-        if row.respond_to?(:product_type_name) && row.product_type_name.present?
-          row.product_type_name.to_s.downcase
-        elsif row.respond_to?(:product_name) && row.product_name.present?
-          row.product_name.to_s.downcase
-        elsif listing&.respond_to?(:product_type_name) && listing.product_type_name.present?
-          listing.product_type_name.to_s.downcase
-        else
-          ""
-        end
-
-      product_sku =
-        if row.respond_to?(:product_sku) && row.product_sku.present?
-          row.product_sku.to_s.downcase
-        elsif listing&.respond_to?(:product_sku) && listing.product_sku.present?
-          listing.product_sku.to_s.downcase
-        else
-          ""
-        end
-
-      haystack = [ seller_name, set_name, product_name, product_sku ].join(" ")
-      return false unless haystack.include?(q)
+    if params[:product_type].to_s.present?
+      base_type = sold_row_route_type(row).split("--", 2).first
+      return false unless base_type == params[:product_type].to_s
     end
 
-    country = params[:country].to_s.strip
-    if country.present?
-      return false unless sold_row_country_code(row, listing_map).to_s == country
-    end
-
-    era = params[:era].to_s.strip
-    if era.present?
-      slug = sold_row_set_slug(row, listing_map).to_s
-      row_era = set_era_for_slug(slug)
-      return false unless row_era == era
-    end
-
-    set_slug = params[:set_slug].to_s.strip
-    if set_slug.present?
-      return false unless sold_row_set_slug(row, listing_map).to_s == set_slug
-    end
-
-    product_type = params[:product_type].to_s.strip
-    if product_type.present?
-      route_type = sold_row_route_type(row, listing_map).to_s
-      base_route = route_type.split("--v-", 2).first.to_s
-      return false unless base_route == product_type
-    end
-
-    condition = params[:condition].to_s.strip
-    if condition.present?
-      return false unless sold_row_condition(row, listing_map).to_s == condition
-    end
-
-    min_price = params[:min_price].to_s.strip
-    if min_price.present?
-      begin
-        min_cents = (BigDecimal(min_price) * 100).to_i
-        return false if sold_row_unit_cents(row, listing_map) < min_cents
-      rescue
-      end
-    end
-
-    max_price = params[:max_price].to_s.strip
-    if max_price.present?
-      begin
-        max_cents = (BigDecimal(max_price) * 100).to_i
-        return false if sold_row_unit_cents(row, listing_map) > max_cents
-      rescue
-      end
-    end
+    return false if params[:condition].to_s.present? && sold_row_condition(row) != params[:condition].to_s
+    return false if parse_price_cents(params[:min_price]) > 0 && sold_row_unit_cents(row) < parse_price_cents(params[:min_price])
+    return false if parse_price_cents(params[:max_price]) > 0 && sold_row_unit_cents(row) > parse_price_cents(params[:max_price])
 
     true
   end
 
-  # Gets the set slug from either the sold row or the related listing
-  def sold_row_set_slug(row, listing_map)
-    if row.respond_to?(:set_slug) && row.set_slug.present?
-      row.set_slug.to_s
+  # Sorts sold rows by selected order.
+  def sort_sold_rows(rows)
+    case params[:sort].to_s
+    when "oldest"
+      rows.sort_by { |row| sold_row_date(row) || Time.at(0) }
+    when "price-asc"
+      rows.sort_by { |row| [ sold_row_unit_cents(row), -(sold_row_date(row)&.to_i || 0) ] }
+    when "price-desc"
+      rows.sort_by { |row| [ -sold_row_unit_cents(row), -(sold_row_date(row)&.to_i || 0) ] }
     else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.respond_to?(:set_slug) ? listing.set_slug.to_s : ""
+      rows.sort_by { |row| -(sold_row_date(row)&.to_i || 0) }
     end
   end
 
-  # Gets the product route type from either the sold row or the related listing
-  def sold_row_route_type(row, listing_map)
-    if row.respond_to?(:route_type) && row.route_type.present?
-      row.route_type.to_s
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.respond_to?(:route_type) ? listing.route_type.to_s : ""
-    end
-  end
-
-  # Gets the product condition from either the sold row or the related listing
-  def sold_row_condition(row, listing_map)
-    if row.respond_to?(:condition) && row.condition.present?
-      row.condition.to_s
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.respond_to?(:condition) ? listing.condition.to_s : ""
-    end
-  end
-
-  # Gets the seller country from either the sold row or the related listing
-  def sold_row_country_code(row, listing_map)
-    if row.respond_to?(:country_code) && row.country_code.present?
-      row.country_code.to_s
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.respond_to?(:country_code) ? listing.country_code.to_s : ""
-    end
-  end
-
-  # Gets the unit price in cents for a sold row
-  def sold_row_unit_cents(row, listing_map)
-    if row.respond_to?(:unit_price_cents) && row.unit_price_cents.to_i > 0
-      row.unit_price_cents.to_i
-    elsif row.respond_to?(:price_cents) && row.price_cents.to_i > 0
-      row.price_cents.to_i
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.respond_to?(:price_cents) ? listing.price_cents.to_i : 0
-    end
-  end
-
-  # Gets the sale date from the purchase row or listing update date
-  def sold_row_date(row, listing_map)
-    if row.respond_to?(:created_at) && row.created_at.present?
-      row.created_at
-    elsif row.respond_to?(:updated_at) && row.updated_at.present?
-      row.updated_at
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      if listing&.respond_to?(:updated_at) && listing.updated_at.present?
-        listing.updated_at
-      else
-        nil
-      end
-    end
-  end
-
-  # Gets seller ID from the sold row or related listing
-  def seller_id_for_sold_row(row, listing_map)
-    if row.respond_to?(:seller_id) && row.seller_id.present?
-      row.seller_id
-    else
-      listing = sold_listing_for_row(row, listing_map)
-      listing&.seller_id
-    end
-  end
-
-  # Finds the marketplace listing connected to a sold row
-  def sold_listing_for_row(row, listing_map)
-    if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
-      listing_map[row.marketplace_listing_id.to_i]
-    elsif row.respond_to?(:listing_id) && row.listing_id.present?
-      listing_map[row.listing_id.to_i]
-    elsif row.is_a?(MarketplaceListing)
-      row
-    else
-      nil
-    end
-  end
-
-  # Builds a lookup map of sold listing IDs to listing records
-  def build_sold_listing_map(rows)
-    ids = []
-
-    Array(rows).each do |row|
-      if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
-        ids << row.marketplace_listing_id.to_i
-      elsif row.respond_to?(:listing_id) && row.listing_id.present?
-        ids << row.listing_id.to_i
-      end
-    end
-
-    ids.uniq!
-    return {} if ids.empty?
-
-    MarketplaceListing.where(id: ids).includes(:seller).index_by(&:id)
-  rescue
-    {}
-  end
-
-  # Calculates average review rating and review count for sellers
-  def review_stats_for_seller_ids(ids)
-    return {} unless defined?(Review)
+  # Finds review averages for sellers shown in the table.
+  def review_stats_for(seller_ids)
+    ids = seller_ids.compact.uniq
     return {} if ids.blank?
 
     Review.where(seller_id: ids)
           .group(:seller_id)
           .pluck(:seller_id, Arel.sql("AVG(rating)"), Arel.sql("COUNT(*)"))
-          .each_with_object({}) do |(sid, avg, cnt), h|
-            h[sid] = { avg: avg.to_f, count: cnt.to_i }
+          .each_with_object({}) do |(seller_id, avg, count), hash|
+            hash[seller_id] = { avg: avg.to_f, count: count.to_i }
           end
   rescue
     {}
   end
 
-  # Checks that the marketplace purchases table is available before using it
-  def marketplace_purchase_available?
-    return false unless defined?(MarketplacePurchase)
-    return false unless MarketplacePurchase.respond_to?(:table_name)
-
-    ActiveRecord::Base.connection.data_source_exists?(MarketplacePurchase.table_name)
+  # Finds one seller's review summary.
+  def seller_stats(seller_id)
+    {
+      avg: Review.where(seller_id: seller_id).average(:rating).to_f,
+      count: Review.where(seller_id: seller_id).count
+    }
   rescue
-    false
+    { avg: 0.0, count: 0 }
   end
 
-  # Checks if a database column exists before querying it
-  def col_exists?(model, col)
-    return false unless model
-    return false unless model.respond_to?(:table_name)
-
-    ActiveRecord::Base.connection.column_exists?(model.table_name, col.to_s)
-  rescue
-    false
-  end
-
-  # Finds all set slugs that belong to a selected era
-  def set_slugs_for_era(era)
-    sets_data.values
-             .select { |s| s["era"].to_s == era.to_s }
-             .map { |s| s["slug"].to_s }
-             .reject(&:blank?)
+  # Loads recent reviews for a seller.
+  def recent_reviews(seller_id)
+    Review.where(seller_id: seller_id).order(created_at: :desc).limit(10)
   rescue
     []
   end
 
-  # Finds the era for a set slug using config/sets.json
+  # Finds set slugs for an era.
+  def set_slugs_for_era(era)
+    sets_data.values.select { |set| set["era"].to_s == era.to_s }.map { |set| set["slug"].to_s }
+  end
+
+  # Finds an era by set slug.
   def set_era_for_slug(slug)
-    s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
-    s ? s["era"].to_s : ""
+    set = sets_data[slug.to_s] || sets_data.values.find { |item| item["slug"].to_s == slug.to_s }
+    set ? set["era"].to_s : ""
+  end
+
+  # Blocks edits once the listing is not active or offer/payment activity has started.
+  def ensure_listing_can_be_edited!
+    raise MarketplaceError, "You cannot edit this listing." unless @listing.seller_id.to_i == current_user.id.to_i || admin_user?
+    raise MarketplaceError, "Only active listings can be edited." unless @listing.status.to_s == "active"
+    raise MarketplaceError, "This listing cannot be edited because payment or sale activity has already started." if @listing.marketplace_offers.where(status: %w[accepted paid confirmed_paid]).exists?
+  end
+
+  # Keeps the holding listed quantity correct when listing quantity changes.
+  def update_holding_listed_quantity!(listing, new_quantity)
+    return if listing.holding_id.blank?
+
+    holding = Holding.lock.find_by(id: listing.holding_id)
+    return unless holding
+
+    old_quantity = listing.quantity.to_i
+    total_quantity = holding.quantity.to_i
+    listed_quantity = holding.listed_quantity.to_i
+    available = total_quantity - listed_quantity + old_quantity
+
+    raise MarketplaceError, "Not enough available quantity in your holding." if new_quantity > available
+
+    holding.update!(listed_quantity: listed_quantity - old_quantity + new_quantity)
+  end
+
+  # Releases listed quantity when a listing is cancelled or admin-deleted.
+  def release_listed_quantity!(listing)
+    return if listing.holding_id.blank?
+
+    holding = Holding.lock.find_by(id: listing.holding_id)
+    return unless holding
+
+    new_listed = holding.listed_quantity.to_i - listing.quantity.to_i
+    holding.update!(listed_quantity: [ new_listed, 0 ].max)
+  end
+
+  # Reduces the seller's holding after a confirmed sale.
+  def reduce_seller_holding!(holding, quantity_sold)
+    quantity = [ holding.quantity.to_i - quantity_sold, 0 ].max
+    listed_quantity = [ holding.listed_quantity.to_i - quantity_sold, 0 ].max
+    holding.update!(quantity: quantity, listed_quantity: listed_quantity)
+  end
+
+  # Adds a sold holding to the buyer's portfolio.
+  def add_holding_to_buyer!(buyer, seller_holding, quantity, unit_cents)
+    unit_price = unit_cents.to_i / 100.0
+    existing = Holding.where(user_id: buyer.id, product_id: seller_holding.product_id).first
+
+    if existing
+      new_quantity = existing.quantity.to_i + quantity
+      existing.update!(
+        quantity: new_quantity,
+        listed_quantity: 0,
+        cost_per_unit: unit_price,
+        total_cost: unit_price * new_quantity,
+        purchase_date: Date.current
+      )
+      return
+    end
+
+    Holding.create!(
+      user_id: buyer.id,
+      product_id: seller_holding.product_id,
+      username: buyer.username.to_s,
+      era: seller_holding.era,
+      set_name: seller_holding.set_name,
+      product_type: seller_holding.product_type,
+      condition: seller_holding.condition,
+      quantity: quantity,
+      listed_quantity: 0,
+      cost_per_unit: unit_price,
+      value: seller_holding.value,
+      total_cost: unit_price * quantity,
+      total_value: seller_holding.value.to_d * quantity,
+      pl: 0,
+      roi_pct: 0,
+      purchase_date: Date.current,
+      image: seller_holding.image
+    )
+  end
+
+  # Adds a catalogue listing to the buyer's portfolio after purchase.
+  def add_catalogue_listing_to_buyer!(buyer, listing, quantity, unit_cents)
+    product = ensure_product_for_listing!(listing)
+    unit_price = unit_cents.to_i / 100.0
+
+    Holding.create!(
+      user_id: buyer.id,
+      product_id: product.id,
+      username: buyer.username.to_s,
+      era: set_era_for_slug(listing.set_slug),
+      set_name: listing.set_name,
+      product_type: listing.product_type_name,
+      condition: listing.condition,
+      quantity: quantity,
+      listed_quantity: 0,
+      cost_per_unit: unit_price,
+      value: unit_price,
+      total_cost: unit_price * quantity,
+      total_value: unit_price * quantity,
+      pl: 0,
+      roi_pct: 0,
+      purchase_date: Date.current,
+      image: ""
+    )
+  end
+
+  # Makes sure catalogue purchases have a Product row to link the buyer holding to.
+  def ensure_product_for_listing!(listing)
+    product = Product.find_by(sku: listing.product_sku.to_s)
+    return product if product
+
+    Product.create!(
+      sku: listing.product_sku.to_s,
+      name: listing.product_type_name.to_s,
+      product_type: listing.route_type.to_s,
+      set_name: listing.set_name.to_s,
+      era: set_era_for_slug(listing.set_slug),
+      value: listing.price_cents.to_i / 100.0
+    )
+  end
+
+  # Stores a completed sale row for sold listings and realised P/L.
+  def create_purchase_log!(listing, buyer, seller, seller_holding, quantity, unit_cents, total_cents)
+    cost_cents = seller_holding ? (seller_holding.cost_per_unit.to_d * 100).round.to_i : nil
+    realised_cents = cost_cents ? (unit_cents.to_i - cost_cents) * quantity.to_i : nil
+
+    MarketplacePurchase.create!(
+      buyer_id: buyer.id,
+      seller_id: seller.id,
+      marketplace_listing_id: listing.id,
+      holding_id: seller_holding&.id,
+      set_slug: listing.set_slug,
+      route_type: listing.route_type,
+      set_name: listing.set_name,
+      product_name: listing.product_type_name,
+      condition: listing.condition,
+      quantity: quantity,
+      unit_price_cents: unit_cents,
+      total_price_cents: total_cents,
+      seller_cost_per_unit_cents: cost_cents,
+      realised_pl_cents: realised_cents,
+      debug_id: SecureRandom.hex(8),
+      debug_context: "manual_revolut_offer_payment"
+    )
+  end
+
+  # Builds display metadata for a catalogue-created listing.
+  def listing_meta_for_slug_type(slug, route_type)
+    set = sets_data[slug.to_s] || sets_data.values.find { |item| item["slug"].to_s == slug.to_s }
+    raise MarketplaceError, "Choose a valid set." unless set
+
+    product = product_from_route(set, route_type)
+    raise MarketplaceError, "Choose a valid product." unless product
+
+    {
+      set_name: set["name"].to_s,
+      product_type_name: product["name"].to_s.presence || titleize_code(product["type"])
+    }
+  end
+
+  # Builds display metadata for a holding-created listing.
+  def listing_meta_for_holding(holding)
+    sku = holding.product&.sku.to_s
+    set_slug, route_type = parse_sku(sku)
+
+    set_slug = slug_for_set_name(holding.set_name) if set_slug.blank?
+    route_type = holding.product&.product_type.to_s if route_type.blank?
+    route_type = title_to_code(holding.product_type) if route_type.blank?
+
+    {
+      sku: [ set_slug, route_type ].reject(&:blank?).join(":"),
+      set_slug: set_slug,
+      route_type: route_type,
+      set_name: holding.set_name.to_s,
+      product_type_name: holding.product_type.to_s
+    }
+  end
+
+  # Finds a catalogue product from route type.
+  def product_from_route(set, route_type)
+    parsed = parse_route_type(route_type)
+
+    Array(set["products"] || set["sealed"]).find do |product|
+      type = product["type"].to_s
+      name = product["name"].to_s
+
+      next false unless normalize_type(type) == parsed[:base_type]
+      next false if parsed[:variant_slug].present? && slugify(extract_variant(name)) != parsed[:variant_slug]
+      next false if parsed[:origin_slug].present? && slugify(infer_origin(type, name)) != parsed[:origin_slug]
+      next false if parsed[:product_slug].present? && slugify(name) != parsed[:product_slug]
+
+      true
+    end
+  end
+
+  # Splits route type values such as etb--v-lucario.
+  def parse_route_type(route_type)
+    parts = route_type.to_s.split("--")
+
+    out = {
+      base_type: normalize_type(parts.shift),
+      variant_slug: nil,
+      origin_slug: nil,
+      product_slug: nil
+    }
+
+    parts.each do |part|
+      out[:variant_slug] = part.delete_prefix("v-") if part.start_with?("v-")
+      out[:origin_slug] = part.delete_prefix("o-") if part.start_with?("o-")
+      out[:product_slug] = part.delete_prefix("p-") if part.start_with?("p-")
+    end
+
+    out
+  end
+
+  # Parses SKU values in slug:type format.
+  def parse_sku(sku)
+    text = sku.to_s
+    return text.split(":", 2) if text.include?(":")
+    return text.split("--", 2) if text.include?("--")
+
+    [ text, "" ]
+  end
+
+  # Finds a set slug from a set name.
+  def slug_for_set_name(set_name)
+    set = sets_data.values.find { |item| item["name"].to_s == set_name.to_s }
+    set ? set["slug"].to_s : ""
+  end
+
+  # Converts text product type to a basic route code.
+  def title_to_code(value)
+    value.to_s.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
+  end
+
+  # Converts code text into title case.
+  def titleize_code(value)
+    value.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
+  end
+
+  # Normalises product route type codes.
+  def normalize_type(value)
+    value.to_s.downcase.tr("-", "_").strip
+  end
+
+  # Normalises text for slug matching.
+  def normalize_text(value)
+    value.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
+  end
+
+  # Converts text into a route slug.
+  def slugify(value)
+    normalize_text(value).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
+  # Pulls variant text from product names.
+  def extract_variant(name)
+    name.to_s[/\(([^)]+)\)/, 1].to_s.strip
+  end
+
+  # Detects Pokemon Center products.
+  def infer_origin(type, name)
+    return "Pokemon Center" if normalize_type(type) == "pc_etb"
+    return "Pokemon Center" if normalize_text(name).include?("pokemon center")
+
+    ""
+  end
+
+  # Finds the listing behind a sold purchase row.
+  def sold_listing_for(row)
+    return row if row.is_a?(MarketplaceListing)
+    @sold_listing_map[row.marketplace_listing_id.to_i] if row.respond_to?(:marketplace_listing_id)
+  end
+
+  # Sold row helpers keep filters short and readable.
+  def sold_row_set_slug(row)
+    row.respond_to?(:set_slug) && row.set_slug.present? ? row.set_slug.to_s : sold_listing_for(row)&.set_slug.to_s
+  end
+
+  def sold_row_route_type(row)
+    row.respond_to?(:route_type) && row.route_type.present? ? row.route_type.to_s : sold_listing_for(row)&.route_type.to_s
+  end
+
+  def sold_row_condition(row)
+    row.respond_to?(:condition) && row.condition.present? ? row.condition.to_s : sold_listing_for(row)&.condition.to_s
+  end
+
+  def sold_row_country(row)
+    row.respond_to?(:country_code) && row.country_code.present? ? row.country_code.to_s : sold_listing_for(row)&.country_code.to_s
+  end
+
+  def sold_row_unit_cents(row)
+    return row.unit_price_cents.to_i if row.respond_to?(:unit_price_cents) && row.unit_price_cents.to_i > 0
+    return row.price_cents.to_i if row.respond_to?(:price_cents) && row.price_cents.to_i > 0
+
+    sold_listing_for(row)&.price_cents.to_i
+  end
+
+  def sold_row_date(row)
+    row.created_at || sold_listing_for(row)&.updated_at
+  end
+
+  def sold_row_seller_id(row)
+    row.respond_to?(:seller_id) && row.seller_id.present? ? row.seller_id : sold_listing_for(row)&.seller_id
+  end
+
+  def sold_row_seller_name(row)
+    seller = User.find_by(id: sold_row_seller_id(row))
+    seller&.username.to_s
   rescue
     ""
   end
 
-  # Finds the logged-in user from the session
-  def current_user
-    return @current_user if defined?(@current_user)
-    @current_user = User.find_by(id: session[:user_id])
+  def sold_row_set_name(row)
+    row.respond_to?(:set_name) && row.set_name.present? ? row.set_name.to_s : sold_listing_for(row)&.set_name.to_s
   end
 
-  # Allows only admins to manage listings they do not own
-  def admin_can_manage_marketplace?
-    ok = false
+  def sold_row_product_name(row)
+    return row.product_name.to_s if row.respond_to?(:product_name) && row.product_name.present?
+    return row.product_type_name.to_s if row.respond_to?(:product_type_name) && row.product_type_name.present?
 
-    begin
-      ok = true if respond_to?(:admin_signed_in?) && admin_signed_in?
-    rescue
-    end
-
-    return true if ok
-
-    cu = current_user
-    return false unless cu
-
-    return true if cu.respond_to?(:admin?) && cu.admin?
-    return true if cu.respond_to?(:admin) && !!cu.admin
-
-    false
-  rescue
-    false
+    sold_listing_for(row)&.product_type_name.to_s
   end
 
-  # Only holdings with available quantity can be listed
-  def selectable_holdings
-    hs = Holding.where(user_id: current_user.id).to_a
-
-    hs.select do |h|
-      q = h.respond_to?(:quantity) ? h.quantity.to_i : 0
-      lq = h.respond_to?(:listed_quantity) ? h.listed_quantity.to_i : 0
-      (q - lq) > 0
-    end
-  end
-
-  # Reads the product catalogue from config/sets.json
-  def sets_data
-    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-    JSON.parse(raw)
-  rescue
-    {}
-  end
-
-  # Converts internal product type codes into display names
-  def type_map
-    {
-      "etb" => "Elite Trainer Box",
-      "pc_etb" => "Pokemon Center Elite Trainer Box",
-      "booster_box" => "Booster Box",
-      "booster_bundle" => "Booster Bundle",
-      "booster_bundle_display" => "Booster Bundle Display",
-      "enhanced_booster_box" => "Enhanced Booster Box",
-      "ultra_premium_collection" => "Ultra Premium Collection",
-      "upc" => "Ultra Premium Collection",
-      "spc" => "Super Premium Collection",
-      "mini_tin" => "Mini Tin",
-      "mini_tin_display" => "Mini Tin Display"
-    }
-  end
-
-  # Splits a SKU into set slug and product type
-  def parse_sku(sku)
-    s = sku.to_s
-
-    if s.include?(":")
-      a, b = s.split(":", 2)
-      return [ a.to_s, b.to_s ]
-    end
-
-    if s.include?("--")
-      a, b = s.split("--", 2)
-      return [ a.to_s, b.to_s ]
-    end
-
-    [ s.to_s, "" ]
-  end
-
-  # Splits route type into base type and variant
-  def split_type_variant(type_code)
-    t = type_code.to_s
-
-    if t.include?("--v-")
-      base, raw = t.split("--v-", 2)
-      variant = raw.to_s.tr("-", " ").split.map(&:capitalize).join(" ")
-      return [ base.to_s, variant ]
-    end
-
-    [ t.to_s, "" ]
-  end
-
-  # Turns a code such as booster_box into Booster Box
-  def titleize_code(code)
-    code.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
-  end
-
-  # Normalises product names into product type and variant text
-  def normalize_name_to_type_and_variant(name, base_name)
-    n = name.to_s.strip
-    b = base_name.to_s.strip
-    return [ b, "" ] if n.blank?
-
-    if n.downcase.start_with?(b.downcase)
-      variant = n[b.length..-1].to_s.strip
-
-      if variant.start_with?("(") && variant.end_with?(")")
-        variant = variant[1..-2].to_s.strip
-      end
-
-      return [ b, variant.presence || "" ]
-    end
-
-    if n.downcase.end_with?(b.downcase)
-      variant = n[0...(n.length - b.length)].to_s.strip
-      variant = variant.sub(/\(([^)]+)\)\s*$/) { Regexp.last_match(1).to_s }.strip if variant.include?("(") && variant.include?(")")
-      variant = variant.sub(/[-–—]\s*$/, "").strip
-      variant = variant.presence || ""
-      return [ b, variant ]
-    end
-
-    extracted = n[/\(([^)]+)\)/, 1].to_s.strip
-
-    if extracted.present?
-      return [ b, extracted ]
-    end
-
-    [ b, "" ]
-  end
-
-  # Builds set and product display data for catalogue listings
-  def listing_meta_for_slug_type(slug, type_code)
-    s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
-    set_name = s ? s["name"].to_s : slug.to_s
-
-    base, variant = split_type_variant(type_code)
-    base_name = type_map[base.to_s] || titleize_code(base)
-
-    json_name = ""
-
-    if s
-      products = Array(s["products"] || s["sealed"])
-      candidates = products.select { |p| p["type"].to_s == base.to_s }
-
-      if variant.present?
-        c = candidates.find { |p| p["name"].to_s.downcase.include?(variant.downcase) }
-        json_name = c ? c["name"].to_s : ""
-      else
-        json_name = candidates.first ? candidates.first["name"].to_s : ""
-      end
-    end
-
-    tn, vn =
-      if json_name.present?
-        normalize_name_to_type_and_variant(json_name, base_name)
-      else
-        [ base_name, variant.to_s ]
-      end
-
-    product_type_name = vn.present? ? "#{tn} (#{vn})" : tn
-    { set_name: set_name, product_type_name: product_type_name }
-  end
-
-  # Builds SKU and display metadata from a user's holding
-  def listing_meta_for_holding(holding)
-    sku =
-      if holding.respond_to?(:sku) && holding.sku.present?
-        holding.sku.to_s
-      elsif holding.respond_to?(:product_sku) && holding.product_sku.present?
-        holding.product_sku.to_s
-      elsif holding.respond_to?(:product) && holding.product && holding.product.respond_to?(:sku) && holding.product.sku.present?
-        holding.product.sku.to_s
-      else
-        ""
-      end
-
-    slug =
-      if holding.respond_to?(:set_slug) && holding.set_slug.present?
-        holding.set_slug.to_s
-      else
-        parse_sku(sku)[0].to_s
-      end
-
-    type_code =
-      if holding.respond_to?(:route_type) && holding.route_type.present?
-        holding.route_type.to_s
-      else
-        parse_sku(sku)[1].to_s
-      end
-
-    base, type_variant = split_type_variant(type_code)
-
-    holding_variant =
-      if holding.respond_to?(:variant) && holding.variant.present?
-        holding.variant.to_s
-      elsif holding.respond_to?(:variant_name) && holding.variant_name.present?
-        holding.variant_name.to_s
-      elsif holding.respond_to?(:product_variant) && holding.product_variant.present?
-        holding.product_variant.to_s
-      else
-        ""
-      end
-
-    variant = holding_variant.presence || type_variant.to_s
-
-    s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
-    set_name = s ? s["name"].to_s : slug.to_s
-    base_name = type_map[base.to_s] || titleize_code(base)
-
-    json_name = ""
-
-    if s
-      products = Array(s["products"] || s["sealed"])
-      candidates = products.select { |p| p["type"].to_s == base.to_s }
-
-      if variant.present?
-        c = candidates.find { |p| p["name"].to_s.downcase.include?(variant.downcase) }
-        json_name = c ? c["name"].to_s : ""
-      else
-        json_name = candidates.first ? candidates.first["name"].to_s : ""
-      end
-    end
-
-    tn, vn =
-      if json_name.present?
-        normalize_name_to_type_and_variant(json_name, base_name)
-      else
-        [ base_name, variant.to_s ]
-      end
-
-    product_type_name = vn.present? ? "#{tn} (#{vn})" : tn
-
-    {
-      sku: (sku.presence || "#{slug}:#{type_code}"),
-      slug: slug,
-      type_code: type_code,
-      set_name: set_name,
-      product_type_name: product_type_name
-    }
-  end
-
-  # Creates a sold purchase record and supports older/alternate column names
-  def create_purchase_log_safe(listing, buyer, seller, qty, unit_cents, total_cents, addr, debug_id)
-    return unless defined?(MarketplacePurchase)
-
-    cols = MarketplacePurchase.column_names rescue []
-    return if cols.empty?
-
-    attrs = {}
-
-    attrs["marketplace_listing_id"] = listing.id if cols.include?("marketplace_listing_id")
-    attrs["listing_id"] = listing.id if cols.include?("listing_id")
-    attrs["buyer_id"] = buyer.id if cols.include?("buyer_id")
-    attrs["seller_id"] = seller.id if seller && cols.include?("seller_id")
-    attrs["holding_id"] = listing.holding_id if cols.include?("holding_id") && listing.respond_to?(:holding_id)
-    attrs["quantity"] = qty if cols.include?("quantity")
-    attrs["unit_price_cents"] = unit_cents if cols.include?("unit_price_cents")
-    attrs["price_cents"] = unit_cents if cols.include?("price_cents")
-    attrs["total_cents"] = total_cents if cols.include?("total_cents")
-    attrs["total_price_cents"] = total_cents if cols.include?("total_price_cents")
-    attrs["status"] = "sold" if cols.include?("status")
-    attrs["debug_id"] = debug_id if cols.include?("debug_id")
-    attrs["debug_context"] = "manual_revolut_offer_payment" if cols.include?("debug_context")
-
-    attrs["set_slug"] = listing.set_slug.to_s if cols.include?("set_slug") && listing.respond_to?(:set_slug)
-    attrs["route_type"] = listing.route_type.to_s if cols.include?("route_type") && listing.respond_to?(:route_type)
-    attrs["set_name"] = listing.set_name.to_s if cols.include?("set_name") && listing.respond_to?(:set_name)
-    attrs["product_name"] = listing.product_type_name.to_s if cols.include?("product_name") && listing.respond_to?(:product_type_name)
-    attrs["condition"] = listing.condition.to_s if cols.include?("condition") && listing.respond_to?(:condition)
-
-    rec = MarketplacePurchase.new(attrs)
-
-    begin
-      rec.save!
-    rescue => e
-      Rails.logger.error("PURCHASE_LOG_SAVE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-      Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-
-      begin
-        rec.save(validate: false)
-      rescue => e2
-        Rails.logger.error("PURCHASE_LOG_SAVE_VALIDATE_FALSE_FAILED [#{debug_id}] #{e2.class}: #{e2.message}")
-        Rails.logger.error(e2.backtrace.join("\n")) if e2.backtrace
-      end
-    end
-  end
-
-  # Adds a catalogue-created listing to the buyer's holdings after sale
-  def add_catalog_to_buyer_holdings_safe(buyer, listing, qty, unit_price_cents, debug_id)
-    return unless defined?(Holding)
-    return unless Holding.column_names.include?("user_id") && Holding.column_names.include?("quantity")
-
-    cols = Holding.column_names
-    product = ensure_product_for_listing(listing)
-
-    return if cols.include?("product_id") && product.nil?
-
-    attrs = {}
-    attrs["user_id"] = buyer.id if cols.include?("user_id")
-    attrs["username"] = buyer.username.to_s if cols.include?("username") && buyer.respond_to?(:username)
-    attrs["product_id"] = product.id if product && cols.include?("product_id")
-    attrs["quantity"] = qty if cols.include?("quantity")
-    attrs["listed_quantity"] = 0 if cols.include?("listed_quantity")
-    attrs["condition"] = listing.condition.to_s if cols.include?("condition") && listing.respond_to?(:condition)
-    attrs["set_name"] = listing.set_name.to_s if cols.include?("set_name") && listing.respond_to?(:set_name)
-    attrs["product_type"] = listing.product_type_name.to_s if cols.include?("product_type") && listing.respond_to?(:product_type_name)
-    attrs["cost_per_unit"] = unit_price_cents / 100.0 if cols.include?("cost_per_unit")
-    attrs["purchase_date"] = Date.current if cols.include?("purchase_date")
-    attrs["value"] = unit_price_cents / 100.0 if cols.include?("value")
-    attrs["total_cost"] = (unit_price_cents * qty) / 100.0 if cols.include?("total_cost")
-    attrs["total_value"] = (unit_price_cents * qty) / 100.0 if cols.include?("total_value")
-    attrs["pl"] = 0 if cols.include?("pl")
-    attrs["roi_pct"] = 0 if cols.include?("roi_pct")
-
-    existing = nil
-
-    if product && cols.include?("product_id")
-      existing = Holding.lock.where(user_id: buyer.id, product_id: product.id).first
-    end
-
-    if existing
-      begin
-        existing.update!(quantity: existing.quantity.to_i + qty)
-      rescue => e
-        Rails.logger.error("BUYER_HOLDING_UPDATE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-        Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-
-        begin
-          existing.update_columns(quantity: existing.quantity.to_i + qty)
-        rescue
-        end
-      end
-    else
-      rec = Holding.new(attrs.slice(*cols))
-
-      begin
-        rec.save!
-      rescue => e
-        Rails.logger.error("BUYER_HOLDING_CREATE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-        Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-
-        begin
-          rec.save(validate: false)
-        rescue
-        end
-      end
-    end
-  end
-
-  # Copies a seller holding into the buyer's portfolio after payment is confirmed
-  def add_to_buyer_holdings_safe(buyer, seller_holding, qty, unit_price_cents, debug_id)
-    return unless defined?(Holding)
-    return unless Holding.column_names.include?("user_id") && Holding.column_names.include?("quantity")
-
-    cols = Holding.column_names
-    sku_col = cols.include?("product_sku") ? "product_sku" : (cols.include?("sku") ? "sku" : nil)
-
-    attrs = {}
-    attrs["user_id"] = buyer.id
-    attrs["username"] = buyer.username.to_s if cols.include?("username") && buyer.respond_to?(:username)
-    attrs["quantity"] = qty
-    attrs["listed_quantity"] = 0 if cols.include?("listed_quantity")
-
-    if sku_col
-      v =
-        if seller_holding.respond_to?(sku_col) && seller_holding.public_send(sku_col).present?
-          seller_holding.public_send(sku_col)
-        elsif seller_holding.respond_to?(:product_sku) && seller_holding.product_sku.present?
-          seller_holding.product_sku
-        elsif seller_holding.respond_to?(:sku) && seller_holding.sku.present?
-          seller_holding.sku
-        end
-
-      attrs[sku_col] = v.to_s if v.present?
-    end
-
-    if cols.include?("product_id") && seller_holding.respond_to?(:product_id) && seller_holding.product_id.present?
-      attrs["product_id"] = seller_holding.product_id
-    end
-
-    copy_cols = cols - %w[id user_id username quantity listed_quantity created_at updated_at]
-    copy_cols.each do |c|
-      next if attrs.key?(c)
-      next unless seller_holding.respond_to?(c)
-      attrs[c] = seller_holding.public_send(c)
-    end
-
-    attrs["cost_per_unit"] = unit_price_cents / 100.0 if cols.include?("cost_per_unit")
-    attrs["purchase_date"] = Date.current if cols.include?("purchase_date")
-    attrs["total_cost"] = (unit_price_cents * qty) / 100.0 if cols.include?("total_cost")
-    attrs["total_value"] = (unit_price_cents * qty) / 100.0 if cols.include?("total_value")
-    attrs["value"] = unit_price_cents / 100.0 if cols.include?("value")
-    attrs["pl"] = 0 if cols.include?("pl")
-    attrs["roi_pct"] = 0 if cols.include?("roi_pct")
-
-    finder = { "user_id" => buyer.id }
-    finder["product_id"] = attrs["product_id"] if attrs["product_id"]
-    finder[sku_col] = attrs[sku_col] if sku_col && attrs[sku_col].present?
-
-    existing = nil
-
-    if finder.keys.length > 1
-      existing = Holding.lock.where(finder).first
-    end
-
-    if existing
-      begin
-        existing.update!(quantity: existing.quantity.to_i + qty)
-      rescue => e
-        Rails.logger.error("BUYER_HOLDING_UPDATE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-        Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-
-        begin
-          existing.update_columns(quantity: existing.quantity.to_i + qty)
-        rescue
-        end
-      end
-    else
-      rec = Holding.new(attrs.slice(*cols))
-
-      begin
-        rec.save!
-      rescue => e
-        Rails.logger.error("BUYER_HOLDING_CREATE_FAILED [#{debug_id}] #{e.class}: #{e.message}")
-        Rails.logger.error(e.backtrace.join("\n")) if e.backtrace
-
-        begin
-          rec.save(validate: false)
-        rescue
-        end
-      end
-    end
-  end
-
-  # Ensures a Product record exists for catalogue listings before adding buyer holdings
-  def ensure_product_for_listing(listing)
-    return nil unless defined?(Product)
-
-    sku = listing.product_sku.to_s.strip
-    product = Product.find_by(sku: sku) if sku.present?
-    return product if product
-
-    attrs = {}
-
-    attrs[:sku] = sku if Product.column_names.include?("sku")
-    attrs[:set_name] = listing.set_name.to_s if Product.column_names.include?("set_name") && listing.respond_to?(:set_name)
-    attrs[:product_type] = listing.product_type_name.to_s if Product.column_names.include?("product_type") && listing.respond_to?(:product_type_name)
-    attrs[:name] = listing.product_type_name.to_s if Product.column_names.include?("name") && listing.respond_to?(:product_type_name)
-    attrs[:value] = listing.price_cents.to_i / 100.0 if Product.column_names.include?("value") && listing.respond_to?(:price_cents)
-
-    era = set_era_for_slug(listing.set_slug.to_s)
-    attrs[:era] = era if Product.column_names.include?("era") && era.present?
-
-    product = Product.new(attrs)
-
-    begin
-      product.save!
-    rescue
-      begin
-        product.save(validate: false)
-      rescue
-        return nil
-      end
-    end
-
-    product
-  rescue
-    nil
+  def sold_row_product_sku(row)
+    row.respond_to?(:product_sku) && row.product_sku.present? ? row.product_sku.to_s : sold_listing_for(row)&.product_sku.to_s
   end
 end

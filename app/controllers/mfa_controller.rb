@@ -1,7 +1,4 @@
 class MfaController < ApplicationController
-  # Gives this controller access to current_user and login session helpers
-  include Authentication
-
   # Only admin users are allowed to access the MFA flow
   before_action :require_admin_for_mfa
 
@@ -15,7 +12,7 @@ class MfaController < ApplicationController
     end
   end
 
-  # Verifies the submitted authenticator code and completes the admin login
+  # Verifies the submitted authenticator code or recovery code and completes the admin login
   def create
     @user = mfa_user
     return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
@@ -26,8 +23,11 @@ class MfaController < ApplicationController
     end
 
     code = params[:code].to_s.gsub(/\s+/, "")
+    verified = @user.verify_mfa_code!(code)
+    verified = @user.consume_mfa_recovery_code!(code) unless verified
 
-    if @user.verify_mfa_code!(code)
+    if verified
+      @user.reset_mfa_lock! if @user.respond_to?(:reset_mfa_lock!)
       session[:admin_mfa_at] = Time.current.to_i
 
       if session[:pre_mfa_user_id].present?

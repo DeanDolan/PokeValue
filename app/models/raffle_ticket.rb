@@ -9,7 +9,7 @@ class RaffleTicket < ApplicationRecord
   validates :amount_paid_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :ticket_number, uniqueness: { scope: :raffle_id }
   validates :revolut_tag, length: { maximum: 80 }, allow_blank: true
-  validates :assignment_reason, inclusion: { in: ASSIGNMENT_REASONS }, allow_blank: true, if: :has_assignment_reason_column?
+  validates :assignment_reason, inclusion: { in: ASSIGNMENT_REASONS }, allow_blank: true
   validate :ticket_number_within_raffle_range
   validate :name_or_user_present
 
@@ -28,19 +28,7 @@ class RaffleTicket < ApplicationRecord
     assigned_name.to_s.strip.presence || user&.username.to_s
   end
 
-  def owner_can_manage?(actor)
-    # The host can manage every ticket, while a participant can manage only their own ticket.
-    return false unless actor
-    return true if raffle.host_id.to_i == actor.id.to_i
-
-    user_id.to_i == actor.id.to_i
-  end
-
   private
-
-  def has_assignment_reason_column?
-    self.class.column_names.include?("assignment_reason")
-  end
 
   def ticket_number_within_raffle_range
     return if raffle.blank?

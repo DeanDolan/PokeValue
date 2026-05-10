@@ -29,7 +29,6 @@
           <% admin_active = admin_path.start_with?("/admin") %>
           <% admin_products_active = admin_path.start_with?("/admin/products") %>
           <% admin_sets_active = admin_path.start_with?("/admin/sets") %>
-          <% admin_logs_active = admin_path.start_with?("/admin/logs") %>
 
           <li class="nav-item dropdown">
             <a href="#" role="button" class="<%= ["nav-link dropdown-toggle pv-admin-dropdown-toggle", (admin_active ? "fw-bold text-dark" : nil)].compact.join(" ") %>" data-bs-toggle="dropdown" aria-expanded="false">
@@ -39,7 +38,6 @@
             <ul class="dropdown-menu">
               <li><%= link_to "Products", admin_products_path, class: ["dropdown-item", (admin_products_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
               <li><%= link_to "Sets", admin_sets_path, class: ["dropdown-item", (admin_sets_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
-              <li><%= link_to "Logs", admin_logs_path, class: ["dropdown-item", (admin_logs_active ? "fw-bold text-dark" : nil)].compact.join(" ") %></li>
             </ul>
           </li>
         <% end %>

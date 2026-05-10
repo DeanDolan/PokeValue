@@ -121,11 +121,6 @@ class Raffle < ApplicationRecord
     winning_ticket
   end
 
-  def end_incomplete!
-    # Keeps the raffle record but marks it as not completed.
-    update!(status: "incompleted", ended_at: Time.current)
-  end
-
   private
 
   def main_raffle_rules

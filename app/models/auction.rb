@@ -10,13 +10,28 @@ class Auction < ApplicationRecord
   # Reserve options shown in the auction form.
   RESERVE_STATUSES = [ "Reserve", "No Reserve" ].freeze
 
+  # Auction duration options used by the form and controller.
+  DURATION_OPTIONS = {
+    "1_minute" => { label: "1 min", seconds: 1.minute.to_i },
+    "5_minutes" => { label: "5 mins", seconds: 5.minutes.to_i },
+    "10_minutes" => { label: "10 mins", seconds: 10.minutes.to_i },
+    "30_minutes" => { label: "30 mins", seconds: 30.minutes.to_i },
+    "1_hour" => { label: "1 hour", seconds: 1.hour.to_i },
+    "3_hours" => { label: "3 hours", seconds: 3.hours.to_i },
+    "6_hours" => { label: "6 hours", seconds: 6.hours.to_i },
+    "12_hours" => { label: "12 hours", seconds: 12.hours.to_i },
+    "1_day" => { label: "1 day", seconds: 1.day.to_i },
+    "3_days" => { label: "3 days", seconds: 3.days.to_i },
+    "1_week" => { label: "1 week", seconds: 1.week.to_i }
+  }.freeze
+
   validates :auction_description, presence: true, length: { maximum: 250 }
   validates :condition, presence: true
   validates :reserve_status, presence: true, inclusion: { in: RESERVE_STATUSES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :ends_at, presence: true
-
   validates :auction_length_label, presence: true, if: -> { has_attribute?(:auction_length_label) }
+
   validates :auction_length_seconds, numericality: { greater_than: 0 }, if: -> {
     has_attribute?(:auction_length_seconds) && self[:auction_length_seconds].present?
   }
@@ -29,13 +44,25 @@ class Auction < ApplicationRecord
 
   before_validation :normalize_fields
 
-  # Refreshes all auctions, mainly used by the auction index page.
+  # Finds a duration option by key.
+  def self.duration_for(key)
+    DURATION_OPTIONS[key.to_s]
+  end
+
+  # Converts stored seconds back into a readable duration label.
+  def self.label_for_seconds(seconds)
+    option = DURATION_OPTIONS.values.find { |data| data[:seconds].to_i == seconds.to_i }
+    option ? option[:label] : "-"
+  end
+
+  # Refreshes all auctions before the index table is shown.
   def self.refresh_all_statuses!
     return unless table_exists?
 
     order(:id).find_each do |auction|
       auction.refresh_status_and_settle!
     rescue
+      nil
     end
   end
 
@@ -69,8 +96,7 @@ class Auction < ApplicationRecord
 
   # Checks whether the supplied user is the auction host.
   def hosted_by?(user)
-    return false unless user
-    seller_id.to_i == user.id.to_i
+    user.present? && seller_id.to_i == user.id.to_i
   end
 
   # Returns the current highest bid in cents.
@@ -98,8 +124,7 @@ class Auction < ApplicationRecord
 
   # Finds the winning bidder from stored winner data or highest bid fallback.
   def winning_bidder
-    stored_id = has_attribute?(:winning_bidder_id) ? self[:winning_bidder_id] : nil
-    bidder_id = stored_id.presence || highest_bid&.bidder_id
+    bidder_id = (has_attribute?(:winning_bidder_id) ? self[:winning_bidder_id] : nil).presence || highest_bid&.bidder_id
     return nil if bidder_id.blank?
 
     User.find_by(id: bidder_id)
@@ -110,8 +135,7 @@ class Auction < ApplicationRecord
     stored_text = has_attribute?(:winning_address_text) ? self[:winning_address_text].to_s : ""
     return stored_text if stored_text.present?
 
-    bid = highest_bid
-    bid ? address_text_for_bid(bid) : ""
+    highest_bid ? address_text_for_bid(highest_bid) : ""
   end
 
   # Decrypts the winner Revolut tag after the winner confirms payment.
@@ -148,12 +172,12 @@ class Auction < ApplicationRecord
     nil
   end
 
-  # Host can end early only if they own it, it is running, and it is a reserve auction where reserve has not been met.
+  # Host can end early only when the model rules allow it.
   def can_end_early_by?(user)
     end_early_block_reason_for(user).blank?
   end
 
-  # Ends the auction early as the verified host and settles the result.
+  # Ends the auction early as the verified host.
   def end_early_by!(user)
     return false if end_early_block_reason_for(user).present?
 
@@ -164,7 +188,7 @@ class Auction < ApplicationRecord
     false
   end
 
-  # Ends the auction early and settles the result.
+  # Ends the auction early using the seller account.
   def end_early!
     end_early_by!(seller)
     self
@@ -173,9 +197,7 @@ class Auction < ApplicationRecord
   # Moves expired auctions into ended or payment_pending state.
   def refresh_status_and_settle!
     return self unless persisted?
-    return self if sold?
-    return self if paid?
-    return self if payment_pending?
+    return self if sold? || paid? || payment_pending?
     return self if ended? && settled_at_value.present?
 
     if status.to_s == "running" && ends_at.present? && ends_at <= Time.current
@@ -236,7 +258,7 @@ class Auction < ApplicationRecord
     self.auction_description = auction_description.to_s.strip
     self.status = status.to_s.presence || "running"
     self.reserve_status = reserve_status.to_s.presence || "No Reserve"
-    self.condition = condition.to_s.presence
+    self.condition = condition.to_s.strip.presence
   end
 
   # Safely reads settled_at only if the column exists.
@@ -244,24 +266,17 @@ class Auction < ApplicationRecord
     has_attribute?(:settled_at) ? self[:settled_at] : nil
   end
 
-  # Decides the auction result when time expires or host ends it early.
+  # Decides the auction result when time expires or the host ends it early.
   def finalize_result!(ended_at:)
     winning = highest_bid
 
-    if winning.blank?
-      settle_as_ended!(ended_at)
-      return
-    end
-
-    if reserve? && winning.amount_cents.to_i < reserve_cents.to_i
-      settle_as_ended!(ended_at)
-      return
-    end
+    return settle_as_ended!(ended_at) if winning.blank?
+    return settle_as_ended!(ended_at) if reserve? && winning.amount_cents.to_i < reserve_cents.to_i
 
     settle_as_payment_pending!(winning, ended_at)
   end
 
-  # Ends auction without a winner.
+  # Ends an auction without a winner.
   def settle_as_ended!(ended_at)
     return self if ended? && settled_at_value.present?
 
@@ -274,22 +289,18 @@ class Auction < ApplicationRecord
     self
   end
 
-  # Ends auction with a winner and waits for payment.
+  # Ends an auction with a winner and waits for payment.
   def settle_as_payment_pending!(winning_bid, ended_at)
     return self if payment_pending? || paid? || sold?
 
-    attrs = {
+    safe_write_columns(
       status: "payment_pending",
       settled_at: settled_at_value || Time.current,
       ends_at: normalized_end_time(ended_at),
       winning_bid_cents: winning_bid.amount_cents.to_i,
       winning_bidder_id: winning_bid.bidder_id,
       winning_address_text: address_text_for_bid(winning_bid)
-    }
-
-    attrs[:winning_saved_address_id] = winning_bid.saved_address_id if has_attribute?(:winning_saved_address_id)
-
-    safe_write_columns(attrs)
+    )
 
     self
   end
@@ -298,15 +309,19 @@ class Auction < ApplicationRecord
   def address_text_for_bid(bid)
     address = bid.respond_to?(:saved_address) ? bid.saved_address : nil
     return "" if address.blank?
+    return address.single_line.to_s if address.respond_to?(:single_line)
 
-    if address.respond_to?(:single_line)
-      address.single_line.to_s
-    else
-      [ address.try(:line1), address.try(:line2).presence, address.try(:city), address.try(:county).presence, address.try(:postcode).presence, address.try(:country_code) ].compact.join(", ")
-    end
+    [
+      address.try(:line1),
+      address.try(:line2).presence,
+      address.try(:city),
+      address.try(:county).presence,
+      address.try(:postcode).presence,
+      address.try(:country_code)
+    ].compact.join(", ")
   end
 
-  # Prevents end time from being later than the current time when settling.
+  # Prevents the end time from being later than now when settling.
   def normalized_end_time(value)
     [ ends_at, value, Time.current ].compact.min
   end
@@ -325,9 +340,7 @@ class Auction < ApplicationRecord
   def photos_count_and_type
     return unless photos.attached?
 
-    if photos.count > 4
-      errors.add(:photos, "must be 4 images or fewer")
-    end
+    errors.add(:photos, "must be 4 images or fewer") if photos.count > 4
 
     photos.each do |photo|
       content_type = photo.content_type.to_s

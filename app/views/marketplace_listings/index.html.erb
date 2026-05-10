@@ -1,10 +1,9 @@
 <%#
 References:
-- Rails Action View helpers and forms:
+- Rails Action View helpers:
   https://guides.rubyonrails.org/action_view_helpers.html
-  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
-- Rails asset helpers:
-  https://guides.rubyonrails.org/asset_pipeline.html
+- Rails form helpers:
+  https://guides.rubyonrails.org/form_helpers.html
 - Bootstrap tables, forms and buttons:
   https://getbootstrap.com/docs/5.3/content/tables/
   https://getbootstrap.com/docs/5.3/forms/overview/
@@ -12,139 +11,15 @@ References:
 %>
 
 <%
-require "json"
-
-# Loads the set catalogue so marketplace filters and table rows can show set, era and product data.
-sets_data =
-  begin
-    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-    JSON.parse(raw)
-  rescue
-    {}
-  end
-
-# Converts internal product type codes into readable names for the user.
-type_map = {
-  "etb" => "Elite Trainer Box",
-  "pc_etb" => "Pokemon Center Elite Trainer Box",
-  "booster_box" => "Booster Box",
-  "booster_bundle" => "Booster Bundle",
-  "booster_bundle_display" => "Booster Bundle Display",
-  "enhanced_booster_box" => "Enhanced Booster Box",
-  "ultra_premium_collection" => "Ultra Premium Collection",
-  "upc" => "Ultra Premium Collection",
-  "spc" => "Super Premium Collection",
-  "mini_tin" => "Mini Tin",
-  "mini_tin_display" => "Mini Tin Display"
-}
-
-# Converts route/code text into title case for display.
-titleize = lambda do |s|
-  s.to_s.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
-end
-
-# Splits product routes that contain variants such as etb--v-lucario.
-split_type_variant = lambda do |t|
-  s = t.to_s
-  down = s.downcase
-  idx = down.index("--v-")
-  if idx
-    base = s[0...idx].to_s
-    raw = s[(idx + 4)..-1].to_s
-    variant = raw.tr("_"," ").tr("-"," ").split.map(&:capitalize).join(" ")
-    [base.to_s, variant.to_s]
-  else
-    [s.to_s, ""]
-  end
-end
-
-# Builds the final product type text shown in the table.
-display_type = lambda do |listing|
-  src = listing.respond_to?(:route_type) ? listing.route_type.to_s : ""
-  src = listing.respond_to?(:product_type_name) ? listing.product_type_name.to_s : src if src.blank?
-  base, variant = split_type_variant.call(src)
-  base_key = base.to_s.downcase
-  base_name = type_map[base_key].presence || titleize.call(base)
-  variant = variant.to_s.strip
-  variant.present? ? "#{base_name} (#{variant})" : base_name
-end
-
-# Finds the era for a listing by matching its set slug against config/sets.json.
-era_for_slug = lambda do |slug|
-  s = sets_data[slug.to_s] || sets_data.values.find { |x| x["slug"].to_s == slug.to_s }
-  s ? s["era"].to_s : ""
-end
-
-# EU country options used by the marketplace location filter.
-eu = [
-  ["Austria", "AT"], ["Belgium", "BE"], ["Bulgaria", "BG"], ["Croatia", "HR"], ["Cyprus", "CY"],
-  ["Czechia", "CZ"], ["Denmark", "DK"], ["Estonia", "EE"], ["Finland", "FI"], ["France", "FR"],
-  ["Germany", "DE"], ["Greece", "GR"], ["Hungary", "HU"], ["Ireland", "IE"], ["Italy", "IT"],
-  ["Latvia", "LV"], ["Lithuania", "LT"], ["Luxembourg", "LU"], ["Malta", "MT"], ["Netherlands", "NL"],
-  ["Poland", "PL"], ["Portugal", "PT"], ["Romania", "RO"], ["Slovakia", "SK"], ["Slovenia", "SI"],
-  ["Spain", "ES"], ["Sweden", "SE"]
-]
-
-# Reads the current filter state from params so selected values stay visible after applying filters.
-eras = (defined?(@eras) && @eras.is_a?(Array)) ? @eras : sets_data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq
-selected_era = params[:era].to_s.strip
-sets_for_era = (defined?(@sets_for_era) && @sets_for_era.is_a?(Array)) ? @sets_for_era : []
-
-product_type_keys = type_map.keys.sort
-country = params[:country].to_s.strip
-set_slug = params[:set_slug].to_s.strip
-product_type = params[:product_type].to_s.strip
-condition = params[:condition].to_s.strip
-q = params[:q].to_s
-min_price = params[:min_price].to_s
-max_price = params[:max_price].to_s
-sort = params[:sort].to_s
-tab = defined?(@tab) && @tab.present? ? @tab.to_s : "current"
-
-# Shows badges beside sellers, currently used for admin accounts.
-badge_imgs_for = lambda do |u|
-  out = []
-  if u && u.respond_to?(:admin) && !!u.admin
-    out << "badges/adminbadge.png"
-  end
-  out
-end
-
-# Builds a simple star display without overlapping stars.
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  parts = []
-  full.times { parts << '<span class="pv-mp-rating-star">★</span>' }
-  parts << '<span class="pv-mp-rating-half">½</span>' if half
-
-  %(<span class="pv-mp-rating-stars">#{parts.join}</span>).html_safe
-end
-
-admin_can_delete = defined?(@admin_can_delete) ? !!@admin_can_delete : false
-condition_options = defined?(@condition_options) && @condition_options.is_a?(Array) ? @condition_options : []
-
-# Checks whether a user is logged in so the Create Listing button can either open the form or show the login pop-up.
+tab = @tab.to_s.presence || "current"
 marketplace_logged_in = current_user.present?
-
-# Resolves a sold purchase row back to its original marketplace listing when possible.
-sold_listing_for = lambda do |row|
-  if row.respond_to?(:marketplace_listing_id) && row.marketplace_listing_id.present?
-    (@sold_listing_map || {})[row.marketplace_listing_id.to_i]
-  elsif row.respond_to?(:listing_id) && row.listing_id.present?
-    (@sold_listing_map || {})[row.listing_id.to_i]
-  elsif row.is_a?(MarketplaceListing)
-    row
-  else
-    nil
-  end
-end
+selected_era = params[:era].to_s
+selected_set = params[:set_slug].to_s
+selected_country = params[:country].to_s
+selected_type = params[:product_type].to_s
+selected_condition = params[:condition].to_s
+selected_sort = params[:sort].to_s
+listing_map = @sold_listing_map || {}
 %>
 
 <div class="container py-4">
@@ -153,159 +28,55 @@ end
     .mp-table{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,.06)}
     .mp-table table{margin:0}
     .mp-table th,.mp-table td{font-size:.72rem;text-align:center;vertical-align:middle}
-    .mp-badges img{height:16px;width:16px;object-fit:contain;display:inline-block}
     .mp-actions{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:nowrap;white-space:nowrap}
     .mp-actions .btn{padding:.12rem .35rem;font-size:.70rem;line-height:1.2}
-    .form-control-sm,.form-select-sm{font-size:.78rem}
+    .mp-badges img{height:16px;width:16px;object-fit:contain}
     .mp-tab-links{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-    .mp-tab-link{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap;background:#fff}
+    .mp-tab-link{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;background:#fff}
     .mp-tab-link.active{border-color:#111827;font-weight:900}
-    .pv-mp-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
-    .pv-mp-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
-    .pv-mp-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
+    .pv-rating-stars{display:inline-flex;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
+    .pv-rating-star,.pv-rating-half{display:inline-block;color:#d4a017;line-height:1;font-weight:900}
     .mp-confirm-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
-    .mp-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000000;background:#ffffff;color:#000000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
-    .mp-confirm-text{color:#000000;font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
+    .mp-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
+    .mp-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
     .mp-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
-    .mp-confirm-yes,.mp-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000000 !important;transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important}
-    .mp-confirm-yes{background:#000000 !important;color:#ffffff !important}
-    .mp-confirm-no{background:#ffffff !important;color:#000000 !important}
-    .mp-confirm-yes:hover,.mp-confirm-yes:focus,.mp-confirm-yes:active,.mp-confirm-no:hover,.mp-confirm-no:focus,.mp-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
-    :root[data-pv-theme="dark"] .mp-confirm-box,
-    html[data-bs-theme="dark"] .mp-confirm-box,
-    body[data-bs-theme="dark"] .mp-confirm-box,
-    html[data-theme="dark"] .mp-confirm-box,
-    body[data-theme="dark"] .mp-confirm-box,
-    html.dark .mp-confirm-box,
-    body.dark .mp-confirm-box,
-    html.dark-mode .mp-confirm-box,
-    body.dark-mode .mp-confirm-box,
-    body:has(.navbar-dark) .mp-confirm-box{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
-    :root[data-pv-theme="dark"] .mp-confirm-text,
-    html[data-bs-theme="dark"] .mp-confirm-text,
-    body[data-bs-theme="dark"] .mp-confirm-text,
-    html[data-theme="dark"] .mp-confirm-text,
-    body[data-theme="dark"] .mp-confirm-text,
-    html.dark .mp-confirm-text,
-    body.dark .mp-confirm-text,
-    html.dark-mode .mp-confirm-text,
-    body.dark-mode .mp-confirm-text,
-    body:has(.navbar-dark) .mp-confirm-text{color:#d4af37 !important}
-    :root[data-pv-theme="dark"] .mp-confirm-yes,
-    :root[data-pv-theme="dark"] .mp-confirm-no,
-    html[data-bs-theme="dark"] .mp-confirm-yes,
-    html[data-bs-theme="dark"] .mp-confirm-no,
-    body[data-bs-theme="dark"] .mp-confirm-yes,
-    body[data-bs-theme="dark"] .mp-confirm-no,
-    html[data-theme="dark"] .mp-confirm-yes,
-    html[data-theme="dark"] .mp-confirm-no,
-    body[data-theme="dark"] .mp-confirm-yes,
-    body[data-theme="dark"] .mp-confirm-no,
-    html.dark .mp-confirm-yes,
-    html.dark .mp-confirm-no,
-    body.dark .mp-confirm-yes,
-    body.dark .mp-confirm-no,
-    html.dark-mode .mp-confirm-yes,
-    html.dark-mode .mp-confirm-no,
-    body.dark-mode .mp-confirm-yes,
-    body.dark-mode .mp-confirm-no,
-    body:has(.navbar-dark) .mp-confirm-yes,
-    body:has(.navbar-dark) .mp-confirm-no{background:#000000 !important;color:#d4af37 !important;border-color:#d4af37 !important}
-    :root[data-pv-theme="dark"] .mp-confirm-yes:hover,
-    :root[data-pv-theme="dark"] .mp-confirm-yes:focus,
-    :root[data-pv-theme="dark"] .mp-confirm-yes:active,
-    :root[data-pv-theme="dark"] .mp-confirm-no:hover,
-    :root[data-pv-theme="dark"] .mp-confirm-no:focus,
-    :root[data-pv-theme="dark"] .mp-confirm-no:active,
-    html[data-bs-theme="dark"] .mp-confirm-yes:hover,
-    html[data-bs-theme="dark"] .mp-confirm-yes:focus,
-    html[data-bs-theme="dark"] .mp-confirm-yes:active,
-    html[data-bs-theme="dark"] .mp-confirm-no:hover,
-    html[data-bs-theme="dark"] .mp-confirm-no:focus,
-    html[data-bs-theme="dark"] .mp-confirm-no:active,
-    body[data-bs-theme="dark"] .mp-confirm-yes:hover,
-    body[data-bs-theme="dark"] .mp-confirm-yes:focus,
-    body[data-bs-theme="dark"] .mp-confirm-yes:active,
-    body[data-bs-theme="dark"] .mp-confirm-no:hover,
-    body[data-bs-theme="dark"] .mp-confirm-no:focus,
-    body[data-bs-theme="dark"] .mp-confirm-no:active,
-    html[data-theme="dark"] .mp-confirm-yes:hover,
-    html[data-theme="dark"] .mp-confirm-yes:focus,
-    html[data-theme="dark"] .mp-confirm-yes:active,
-    html[data-theme="dark"] .mp-confirm-no:hover,
-    html[data-theme="dark"] .mp-confirm-no:focus,
-    html[data-theme="dark"] .mp-confirm-no:active,
-    body[data-theme="dark"] .mp-confirm-yes:hover,
-    body[data-theme="dark"] .mp-confirm-yes:focus,
-    body[data-theme="dark"] .mp-confirm-yes:active,
-    body[data-theme="dark"] .mp-confirm-no:hover,
-    body[data-theme="dark"] .mp-confirm-no:focus,
-    body[data-theme="dark"] .mp-confirm-no:active,
-    html.dark .mp-confirm-yes:hover,
-    html.dark .mp-confirm-yes:focus,
-    html.dark .mp-confirm-yes:active,
-    html.dark .mp-confirm-no:hover,
-    html.dark .mp-confirm-no:focus,
-    html.dark .mp-confirm-no:active,
-    body.dark .mp-confirm-yes:hover,
-    body.dark .mp-confirm-yes:focus,
-    body.dark .mp-confirm-yes:active,
-    body.dark .mp-confirm-no:hover,
-    body.dark .mp-confirm-no:focus,
-    body.dark .mp-confirm-no:active,
-    html.dark-mode .mp-confirm-yes:hover,
-    html.dark-mode .mp-confirm-yes:focus,
-    html.dark-mode .mp-confirm-yes:active,
-    html.dark-mode .mp-confirm-no:hover,
-    html.dark-mode .mp-confirm-no:focus,
-    html.dark-mode .mp-confirm-no:active,
-    body.dark-mode .mp-confirm-yes:hover,
-    body.dark-mode .mp-confirm-yes:focus,
-    body.dark-mode .mp-confirm-yes:active,
-    body.dark-mode .mp-confirm-no:hover,
-    body.dark-mode .mp-confirm-no:focus,
-    body.dark-mode .mp-confirm-no:active,
-    body:has(.navbar-dark) .mp-confirm-yes:hover,
-    body:has(.navbar-dark) .mp-confirm-yes:focus,
-    body:has(.navbar-dark) .mp-confirm-yes:active,
-    body:has(.navbar-dark) .mp-confirm-no:hover,
-    body:has(.navbar-dark) .mp-confirm-no:focus,
-    body:has(.navbar-dark) .mp-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
+    .mp-confirm-yes,.mp-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000!important}
+    .mp-confirm-yes{background:#000!important;color:#fff!important}
+    .mp-confirm-no{background:#fff!important;color:#000!important}
+    .mp-confirm-yes:hover,.mp-confirm-no:hover{background:#d4af37!important;color:#000!important;border-color:#d4af37!important}
   </style>
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-    <div class="h4 m-0">Marketplace</div>
+    <h4 class="m-0">Marketplace</h4>
 
     <% if marketplace_logged_in %>
       <%= link_to "Create Listing", new_marketplace_listing_path, class: "btn btn-primary btn-sm" %>
     <% else %>
-      <%# Logged-out users see a login pop-up instead of being sent to the protected Create Listing page. %>
       <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#marketplaceCreateListingLoginModal">
         Create Listing
       </button>
     <% end %>
   </div>
 
-  <%# Login modal shown when a logged-out user clicks Create Listing. %>
   <% unless marketplace_logged_in %>
-    <div class="modal fade" id="marketplaceCreateListingLoginModal" tabindex="-1" aria-labelledby="marketplaceCreateListingLoginModalLabel" aria-hidden="true">
+    <div class="modal fade" id="marketplaceCreateListingLoginModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="marketplaceCreateListingLoginModalLabel">Log in to create listing</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+            <h5 class="modal-title">Log in to create listing</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
 
           <div class="modal-body">
             <%= form_with url: login_path, method: :post, local: true do %>
               <div class="mb-3">
-                <label class="form-label" for="marketplace_create_listing_username">Username</label>
-                <%= text_field_tag :username, nil, class: "form-control", id: "marketplace_create_listing_username", required: true %>
+                <label class="form-label">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", required: true %>
               </div>
 
               <div class="mb-3">
-                <label class="form-label" for="marketplace_create_listing_password">Password</label>
-                <%= password_field_tag :password, nil, class: "form-control", id: "marketplace_create_listing_password", required: true %>
+                <label class="form-label">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", required: true %>
               </div>
 
               <div class="d-flex justify-content-end gap-2">
@@ -314,7 +85,7 @@ end
               </div>
             <% end %>
 
-            <hr class="my-3">
+            <hr>
 
             <div class="text-center small">
               Don't have an account?
@@ -326,28 +97,26 @@ end
     </div>
   <% end %>
 
-  <%# Switches between active listings and completed sold listings. %>
   <div class="mp-tab-links">
-    <%= link_to "Current Listings", marketplace_path(tab: "current"), class: ["mp-tab-link", (tab == "current" ? "active" : nil)].compact.join(" ") %>
-    <%= link_to "Sold Listings", marketplace_path(tab: "sold"), class: ["mp-tab-link", (tab == "sold" ? "active" : nil)].compact.join(" ") %>
+    <%= link_to "Current Listings", marketplace_path(tab: "current"), class: ["mp-tab-link", ("active" if tab == "current")].compact.join(" ") %>
+    <%= link_to "Sold Listings", marketplace_path(tab: "sold"), class: ["mp-tab-link", ("active" if tab == "sold")].compact.join(" ") %>
   </div>
 
-  <%# GET form keeps marketplace filters visible in the URL. %>
   <%= form_with url: marketplace_path, method: :get, local: true, class: "mp-filters mb-3" do %>
     <%= hidden_field_tag :tab, tab %>
 
     <div class="row g-2 align-items-end">
       <div class="col-12 col-lg-5">
         <label class="form-label small mb-1">Search</label>
-        <%= text_field_tag :q, q, class: "form-control form-control-sm", placeholder: "Search seller, era, set, product type..." %>
+        <%= text_field_tag :q, params[:q], class: "form-control form-control-sm", placeholder: "Search seller, set or product..." %>
       </div>
 
       <div class="col-6 col-lg-2">
         <label class="form-label small mb-1">Location</label>
         <select name="country" class="form-select form-select-sm">
           <option value="">All EU Countries</option>
-          <% eu.each do |name, code| %>
-            <option value="<%= code %>" <%= code == country ? "selected" : "" %>><%= "#{flag_emoji(code)} #{name}" %></option>
+          <% marketplace_country_options.each do |name, code| %>
+            <option value="<%= code %>" <%= "selected" if selected_country == code %>><%= "#{flag_emoji(code)} #{name}" %></option>
           <% end %>
         </select>
       </div>
@@ -356,20 +125,18 @@ end
         <label class="form-label small mb-1">Era</label>
         <select name="era" class="form-select form-select-sm" id="mp-era">
           <option value=""></option>
-          <% eras.each do |e| %>
-            <option value="<%= e %>" <%= e == selected_era ? "selected" : "" %>><%= e %></option>
+          <% @eras.each do |era| %>
+            <option value="<%= era %>" <%= "selected" if selected_era == era %>><%= era %></option>
           <% end %>
         </select>
       </div>
 
       <div class="col-6 col-lg-3">
         <label class="form-label small mb-1">Set</label>
-        <select name="set_slug" class="form-select form-select-sm" id="mp-set" <%= selected_era.present? ? "" : "disabled" %>>
+        <select name="set_slug" class="form-select form-select-sm" <%= selected_era.blank? ? "disabled" : "" %>>
           <option value=""></option>
-          <% sets_for_era.each do |s| %>
-            <% slug = s["slug"].to_s %>
-            <% name = s["name"].to_s %>
-            <option value="<%= slug %>" <%= slug == set_slug ? "selected" : "" %>><%= name %></option>
+          <% @sets_for_era.each do |set| %>
+            <option value="<%= set["slug"] %>" <%= "selected" if selected_set == set["slug"] %>><%= set["name"] %></option>
           <% end %>
         </select>
       </div>
@@ -380,8 +147,8 @@ end
         <label class="form-label small mb-1">Product Type</label>
         <select name="product_type" class="form-select form-select-sm">
           <option value=""></option>
-          <% product_type_keys.each do |k| %>
-            <option value="<%= k %>" <%= k == product_type ? "selected" : "" %>><%= type_map[k] %></option>
+          <% marketplace_type_map.each do |code, label| %>
+            <option value="<%= code %>" <%= "selected" if selected_type == code %>><%= label %></option>
           <% end %>
         </select>
       </div>
@@ -390,29 +157,29 @@ end
         <label class="form-label small mb-1">Condition</label>
         <select name="condition" class="form-select form-select-sm">
           <option value=""></option>
-          <% condition_options.each do |c| %>
-            <option value="<%= c %>" <%= c == condition ? "selected" : "" %>><%= c %></option>
+          <% marketplace_condition_options.each do |condition| %>
+            <option value="<%= condition %>" <%= "selected" if selected_condition == condition %>><%= condition %></option>
           <% end %>
         </select>
       </div>
 
       <div class="col-6 col-lg-2">
         <label class="form-label small mb-1">Min (€)</label>
-        <%= text_field_tag :min_price, min_price, class: "form-control form-control-sm", inputmode: "decimal" %>
+        <%= text_field_tag :min_price, params[:min_price], class: "form-control form-control-sm", inputmode: "decimal" %>
       </div>
 
       <div class="col-6 col-lg-2">
         <label class="form-label small mb-1">Max (€)</label>
-        <%= text_field_tag :max_price, max_price, class: "form-control form-control-sm", inputmode: "decimal" %>
+        <%= text_field_tag :max_price, params[:max_price], class: "form-control form-control-sm", inputmode: "decimal" %>
       </div>
 
       <div class="col-6 col-lg-2">
         <label class="form-label small mb-1">Sort</label>
         <select name="sort" class="form-select form-select-sm">
-          <option value="" <%= sort.blank? ? "selected" : "" %>>Newest</option>
-          <option value="oldest" <%= sort == "oldest" ? "selected" : "" %>>Oldest</option>
-          <option value="price-asc" <%= sort == "price-asc" ? "selected" : "" %>>Price (Low → High)</option>
-          <option value="price-desc" <%= sort == "price-desc" ? "selected" : "" %>>Price (High → Low)</option>
+          <option value="" <%= "selected" if selected_sort.blank? %>>Newest</option>
+          <option value="oldest" <%= "selected" if selected_sort == "oldest" %>>Oldest</option>
+          <option value="price-asc" <%= "selected" if selected_sort == "price-asc" %>>Price Low → High</option>
+          <option value="price-desc" <%= "selected" if selected_sort == "price-desc" %>>Price High → Low</option>
         </select>
       </div>
 
@@ -442,37 +209,38 @@ end
               <th>Actions</th>
             </tr>
           </thead>
+
           <tbody>
-            <% if @listings.present? && @listings.any? %>
-              <% @listings.each do |l| %>
-                <% seller = l.seller %>
-                <% stats = (@review_stats && seller) ? (@review_stats[seller.id] || { avg: 0.0, count: 0 }) : { avg: 0.0, count: 0 } %>
-                <% era = era_for_slug.call(l.set_slug).presence || "-" %>
+            <% if @listings.any? %>
+              <% @listings.each do |listing| %>
+                <% seller = listing.seller %>
+                <% stats = @review_stats[listing.seller_id] || { avg: 0.0, count: 0 } %>
+
                 <tr>
-                  <td>
-                    <%= link_to (seller&.respond_to?(:username) ? seller.username : "User ##{l.seller_id}"), user_path(l.seller_id), class: "text-decoration-none" %>
-                  </td>
-                  <td title="<%= country_name(l.country_code) %>"><%= flag_emoji(l.country_code) %></td>
-                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= stars.call(stats[:avg]) %> (<%= stats[:count] %>)</td>
+                  <td><%= link_to marketplace_seller_name(seller, listing.seller_id), user_path(listing.seller_id), class: "text-decoration-none" %></td>
+                  <td title="<%= country_name(listing.country_code) %>"><%= flag_emoji(listing.country_code) %></td>
+                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</td>
                   <td class="mp-badges">
-                    <% badge_imgs_for.call(seller).each do |img| %>
-                      <%= image_tag img, alt: "" %>
+                    <% marketplace_badges_for(seller).each do |badge| %>
+                      <%= image_tag badge, alt: "" %>
                     <% end %>
                   </td>
-                  <td><%= era %></td>
-                  <td><%= l.set_name.presence || "-" %></td>
-                  <td><%= display_type.call(l) %></td>
-                  <td><%= l.condition %></td>
-                  <td><%= number_to_currency(l.price_cents.to_i / 100.0, unit: "€") %></td>
-                  <td><%= l.quantity %></td>
+                  <td><%= marketplace_era(listing.set_slug).presence || "-" %></td>
+                  <td><%= listing.set_name.presence || "-" %></td>
+                  <td><%= marketplace_display_product(listing) %></td>
+                  <td><%= listing.condition %></td>
+                  <td><%= number_to_currency(listing.price_cents.to_i / 100.0, unit: "€") %></td>
+                  <td><%= listing.quantity %></td>
                   <td>
                     <div class="mp-actions">
-                      <%= link_to "View", marketplace_listing_path(l), class: "btn btn-outline-primary btn-sm" %>
-                      <% if current_user && current_user.id == l.seller_id && l.status.to_s == "active" %>
-                        <%= button_to "Delete", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
+                      <%= link_to "View", marketplace_listing_path(listing), class: "btn btn-outline-primary btn-sm" %>
+
+                      <% if current_user && current_user.id == listing.seller_id && listing.status == "active" %>
+                        <%= button_to "Delete", cancel_marketplace_listing_path(listing), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
                       <% end %>
-                      <% if admin_can_delete %>
-                        <%= button_to "Delete", marketplace_listing_path(l), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
+
+                      <% if @admin_can_delete %>
+                        <%= button_to "Delete", marketplace_listing_path(listing), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline mp-confirm-form", data: { confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
                       <% end %>
                     </div>
                   </td>
@@ -501,79 +269,46 @@ end
               <th>Actions</th>
             </tr>
           </thead>
+
           <tbody>
-            <% if @sold_rows.present? && @sold_rows.any? %>
+            <% if @sold_rows.any? %>
               <% @sold_rows.each do |row| %>
-                <% listing = sold_listing_for.call(row) %>
-                <% seller_id = if row.respond_to?(:seller_id) && row.seller_id.present? then row.seller_id else listing&.seller_id end %>
-                <% seller = if listing&.respond_to?(:seller) && listing.seller.present? then listing.seller elsif seller_id.present? then User.find_by(id: seller_id) else nil end %>
-                <% stats = seller_id.present? ? (@review_stats[seller_id] || { avg: 0.0, count: 0 }) : { avg: 0.0, count: 0 } %>
-                <% slug = if row.respond_to?(:set_slug) && row.set_slug.present? then row.set_slug.to_s elsif listing&.respond_to?(:set_slug) then listing.set_slug.to_s else "" end %>
-                <% set_name = if row.respond_to?(:set_name) && row.set_name.present? then row.set_name.to_s elsif listing&.respond_to?(:set_name) && listing.set_name.present? then listing.set_name.to_s else "-" end %>
-                <% type_obj = listing || row %>
-                <% cond = if row.respond_to?(:condition) && row.condition.present? then row.condition.to_s elsif listing&.respond_to?(:condition) then listing.condition.to_s else "-" end %>
-                <% unit_cents =
-                    if row.respond_to?(:unit_price_cents) && row.unit_price_cents.to_i > 0
-                      row.unit_price_cents.to_i
-                    elsif row.respond_to?(:price_cents) && row.price_cents.to_i > 0
-                      row.price_cents.to_i
-                    elsif listing&.respond_to?(:price_cents)
-                      listing.price_cents.to_i
-                    else
-                      0
-                    end %>
-                <% qty =
-                    if row.respond_to?(:quantity) && row.quantity.present?
-                      row.quantity.to_i
-                    elsif listing&.respond_to?(:quantity)
-                      listing.quantity.to_i
-                    else
-                      "-"
-                    end %>
-                <% sale_date =
-                    if row.respond_to?(:created_at) && row.created_at.present?
-                      row.created_at
-                    elsif row.respond_to?(:updated_at) && row.updated_at.present?
-                      row.updated_at
-                    elsif listing&.respond_to?(:updated_at)
-                      listing.updated_at
-                    end %>
-                <% country_code =
-                    if row.respond_to?(:country_code) && row.country_code.present?
-                      row.country_code.to_s
-                    elsif listing&.respond_to?(:country_code)
-                      listing.country_code.to_s
-                    else
-                      ""
-                    end %>
+                <% listing = marketplace_sold_listing(row, listing_map) %>
+                <% seller_id = marketplace_sold_seller_id(row, listing_map) %>
+                <% seller = marketplace_sold_seller(row, listing_map) %>
+                <% stats = @review_stats[seller_id] || { avg: 0.0, count: 0 } %>
+                <% set_slug = marketplace_sold_set_slug(row, listing_map) %>
+                <% country = marketplace_sold_country(row, listing_map) %>
+                <% sale_date = marketplace_sold_date(row, listing_map) %>
+
                 <tr>
                   <td>
                     <% if seller_id.present? %>
-                      <%= link_to (seller&.respond_to?(:username) ? seller.username : "User ##{seller_id}"), user_path(seller_id), class: "text-decoration-none" %>
+                      <%= link_to marketplace_seller_name(seller, seller_id), user_path(seller_id), class: "text-decoration-none" %>
                     <% else %>
                       -
                     <% end %>
                   </td>
-                  <td title="<%= country_code.present? ? country_name(country_code) : "" %>"><%= country_code.present? ? flag_emoji(country_code) : "-" %></td>
-                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= stars.call(stats[:avg]) %> (<%= stats[:count] %>)</td>
+                  <td title="<%= country.present? ? country_name(country) : "" %>"><%= country.present? ? flag_emoji(country) : "-" %></td>
+                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</td>
                   <td class="mp-badges">
-                    <% badge_imgs_for.call(seller).each do |img| %>
-                      <%= image_tag img, alt: "" %>
+                    <% marketplace_badges_for(seller).each do |badge| %>
+                      <%= image_tag badge, alt: "" %>
                     <% end %>
                   </td>
-                  <td><%= era_for_slug.call(slug).presence || "-" %></td>
-                  <td><%= set_name %></td>
-                  <td><%= display_type.call(type_obj) %></td>
-                  <td><%= cond.presence || "-" %></td>
-                  <td><%= number_to_currency(unit_cents / 100.0, unit: "€") %></td>
-                  <td><%= qty %></td>
-                  <td><%= sale_date ? sale_date.strftime("%d %b %Y") : "" %></td>
+                  <td><%= marketplace_era(set_slug).presence || "-" %></td>
+                  <td><%= marketplace_sold_set_name(row, listing_map).presence || "-" %></td>
+                  <td><%= marketplace_display_product(row.respond_to?(:product_name) && row.product_name.present? ? row : listing) %></td>
+                  <td><%= marketplace_sold_condition(row, listing_map).presence || "-" %></td>
+                  <td><%= number_to_currency(marketplace_sold_unit_cents(row, listing_map) / 100.0, unit: "€") %></td>
+                  <td><%= marketplace_sold_quantity(row, listing_map) %></td>
+                  <td><%= sale_date ? sale_date.strftime("%d %b %Y") : "-" %></td>
                   <td>
                     <div class="mp-actions">
                       <% if listing %>
                         <%= link_to "View", marketplace_listing_path(listing), class: "btn btn-outline-primary btn-sm" %>
                       <% else %>
-                        <span class="text-muted">-</span>
+                        -
                       <% end %>
                     </div>
                   </td>
@@ -590,10 +325,9 @@ end
     </div>
   </div>
 
-  <%# Custom confirmation overlay used before deleting marketplace listings from the table. %>
   <div class="mp-confirm-overlay" id="mpConfirmOverlay" aria-hidden="true">
     <div class="mp-confirm-box">
-      <div class="mp-confirm-text" id="mpConfirmText">Are you sure you want to delete this listing?</div>
+      <div class="mp-confirm-text" id="mpConfirmText">Are you sure you want to continue?</div>
       <div class="mp-confirm-actions">
         <button type="button" class="mp-confirm-yes" id="mpConfirmYes">Yes</button>
         <button type="button" class="mp-confirm-no" id="mpConfirmNo">No</button>
@@ -601,78 +335,64 @@ end
     </div>
   </div>
 
-  <script type="module">
-    const eraSel = document.getElementById("mp-era")
+  <script>
+    (() => {
+      const eraSelect = document.getElementById("mp-era")
 
-    eraSel?.addEventListener("change", () => {
-      const form = eraSel.closest("form")
-      if (!form) return
-      form.submit()
-    })
+      eraSelect?.addEventListener("change", () => {
+        eraSelect.closest("form")?.submit()
+      })
 
-    let pendingMarketplaceForm = null
-    let confirmedMarketplaceForm = false
+      let pendingForm = null
+      let confirmed = false
 
-    const mpOverlay = document.getElementById("mpConfirmOverlay")
-    const mpText = document.getElementById("mpConfirmText")
-    const mpYes = document.getElementById("mpConfirmYes")
-    const mpNo = document.getElementById("mpConfirmNo")
+      const overlay = document.getElementById("mpConfirmOverlay")
+      const text = document.getElementById("mpConfirmText")
+      const yes = document.getElementById("mpConfirmYes")
+      const no = document.getElementById("mpConfirmNo")
 
-    document.addEventListener("submit", (event) => {
-      const form = event.target.closest(".mp-confirm-form")
-      if (!form) return
+      document.addEventListener("submit", (event) => {
+        const form = event.target.closest(".mp-confirm-form")
+        if (!form) return
 
-      if (confirmedMarketplaceForm) {
-        confirmedMarketplaceForm = false
-        return
-      }
+        if (confirmed) {
+          confirmed = false
+          return
+        }
 
-      event.preventDefault()
-      pendingMarketplaceForm = form
+        event.preventDefault()
+        pendingForm = form
 
-      if (mpText) mpText.textContent = form.dataset.confirmText || "Are you sure you want to delete this listing?"
+        if (text) text.textContent = form.dataset.confirmText || "Are you sure you want to continue?"
+        if (overlay) overlay.style.display = "flex"
+      })
 
-      if (mpOverlay) {
-        mpOverlay.style.display = "flex"
-        mpOverlay.setAttribute("aria-hidden", "false")
-      }
-    })
+      yes?.addEventListener("click", () => {
+        if (!pendingForm) return
 
-    mpYes?.addEventListener("click", () => {
-      if (!pendingMarketplaceForm) return
+        const form = pendingForm
+        pendingForm = null
+        confirmed = true
 
-      const form = pendingMarketplaceForm
-      pendingMarketplaceForm = null
+        if (overlay) overlay.style.display = "none"
 
-      if (mpOverlay) {
-        mpOverlay.style.display = "none"
-        mpOverlay.setAttribute("aria-hidden", "true")
-      }
+        if (form.requestSubmit) {
+          form.requestSubmit()
+        } else {
+          form.submit()
+        }
+      })
 
-      confirmedMarketplaceForm = true
+      no?.addEventListener("click", () => {
+        pendingForm = null
+        if (overlay) overlay.style.display = "none"
+      })
 
-      if (form.requestSubmit) {
-        form.requestSubmit()
-      } else {
-        form.submit()
-      }
-    })
-
-    mpNo?.addEventListener("click", () => {
-      pendingMarketplaceForm = null
-
-      if (mpOverlay) {
-        mpOverlay.style.display = "none"
-        mpOverlay.setAttribute("aria-hidden", "true")
-      }
-    })
-
-    mpOverlay?.addEventListener("click", (event) => {
-      if (event.target !== mpOverlay) return
-
-      pendingMarketplaceForm = null
-      mpOverlay.style.display = "none"
-      mpOverlay.setAttribute("aria-hidden", "true")
-    })
+      overlay?.addEventListener("click", (event) => {
+        if (event.target !== overlay) return
+        pendingForm = null
+        overlay.style.display = "none"
+      })
+    })()
   </script>
 </div>

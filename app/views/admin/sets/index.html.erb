@@ -1,5 +1,5 @@
-<%# Admin set value update page %>
-<% groups = (@groups || []) %>
+<%# Admin set value update page. %>
+<% groups = @groups || [] %>
 
 <style>
   .admin-sets-table{width:100%;font-size:.78rem;border-collapse:collapse}
@@ -18,11 +18,12 @@
 </style>
 
 <div class="container py-3">
-  <%# Sends updated set totals, card counts and secret-card counts to the admin controller %>
-  <%= form_with url: "/admin/sets/update_values", method: :patch, local: true do %>
+  <%# Sends all edited set totals, card counts and secret-card counts to the admin controller. %>
+  <%= form_with url: update_values_admin_sets_path, method: :patch, local: true do %>
     <% groups.each do |era, rows| %>
       <% next if rows.blank? %>
 
+      <%# Each card groups sets by era. %>
       <div class="admin-sets-card">
         <div class="card-head"><%= era %></div>
 
@@ -39,50 +40,51 @@
             </thead>
 
             <tbody>
-              <% rows.each do |r| %>
+              <% rows.each do |set| %>
                 <tr>
                   <td>
-                    <%= link_to set_path(slug: r[:slug]) do %>
-                      <%= image_tag r[:img_url], alt: r[:name], class: "thumb" %>
+                    <%# Set image links to the public set page. %>
+                    <%= link_to set_path(slug: set[:slug]) do %>
+                      <%= image_tag set[:img_url], alt: set[:name], class: "thumb" %>
                     <% end %>
                   </td>
 
                   <td class="text-center">
-                    <%= link_to r[:name], set_path(slug: r[:slug]), class: "text-decoration-none" %>
+                    <%= link_to set[:name], set_path(slug: set[:slug]), class: "text-decoration-none" %>
                   </td>
 
-                  <td><%= r[:release_date].presence || (r[:release_raw].presence || "—") %></td>
+                  <td><%= set[:release_date].presence || set[:release_raw].presence || "—" %></td>
 
                   <td>
-                    <%# First input is total cards, second input is secret cards %>
+                    <%# First input is total cards. Second input is secret cards. %>
                     <div class="d-flex justify-content-center gap-2">
                       <input class="form-control form-control-sm text-center"
                              style="max-width:90px"
                              type="number"
                              min="0"
                              step="1"
-                             name="cards[<%= r[:slug] %>]"
-                             value="<%= r[:cards] %>">
+                             name="cards[<%= set[:slug] %>]"
+                             value="<%= set[:cards] %>">
 
                       <input class="form-control form-control-sm text-center"
                              style="max-width:90px"
                              type="number"
                              min="0"
                              step="1"
-                             name="secret_cards[<%= r[:slug] %>]"
-                             value="<%= r[:secret_cards] %>">
+                             name="secret_cards[<%= set[:slug] %>]"
+                             value="<%= set[:secret_cards] %>">
                     </div>
                   </td>
 
                   <td>
-                    <%# Updates the visible total set value shown on set pages %>
+                    <%# Updates the visible total set value shown on set pages. %>
                     <input class="form-control form-control-sm text-center"
                            style="max-width:160px;margin:0 auto"
                            type="number"
                            min="0"
                            step="0.01"
-                           name="total_values[<%= r[:slug] %>]"
-                           value="<%= r[:total_value] %>">
+                           name="total_values[<%= set[:slug] %>]"
+                           value="<%= set[:total_value] %>">
                   </td>
                 </tr>
               <% end %>
@@ -92,6 +94,7 @@
       </div>
     <% end %>
 
+    <%# One button saves all edited set rows. %>
     <div class="admin-sets-actions">
       <button class="btn btn-primary btn-sm" type="submit">Update Sets</button>
     </div>

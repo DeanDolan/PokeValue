@@ -1,232 +1,31 @@
 <%#
 References:
-- Rails forms and file uploads:
-  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+- Rails form helpers and file uploads:
+  https://guides.rubyonrails.org/form_helpers.html
   https://guides.rubyonrails.org/active_storage_overview.html
-- Rails asset helpers:
-  https://guides.rubyonrails.org/asset_pipeline.html
-- Bootstrap dropdowns and forms:
-  https://getbootstrap.com/docs/5.3/components/dropdowns/
+- Bootstrap forms and dropdowns:
   https://getbootstrap.com/docs/5.3/forms/overview/
+  https://getbootstrap.com/docs/5.3/components/dropdowns/
 - MDN DOM events and dataset:
   https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
   https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset
 %>
 
 <%
-require "json"
-
-# Loads the product catalogue so users can list either a catalogue product or one of their holdings.
-sets_data =
-  begin
-    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-    JSON.parse(raw)
-  rescue
-    {}
-  end
-
-# Converts internal product codes into readable product names.
-type_map = {
-  "etb" => "Elite Trainer Box",
-  "pc_etb" => "Pokemon Center Elite Trainer Box",
-  "booster_box" => "Booster Box",
-  "booster_bundle" => "Booster Bundle",
-  "booster_bundle_display" => "Booster Bundle Display",
-  "enhanced_booster_box" => "Enhanced Booster Box",
-  "ultra_premium_collection" => "Ultra Premium Collection",
-  "upc" => "Ultra Premium Collection",
-  "spc" => "Super Premium Collection",
-  "mini_tin" => "Mini Tin",
-  "mini_tin_display" => "Mini Tin Display"
-}
-
-# Conditions available when creating a marketplace listing.
-conditions = [
-  "Mint Condition",
-  "Loosely Sealed",
-  "Unsealed",
-  "Big Tear",
-  "Small Tear",
-  "Big Imperfections",
-  "Small Imperfections",
-  "Pressure Marks",
-  "Slightly Dented",
-  "Heavy Dented",
-  "Damaged",
-  "Box Only",
-  "Contents Only"
-]
-
-# Reuses submitted form values if validation fails and the form reloads.
-form = defined?(@listing_form) && @listing_form.is_a?(Hash) ? @listing_form : {}
-
+form = @listing_form || {}
 selected_mode = form[:mode].to_s.presence || "catalog"
 selected_holding_id = form[:holding_id].to_s
-selected_catalog_set_slug = form[:catalog_set_slug].to_s
-selected_catalog_route_type = form[:catalog_route_type].to_s
+selected_set_slug = form[:catalog_set_slug].to_s
+selected_route_type = form[:catalog_route_type].to_s
 selected_condition = form[:catalog_condition].to_s
 selected_price = form[:price].to_s
 selected_quantity = form[:quantity].to_s.presence || "1"
-
-# Works out the selected era from the selected set slug.
-selected_era =
-  if selected_catalog_set_slug.present?
-    s = sets_data[selected_catalog_set_slug] || sets_data.values.find { |x| x["slug"].to_s == selected_catalog_set_slug }
-    s ? s["era"].to_s : ""
-  else
-    ""
-  end
-
-eras = sets_data.values.map { |s| s["era"].to_s }.reject(&:blank?).uniq.sort
-holdings = defined?(@holdings) && @holdings ? @holdings : []
-
-images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-
-# Converts type codes into readable text.
-titleize_code = lambda do |code|
-  code.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
-end
-
-# Splits product type and variant from route strings such as etb--v-lucario.
-split_type_variant = lambda do |t|
-  x = t.to_s
-  if x.include?("--v-")
-    base, raw = x.split("--v-", 2)
-    variant = raw.to_s.tr("-", " ").split.map(&:capitalize).join(" ")
-    [base.to_s, variant.to_s]
-  else
-    [x.to_s, ""]
-  end
-end
-
-# Normalises product display names so base type and variant display consistently.
-normalize_name_to_type_and_variant = lambda do |name, base_name|
-  n = name.to_s.strip
-  b = base_name.to_s.strip
-  return [b, ""] if n.blank?
-
-  if n.downcase.start_with?(b.downcase)
-    variant = n[b.length..-1].to_s.strip
-    if variant.start_with?("(") && variant.end_with?(")")
-      variant = variant[1..-2].to_s.strip
-    end
-    [b, (variant.presence || "")]
-  elsif n.downcase.end_with?(b.downcase)
-    variant = n[0...(n.length - b.length)].to_s.strip
-    variant = variant.sub(/\(([^)]+)\)\s*$/) { Regexp.last_match(1).to_s }.strip if variant.include?("(") && variant.include?(")")
-    variant = variant.sub(/[-–—]\s*$/,"").strip
-    [b, (variant.presence || "")]
-  else
-    extracted = n[/\(([^)]+)\)/, 1].to_s.strip
-    extracted.present? ? [b, extracted] : [b, ""]
-  end
-end
-
-# Splits SKU values into set slug and product type.
-parse_sku = lambda do |sku|
-  s = sku.to_s
-  if s.include?(":")
-    a, b = s.split(":", 2)
-    [a.to_s, b.to_s]
-  elsif s.include?("--")
-    a, b = s.split("--", 2)
-    [a.to_s, b.to_s]
-  else
-    [s.to_s, ""]
-  end
-end
-
-# Builds display data for each holding shown in the dropdown.
-holding_meta = lambda do |h|
-  sku =
-    if h.respond_to?(:sku) && h.sku.present?
-      h.sku.to_s
-    elsif h.respond_to?(:product_sku) && h.product_sku.present?
-      h.product_sku.to_s
-    elsif h.respond_to?(:product) && h.product && h.product.respond_to?(:sku) && h.product.sku.present?
-      h.product.sku.to_s
-    else
-      ""
-    end
-
-  slug =
-    if h.respond_to?(:set_slug) && h.set_slug.present?
-      h.set_slug.to_s
-    else
-      parse_sku.call(sku)[0].to_s
-    end
-
-  type_code =
-    if h.respond_to?(:route_type) && h.route_type.present?
-      h.route_type.to_s
-    else
-      parse_sku.call(sku)[1].to_s
-    end
-
-  base, type_variant = split_type_variant.call(type_code)
-
-  holding_variant =
-    if h.respond_to?(:variant) && h.variant.present?
-      h.variant.to_s
-    elsif h.respond_to?(:variant_name) && h.variant_name.present?
-      h.variant_name.to_s
-    elsif h.respond_to?(:product_variant) && h.product_variant.present?
-      h.product_variant.to_s
-    else
-      ""
-    end
-
-  variant = holding_variant.presence || type_variant.to_s
-
-  s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
-  era = s ? s["era"].to_s : ""
-  set_name = s ? s["name"].to_s : slug.to_s
-
-  base_name = type_map[base.to_s].presence || titleize_code.call(base)
-
-  json_name = ""
-  img_url = asset_path("pokevaluelogo.png")
-
-  if s
-    products = Array(s["products"] || s["sealed"])
-    candidates = products.select { |p| p["type"].to_s == base.to_s }
-
-    picked =
-      if variant.present?
-        candidates.find { |p| p["name"].to_s.downcase.include?(variant.downcase) }
-      else
-        candidates.first
-      end
-
-    if picked
-      json_name = picked["name"].to_s
-      img_base = File.basename(picked["img"].to_s) rescue ""
-      if img_base.present? && File.exist?(images_sealed.join(img_base))
-        img_url = asset_path("sealed/#{img_base}")
-      end
-    end
-  end
-
-  tn, vn =
-    if json_name.present?
-      normalize_name_to_type_and_variant.call(json_name, base_name)
-    else
-      [base_name, variant.to_s]
-    end
-
-  product_type_display = vn.present? ? "#{tn} (#{vn})" : tn
-  label = [era.presence, set_name.presence, product_type_display.presence].compact.join(" · ")
-
-  qty = h.respond_to?(:quantity) ? h.quantity.to_i : 0
-  lq = h.respond_to?(:listed_quantity) ? h.listed_quantity.to_i : 0
-  avail = qty - lq
-  avail = 0 if avail < 0
-
-  { label: label, img_url: img_url, available: avail, id: h.id }
-end
-
-selected_holding = holdings.find { |h| h.id.to_s == selected_holding_id }
-selected_holding_meta = selected_holding ? holding_meta.call(selected_holding) : nil
+catalogue = marketplace_catalogue
+eras = catalogue.map { |set| set[:era] }.reject(&:blank?).uniq.sort
+selected_era = catalogue.find { |set| set[:slug] == selected_set_slug }&.dig(:era).to_s
+holdings = @holdings || []
+selected_holding = holdings.find { |holding| holding.id.to_s == selected_holding_id }
+selected_holding_option = selected_holding ? marketplace_holding_option(selected_holding) : nil
 %>
 
 <div class="container py-4">
@@ -239,7 +38,6 @@ selected_holding_meta = selected_holding ? holding_meta.call(selected_holding) :
     .ml-hold-btn img{width:28px;height:28px;object-fit:contain}
     .ml-hold-item{display:flex;align-items:center;gap:10px}
     .ml-hold-item img{width:34px;height:34px;object-fit:contain}
-    .ml-hold-main{min-width:0;flex:1}
     .ml-hold-title{font-weight:600;font-size:.9rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .ml-hold-sub{font-size:.78rem;color:#6b7280;line-height:1.2}
     .ml-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -248,91 +46,86 @@ selected_holding_meta = selected_holding ? holding_meta.call(selected_holding) :
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <div class="ml-title">Create Marketplace Listing</div>
-      <div class="ml-muted">Choose a product, set your price, quantity, and condition.</div>
+      <div class="ml-muted">Choose a product, set your price, quantity and condition.</div>
     </div>
+
     <%= link_to "← Back to Marketplace", marketplace_path, class: "btn btn-outline-secondary btn-sm" %>
   </div>
 
   <div class="ml-wrap">
-    <%# Multipart form allows image uploads through Active Storage. %>
     <%= form_with url: marketplace_listings_path, method: :post, local: true, html: { multipart: true, id: "ml-form" } do %>
       <input type="hidden" name="mode" id="ml-mode" value="<%= selected_mode %>">
 
-      <div class="row g-2 mb-2">
-        <div class="col-12">
-          <div class="d-flex gap-3 flex-wrap">
-            <label class="d-inline-flex align-items-center gap-2">
-              <input type="radio" name="ml_mode_choice" value="catalog" <%= "checked" if selected_mode != "holding" %>>
-              <span class="ml-rowlabel">Choose from catalogue</span>
-            </label>
-            <label class="d-inline-flex align-items-center gap-2">
-              <input type="radio" name="ml_mode_choice" value="holding" <%= "checked" if selected_mode == "holding" %>>
-              <span class="ml-rowlabel">Choose from holdings</span>
-            </label>
-          </div>
-        </div>
+      <div class="d-flex gap-3 flex-wrap mb-3">
+        <label class="d-inline-flex align-items-center gap-2">
+          <input type="radio" name="ml_mode_choice" value="catalog" <%= "checked" if selected_mode != "holding" %>>
+          <span class="ml-rowlabel">Choose from catalogue</span>
+        </label>
+
+        <label class="d-inline-flex align-items-center gap-2">
+          <input type="radio" name="ml_mode_choice" value="holding" <%= "checked" if selected_mode == "holding" %>>
+          <span class="ml-rowlabel">Choose from holdings</span>
+        </label>
       </div>
 
-      <%# Catalogue mode lets users list products even if they are not already in their portfolio. %>
-      <div id="ml-catalog" style="<%= selected_mode == "holding" ? "display:none;" : "" %>">
+      <div id="ml-catalog">
         <div class="row g-2 mb-2">
           <div class="col-12 col-lg-3">
             <label class="form-label mb-1 ml-rowlabel">Era</label>
-            <select class="form-select" id="ml-era">
+            <select class="form-select" id="ml-era" data-selected="<%= selected_era %>">
               <option value=""></option>
-              <% eras.each do |e| %>
-                <option value="<%= e %>" <%= "selected" if selected_era == e %>><%= e %></option>
+              <% eras.each do |era| %>
+                <option value="<%= era %>" <%= "selected" if selected_era == era %>><%= era %></option>
               <% end %>
             </select>
           </div>
 
           <div class="col-12 col-lg-4">
             <label class="form-label mb-1 ml-rowlabel">Set</label>
-            <select class="form-select" name="catalog_set_slug" id="ml-set" data-selected="<%= selected_catalog_set_slug %>" disabled>
+            <select class="form-select" name="catalog_set_slug" id="ml-set" data-selected="<%= selected_set_slug %>">
               <option value=""></option>
             </select>
           </div>
 
           <div class="col-12 col-lg-5">
             <label class="form-label mb-1 ml-rowlabel">Product</label>
-            <select class="form-select" name="catalog_route_type" id="ml-product" data-selected="<%= selected_catalog_route_type %>" disabled>
+            <select class="form-select" name="catalog_route_type" id="ml-product" data-selected="<%= selected_route_type %>">
               <option value=""></option>
             </select>
           </div>
         </div>
       </div>
 
-      <%# Holding mode lists only the user's available portfolio holdings. %>
-      <div id="ml-holding" style="<%= selected_mode == "holding" ? "" : "display:none;" %>">
+      <div id="ml-holding">
         <div class="row g-2 mb-2">
           <div class="col-12">
             <label class="form-label mb-1 ml-rowlabel">Holding</label>
 
             <div class="dropdown">
-              <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start ml-hold-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="ml-hold-btn">
-                <% if selected_holding_meta %>
-                  <img src="<%= selected_holding_meta[:img_url] %>" alt="">
-                  <span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><%= selected_holding_meta[:label] %></span>
+              <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start ml-hold-btn" type="button" data-bs-toggle="dropdown" id="ml-hold-btn">
+                <% if selected_holding_option %>
+                  <img src="<%= selected_holding_option[:image] %>" alt="">
+                  <span class="text-truncate"><%= selected_holding_option[:label] %></span>
                 <% else %>
                   Select a holding...
                 <% end %>
               </button>
 
               <ul class="dropdown-menu w-100 p-0" style="max-height:360px;overflow:auto;">
-                <% holdings.each do |h| %>
-                  <% m = holding_meta.call(h) %>
+                <% holdings.each do |holding| %>
+                  <% option = marketplace_holding_option(holding) %>
                   <li>
                     <button
                       type="button"
                       class="dropdown-item py-2"
-                      data-holding-id="<%= m[:id] %>"
-                      data-holding-label="<%= m[:label].to_s.gsub('"','&quot;') %>"
-                      data-holding-img="<%= m[:img_url].to_s.gsub('"','&quot;') %>">
+                      data-holding-id="<%= option[:id] %>"
+                      data-holding-label="<%= option[:label] %>"
+                      data-holding-img="<%= option[:image] %>">
                       <div class="ml-hold-item">
-                        <img src="<%= m[:img_url] %>" alt="">
-                        <div class="ml-hold-main">
-                          <div class="ml-hold-title"><%= m[:label] %></div>
-                          <div class="ml-hold-sub">Available: <%= m[:available] %></div>
+                        <img src="<%= option[:image] %>" alt="">
+                        <div class="min-w-0">
+                          <div class="ml-hold-title"><%= option[:label] %></div>
+                          <div class="ml-hold-sub">Available: <%= option[:available] %></div>
                         </div>
                       </div>
                     </button>
@@ -359,28 +152,26 @@ selected_holding_meta = selected_holding ? holding_meta.call(selected_holding) :
 
         <div class="col-12 col-lg-5">
           <label class="form-label mb-1 ml-rowlabel">Condition</label>
-          <select class="form-select" id="ml-condition" name="<%= selected_mode == "holding" ? "holding_condition" : "catalog_condition" %>">
+          <select class="form-select" id="ml-condition" name="catalog_condition">
             <option value=""></option>
-            <% conditions.each do |c| %>
-              <option value="<%= c %>" <%= "selected" if selected_condition == c %>><%= c %></option>
+            <% marketplace_condition_options.each do |condition| %>
+              <option value="<%= condition %>" <%= "selected" if selected_condition == condition %>><%= condition %></option>
             <% end %>
           </select>
         </div>
       </div>
 
-      <div class="row g-2 mb-3">
-        <div class="col-12">
-          <label class="form-label mb-1 ml-rowlabel">Images (up to 4)</label>
+      <div class="mb-3">
+        <label class="form-label mb-1 ml-rowlabel">Images (up to 4)</label>
 
-          <div class="ml-img-grid">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-          </div>
-
-          <div class="small text-muted mt-1">PNG/JPG only.</div>
+        <div class="ml-img-grid">
+          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
+          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
+          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
+          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
         </div>
+
+        <div class="small text-muted mt-1">PNG/JPG only.</div>
       </div>
 
       <div class="d-flex gap-2 justify-content-end flex-wrap">
@@ -389,159 +180,85 @@ selected_holding_meta = selected_holding ? holding_meta.call(selected_holding) :
     <% end %>
   </div>
 
-  <script type="module">
-    const setsData = <%= raw(sets_data.to_json) %>
+  <script>
+    (() => {
+      const catalogue = <%= raw(catalogue.to_json) %>
 
-    const modeHidden = document.getElementById("ml-mode")
-    const modeRadios = document.querySelectorAll("input[name='ml_mode_choice']")
-    const catalogWrap = document.getElementById("ml-catalog")
-    const holdingWrap = document.getElementById("ml-holding")
-    const conditionSel = document.getElementById("ml-condition")
+      const modeHidden = document.getElementById("ml-mode")
+      const modeRadios = document.querySelectorAll("input[name='ml_mode_choice']")
+      const catalogWrap = document.getElementById("ml-catalog")
+      const holdingWrap = document.getElementById("ml-holding")
+      const conditionSelect = document.getElementById("ml-condition")
+      const eraSelect = document.getElementById("ml-era")
+      const setSelect = document.getElementById("ml-set")
+      const productSelect = document.getElementById("ml-product")
+      const holdButton = document.getElementById("ml-hold-btn")
+      const holdInput = document.getElementById("ml-holding-id")
 
-    function setMode(v){
-      if (v === "holding") {
-        modeHidden.value = "holding"
-        catalogWrap.style.display = "none"
-        holdingWrap.style.display = ""
-        conditionSel.name = "holding_condition"
-      } else {
-        modeHidden.value = "catalog"
-        catalogWrap.style.display = ""
-        holdingWrap.style.display = "none"
-        conditionSel.name = "catalog_condition"
-      }
-    }
+      function setMode(mode) {
+        const holding = mode === "holding"
 
-    modeRadios.forEach(r => {
-      r.addEventListener("change", () => setMode(r.value))
-    })
-
-    const eraSel = document.getElementById("ml-era")
-    const setSel = document.getElementById("ml-set")
-    const prodSel = document.getElementById("ml-product")
-
-    function slugifyVariant(s){
-      return String(s || "")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-    }
-
-    function baseNameFor(typeCode){
-      const k = String(typeCode || "").toLowerCase()
-      return <%= raw(type_map.to_json) %>[k] || String(typeCode || "").replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
-    }
-
-    function routeTypeForProduct(p){
-      const base = String(p?.type || "")
-      const name = String(p?.name || "")
-      const baseName = baseNameFor(base)
-      const m = name.match(/\(([^)]+)\)/)
-
-      if (m && m[1]) {
-        const v = m[1].trim()
-        if (v.length) return `${base}--v-${slugifyVariant(v)}`
+        modeHidden.value = holding ? "holding" : "catalog"
+        catalogWrap.style.display = holding ? "none" : ""
+        holdingWrap.style.display = holding ? "" : "none"
+        conditionSelect.name = holding ? "holding_condition" : "catalog_condition"
       }
 
-      if (name.toLowerCase().startsWith(baseName.toLowerCase())) {
-        const rest = name.slice(baseName.length).trim()
-        if (rest.length) return `${base}--v-${slugifyVariant(rest.replace(/^\(|\)$/g,"").trim())}`
+      function optionHtml(value, label, selected) {
+        return `<option value="${value}" ${String(value) === String(selected || "") ? "selected" : ""}>${label}</option>`
       }
 
-      return base
-    }
+      function rebuildSets() {
+        const era = eraSelect.value
+        const selected = setSelect.dataset.selected || setSelect.value || ""
+        const sets = catalogue.filter((set) => set.era === era).sort((a, b) => a.name.localeCompare(b.name))
 
-    function setOptions(el, opts, selectedValue){
-      el.innerHTML = `<option value=""></option>` + opts.map(o => `<option value="${o.value}" ${String(o.value) === String(selectedValue || "") ? "selected" : ""}>${o.label}</option>`).join("")
-      el.disabled = opts.length === 0
-    }
+        setSelect.innerHTML = `<option value=""></option>` + sets.map((set) => optionHtml(set.slug, set.name, selected)).join("")
+        setSelect.disabled = sets.length === 0
+        setSelect.dataset.selected = ""
 
-    function setsForEra(era){
-      const out = []
+        rebuildProducts()
+      }
 
-      Object.values(setsData || {}).forEach(s => {
-        if (!s) return
-        if (String(s.era || "") !== String(era || "")) return
+      function rebuildProducts() {
+        const selectedSet = catalogue.find((set) => set.slug === setSelect.value)
+        const selected = productSelect.dataset.selected || productSelect.value || ""
+        const products = selectedSet ? selectedSet.products : []
 
-        const slug = String(s.slug || "")
-        const name = String(s.name || slug || "")
+        productSelect.innerHTML = `<option value=""></option>` + products.map((product) => optionHtml(product.route_type, product.name, selected)).join("")
+        productSelect.disabled = products.length === 0
+        productSelect.dataset.selected = ""
+      }
 
-        if (slug) out.push({ value: slug, label: name, raw: s })
+      modeRadios.forEach((radio) => {
+        radio.addEventListener("change", () => setMode(radio.value))
       })
 
-      out.sort((a,b) => a.label.localeCompare(b.label))
-      return out
-    }
-
-    function productsForSet(slug){
-      const s = (setsData && (setsData[slug] || Object.values(setsData).find(x => String(x?.slug||"") === String(slug||"")))) || null
-      const arr = Array.isArray(s?.products) ? s.products : (Array.isArray(s?.sealed) ? s.sealed : [])
-      const out = []
-
-      arr.forEach(p => {
-        const label = String(p?.name || "")
-        const value = routeTypeForProduct(p)
-
-        if (value && label) out.push({ value, label })
+      eraSelect?.addEventListener("change", () => {
+        setSelect.dataset.selected = ""
+        productSelect.dataset.selected = ""
+        rebuildSets()
       })
 
-      return out
-    }
+      setSelect?.addEventListener("change", () => {
+        productSelect.dataset.selected = ""
+        rebuildProducts()
+      })
 
-    function refreshSets(){
-      const era = eraSel.value
-      const selectedSet = setSel.getAttribute("data-selected") || setSel.value || ""
-      const sets = setsForEra(era)
+      document.addEventListener("click", (event) => {
+        const item = event.target.closest(".dropdown-item[data-holding-id]")
+        if (!item) return
 
-      setOptions(setSel, sets.map(x => ({ value: x.value, label: x.label })), selectedSet)
-      refreshProducts()
-      setSel.setAttribute("data-selected", "")
-    }
+        holdInput.value = item.dataset.holdingId || ""
 
-    function refreshProducts(){
-      const slug = setSel.value
-      const selectedProduct = prodSel.getAttribute("data-selected") || prodSel.value || ""
-      const prods = productsForSet(slug)
-
-      setOptions(prodSel, prods, selectedProduct)
-      prodSel.setAttribute("data-selected", "")
-    }
-
-    eraSel?.addEventListener("change", () => {
-      setSel.setAttribute("data-selected", "")
-      prodSel.setAttribute("data-selected", "")
-      refreshSets()
-    })
-
-    setSel?.addEventListener("change", () => {
-      prodSel.setAttribute("data-selected", "")
-      refreshProducts()
-    })
-
-    const holdBtn = document.getElementById("ml-hold-btn")
-    const holdId = document.getElementById("ml-holding-id")
-
-    document.addEventListener("click", (e) => {
-      const item = e.target.closest(".dropdown-item[data-holding-id]")
-      if (!item) return
-
-      const id = item.getAttribute("data-holding-id")
-      const label = item.getAttribute("data-holding-label") || ""
-      const img = item.getAttribute("data-holding-img") || ""
-
-      if (holdId) holdId.value = String(id || "")
-
-      if (holdBtn) {
-        holdBtn.innerHTML = `
-          <img src="${img}" alt="">
-          <span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</span>
+        holdButton.innerHTML = `
+          <img src="${item.dataset.holdingImg || ""}" alt="">
+          <span class="text-truncate">${item.dataset.holdingLabel || ""}</span>
         `
-      }
-    })
+      })
 
-    setMode("<%= selected_mode == "holding" ? "holding" : "catalog" %>")
-    refreshSets()
+      setMode("<%= selected_mode == "holding" ? "holding" : "catalog" %>")
+      rebuildSets()
+    })()
   </script>
 </div>

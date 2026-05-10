@@ -51,10 +51,20 @@
       <div class="col-md-6">
         <label class="form-label">Condition</label>
         <%= f.select :condition, [
-          "Mint Sealed","Loosely Sealed","Unsealed",
-          "Big Tear","Small Tear","Big Imperfections","Small Imperfections",
-          "Pressure Marks","Slightly Dented","Heavy Dented","Damaged",
-          "Box Only","Contents Only"
+          "Mint Sealed",
+          "Loosely Sealed",
+          "Mini Tear/Hole (<2cm)",
+          "Unsealed",
+          "Small Tear (>2cm)",
+          "Big Tear (>1 inch)",
+          "Small Imperfections",
+          "Big Imperfections",
+          "Pressure Marks",
+          "Slightly Dented",
+          "Heavy Dented",
+          "Damaged",
+          "Box Only",
+          "Contents Only"
         ], {}, class: "form-select" %>
       </div>
     </div>

@@ -25,11 +25,14 @@ class Holding < ApplicationRecord
   # Conditions valued at 85% of the base product value
   FIFTEEN_PERCENT_LESS = [
     "big imperfections",
+    "small tear",
+    "small tear (>2cm)",
     "small tear (<1 inch)"
   ].freeze
 
   # Conditions valued at 80% of the base product value
   TWENTY_PERCENT_LESS = [
+    "big tear",
     "big tear (>1 inch)",
     "big tear (>inch)",
     "slightly dented"

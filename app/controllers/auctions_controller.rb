@@ -1,53 +1,32 @@
 class AuctionsController < ApplicationController
   helper_method :current_user
 
+  # Opens the create auction form.
   def new
-    # Only logged-in users can create auctions.
     redirect_to(root_path, alert: "Please log in.") unless current_user
   end
 
+  # Creates an auction with description, condition, reserve details, duration and images.
   def create
-    # Stops guests from creating auctions.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
-    # Reads and cleans the form fields submitted from the create auction page.
+    duration = Auction.duration_for(params[:auction_duration])
+    reserve_status = params[:reserve_status].to_s.strip
     description = params[:auction_description].to_s.strip
     condition = params[:condition].to_s.strip
-    reserve_status = params[:reserve_status].to_s.strip
-    duration_key = params[:auction_duration].to_s.strip
-    reserve_price = params[:reserve_price].to_s.strip
+    uploads = clean_uploads(params[:photos])
 
-    # Converts the selected duration key into a label and number of seconds.
-    duration = auction_duration_options[duration_key]
     return redirect_to(new_auction_path, alert: "Choose an auction time length.") unless duration
-    return redirect_to(new_auction_path, alert: "Choose reserve status.") unless %w[Reserve No\ Reserve].include?(reserve_status)
+    return redirect_to(new_auction_path, alert: "Choose reserve status.") unless Auction::RESERVE_STATUSES.include?(reserve_status)
     return redirect_to(new_auction_path, alert: "Auction description is required.") if description.blank?
     return redirect_to(new_auction_path, alert: "Condition is required.") if condition.blank?
 
-    # Reserve auctions must have a valid reserve price.
-    reserve_cents = nil
-    if reserve_status == "Reserve"
-      begin
-        reserve_cents = (BigDecimal(reserve_price) * 100).to_i
-      rescue
-        reserve_cents = 0
-      end
+    upload_error = upload_error_for(uploads)
+    return redirect_to(new_auction_path, alert: upload_error) if upload_error.present?
 
-      return redirect_to(new_auction_path, alert: "Reserve price must be greater than 0.") if reserve_cents <= 0
-    end
+    reserve_cents = reserve_status == "Reserve" ? money_to_cents(params[:reserve_price]) : nil
+    return redirect_to(new_auction_path, alert: "Reserve price must be greater than 0.") if reserve_status == "Reserve" && reserve_cents.to_i <= 0
 
-    # Allows up to 4 auction images and only accepts JPG/PNG files.
-    uploads = Array(params[:photos]).compact
-    return redirect_to(new_auction_path, alert: "You can upload up to 4 images.") if uploads.length > 4
-
-    uploads.each do |file|
-      content_type = file.content_type.to_s
-      unless content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
-        return redirect_to(new_auction_path, alert: "Images must be .jpg or .png.")
-      end
-    end
-
-    # Builds the auction record with calculated end time and running status.
     auction = Auction.new(
       seller_id: current_user.id,
       auction_description: description,
@@ -60,165 +39,92 @@ class AuctionsController < ApplicationController
       status: "running"
     )
 
-    # Saves the auction first, then attaches uploaded images if present.
     if auction.save
-      uploads.each { |file| auction.photos.attach(file) } if uploads.any?
+      uploads.each { |file| auction.photos.attach(file) }
       redirect_to(auction_listing_path(auction), notice: "Auction created.")
     else
       redirect_to(new_auction_path, alert: auction.errors.full_messages.to_sentence.presence || "Could not create auction.")
     end
   end
 
+  # Shows one auction, seller stats, reviews and payment state.
   def show
-    # Loads the auction, seller, bids, bidders and saved addresses for display.
     @auction = Auction.includes(:seller, auction_bids: [ :bidder, :saved_address ]).find(params[:id])
-
-    # Refreshes status so expired auctions move into ended/payment states.
     @auction.refresh_status_and_settle!
 
-    # Gets seller review stats for the auction page.
-    @seller_stats =
-      if defined?(Review)
-        avg = Review.where(seller_id: @auction.seller_id).average(:rating).to_f
-        count = Review.where(seller_id: @auction.seller_id).count
-        { avg: avg, count: count }
-      else
-        { avg: 0.0, count: 0 }
-      end
-
-    # Shows all reviews under the auction details.
-    @reviews =
-      if defined?(Review)
-        Review.where(seller_id: @auction.seller_id).includes(:reviewer).order(created_at: :desc).to_a
-      else
-        []
-      end
-
-    # Allows the winner to review the auction seller only after the seller verifies payment.
-    @can_give_review =
-      if current_user && defined?(Review)
-        @auction.status.to_s == "sold" &&
-          @auction.winning_bidder_id.to_i == current_user.id.to_i &&
-          @auction.seller_id.to_i != current_user.id.to_i &&
-          !Review.where(seller_id: @auction.seller_id, reviewer_id: current_user.id).exists?
-      else
-        false
-      end
+    @seller_stats = seller_stats_for(@auction.seller_id)
+    @reviews = reviews_for(@auction.seller_id)
+    @can_give_review = can_give_review?(@auction)
   end
 
+  # Opens the bid form.
   def bid
-    # Only logged-in users can bid.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
     @auction = Auction.find(params[:id])
-
-    # Makes sure the auction status is up to date before allowing a bid.
     @auction.refresh_status_and_settle!
 
     return redirect_to(auction_listing_path(@auction), alert: "You cannot bid on your own auction.") if @auction.seller_id.to_i == current_user.id.to_i
     return redirect_to(auction_listing_path(@auction), alert: "This auction is no longer open for bids.") unless @auction.running?
 
-    # Finds the user's latest bid so the same saved address can be reused.
-    @existing_bid = @auction.auction_bids.where(bidder_id: current_user.id).order(created_at: :desc).first
-    @selected_address = @existing_bid&.saved_address
-
-    # Loads saved addresses for first-time bids on this auction.
-    @saved_addresses =
-      if defined?(SavedAddress)
-        SavedAddress.where(user_id: current_user.id).order(created_at: :desc)
-      else
-        []
-      end
-
-    # Minimum bid is 1 cent higher than the current highest bid.
-    @minimum_bid_eur = ((@auction.current_bid_cents_value.to_i + 1) / 100.0).round(2)
+    prepare_bid_form(@auction)
   end
 
+  # Creates a bid and reuses the bidder's first saved address on later bids.
   def create_bid
-    # Stops guests from bidding.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
-    bid = nil
+    saved = false
 
     ActiveRecord::Base.transaction do
-      # Locks the auction row so two bids cannot update against stale data at the same time.
-      auction = Auction.lock.find(params[:id])
-      auction.refresh_status_and_settle!
+      @auction = Auction.lock.find(params[:id])
+      @auction.refresh_status_and_settle!
 
-      return redirect_to(auction_listing_path(auction), alert: "You cannot bid on your own auction.") if auction.seller_id.to_i == current_user.id.to_i
-      return redirect_to(auction_listing_path(auction), alert: "This auction is no longer open for bids.") unless auction.running?
+      return redirect_to(auction_listing_path(@auction), alert: "You cannot bid on your own auction.") if @auction.seller_id.to_i == current_user.id.to_i
+      return redirect_to(auction_listing_path(@auction), alert: "This auction is no longer open for bids.") unless @auction.running?
 
-      # Converts the euro bid amount into cents.
-      bid_cents =
-        begin
-          (BigDecimal(params[:bid_amount].to_s.strip) * 100).to_i
-        rescue
-          0
-        end
-
-      # Reuses the bidder's previous saved address for this auction if they already bid before.
-      existing_bid = auction.auction_bids.where(bidder_id: current_user.id).order(created_at: :desc).first
-
-      saved_address_id =
-        if existing_bid&.saved_address_id.present?
-          existing_bid.saved_address_id
-        elsif defined?(SavedAddress)
-          SavedAddress.where(user_id: current_user.id, id: params[:saved_address_id]).pick(:id)
-        else
-          params[:saved_address_id].presence
-        end
-
-      bid = AuctionBid.new(
-        auction_id: auction.id,
+      existing_bid = latest_bid_for(@auction)
+      @auction_bid = @auction.auction_bids.build(
         bidder_id: current_user.id,
-        amount_cents: bid_cents,
-        saved_address_id: saved_address_id
+        amount_cents: money_to_cents(params[:bid_amount]),
+        saved_address_id: saved_address_id_for_bid(existing_bid)
       )
 
-      if bid.save
-        redirect_to(auction_listing_path(auction), notice: "Bid placed.")
-      else
-        # Rebuilds the bid form if validation fails.
-        @auction = auction
-        @auction_bid = bid
-        @existing_bid = existing_bid
-        @selected_address = existing_bid&.saved_address
-        @saved_addresses = defined?(SavedAddress) ? SavedAddress.where(user_id: current_user.id).order(created_at: :desc) : []
-        @minimum_bid_eur = ((auction.current_bid_cents_value.to_i + 1) / 100.0).round(2)
-        raise ActiveRecord::Rollback
-      end
+      saved = @auction_bid.save
     end
 
-    return if performed?
-
-    render :bid, status: :unprocessable_entity
+    if saved
+      redirect_to(auction_listing_path(@auction), notice: "Bid placed.")
+    else
+      prepare_bid_form(@auction)
+      render :bid, status: :unprocessable_entity
+    end
   end
 
+  # Lets the host end an auction early only when the model allows it.
   def end_auction
-    # Only the auction owner can end eligible auctions early.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
     auction = Auction.find(params[:id])
     return redirect_to(auction_listing_path(auction), alert: "Forbidden.") unless auction.can_end_early_by?(current_user)
 
-    auction.end_early!
+    auction.end_early_by!(current_user)
     redirect_to(auction_listing_path(auction), notice: "Auction ended.")
   end
 
+  # Lets an admin delete an auction.
   def destroy
     return redirect_to(root_path, alert: "Please log in.", status: :see_other) unless current_user
-
-    auction = Auction.find(params[:id])
     return redirect_to(auction_path, alert: "Not authorized.", status: :see_other) unless auction_admin_user?
 
-    auction.destroy!
+    Auction.find(params[:id]).destroy!
     redirect_to(auction_path, notice: "Auction deleted.", status: :see_other)
   rescue
     redirect_to(auction_path, alert: "Could not delete auction.", status: :see_other)
   end
 
+  # Winner confirms that they have sent Revolut payment.
   def confirm_payment
-    # The winner confirms that they have sent payment.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
     auction = Auction.lock.find(params[:id])
@@ -233,8 +139,8 @@ class AuctionsController < ApplicationController
     end
   end
 
+  # Host verifies payment and moves the auction to sold.
   def verify_payment
-    # The auction host verifies the payment after checking Revolut.
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
     auction = Auction.lock.find(params[:id])
@@ -251,16 +157,17 @@ class AuctionsController < ApplicationController
 
   private
 
-  # Reads the logged-in user from the session.
+  # Finds the logged-in user from the session.
   def current_user
     return @current_user if defined?(@current_user)
+
     @current_user = User.find_by(id: session[:user_id])
   end
 
+  # Checks whether the logged-in user is an admin.
   def auction_admin_user?
     user = current_user
     return false unless user
-
     return true if user.respond_to?(:admin?) && user.admin?
     return true if user.respond_to?(:admin) && !!user.admin
 
@@ -269,20 +176,93 @@ class AuctionsController < ApplicationController
     false
   end
 
-  # Controls the auction duration dropdown values.
-  def auction_duration_options
+  # Converts euro form values into cents.
+  def money_to_cents(value)
+    (BigDecimal(value.to_s.strip.tr(",", ".")) * 100).to_i
+  rescue
+    0
+  end
+
+  # Removes empty file inputs from the upload list.
+  def clean_uploads(files)
+    Array(files).compact.reject { |file| file.respond_to?(:blank?) && file.blank? }
+  end
+
+  # Validates uploaded auction photos before saving.
+  def upload_error_for(uploads)
+    return "You can upload up to 4 images." if uploads.length > 4
+
+    uploads.each do |file|
+      content_type = file.content_type.to_s
+      next if content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
+
+      return "Images must be .jpg or .png."
+    end
+
+    nil
+  end
+
+  # Gets seller review average and count.
+  def seller_stats_for(seller_id)
+    return { avg: 0.0, count: 0 } unless defined?(Review)
+
     {
-      "1_minute" => { label: "1 min", seconds: 1.minute.to_i },
-      "5_minutes" => { label: "5 mins", seconds: 5.minutes.to_i },
-      "10_minutes" => { label: "10 mins", seconds: 10.minutes.to_i },
-      "30_minutes" => { label: "30 mins", seconds: 30.minutes.to_i },
-      "1_hour" => { label: "1 hour", seconds: 1.hour.to_i },
-      "3_hours" => { label: "3 hours", seconds: 3.hours.to_i },
-      "6_hours" => { label: "6 hours", seconds: 6.hours.to_i },
-      "12_hours" => { label: "12 hours", seconds: 12.hours.to_i },
-      "1_day" => { label: "1 day", seconds: 1.day.to_i },
-      "3_days" => { label: "3 days", seconds: 3.days.to_i },
-      "1_week" => { label: "1 week", seconds: 1.week.to_i }
+      avg: Review.where(seller_id: seller_id).average(:rating).to_f,
+      count: Review.where(seller_id: seller_id).count
     }
+  rescue
+    { avg: 0.0, count: 0 }
+  end
+
+  # Loads seller reviews for display on the auction show page.
+  def reviews_for(seller_id)
+    return [] unless defined?(Review)
+
+    Review.where(seller_id: seller_id).includes(:reviewer).order(created_at: :desc).to_a
+  rescue
+    []
+  end
+
+  # Allows the winning bidder to review the seller once.
+  def can_give_review?(auction)
+    return false unless current_user && defined?(Review)
+    return false unless auction.status.to_s == "sold"
+    return false unless auction.winning_bidder_id.to_i == current_user.id.to_i
+    return false if auction.seller_id.to_i == current_user.id.to_i
+
+    !Review.where(seller_id: auction.seller_id, reviewer_id: current_user.id).exists?
+  rescue
+    false
+  end
+
+  # Gets the current user's latest bid on this auction.
+  def latest_bid_for(auction)
+    auction.auction_bids.where(bidder_id: current_user.id).order(created_at: :desc).first
+  end
+
+  # Gets the saved address for a bid.
+  def saved_address_id_for_bid(existing_bid)
+    return existing_bid.saved_address_id if existing_bid&.saved_address_id.present?
+
+    return nil unless defined?(SavedAddress)
+
+    SavedAddress.where(user_id: current_user.id, id: params[:saved_address_id]).pick(:id)
+  end
+
+  # Prepares variables needed by the bid page.
+  def prepare_bid_form(auction)
+    @existing_bid = latest_bid_for(auction)
+    @selected_address = @existing_bid&.saved_address
+    @saved_addresses = saved_addresses_for(current_user)
+    @minimum_bid_eur = ((auction.current_bid_cents_value.to_i + 1) / 100.0).round(2)
+  end
+
+  # Loads saved addresses for the current user.
+  def saved_addresses_for(user)
+    return [] unless user && defined?(SavedAddress)
+
+    SavedAddress.where(user_id: user.id).order(created_at: :desc)
+  rescue
+    []
   end
 end

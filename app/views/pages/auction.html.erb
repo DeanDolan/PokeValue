@@ -1,3 +1,20 @@
+<%#
+References:
+- Rails Action View helpers:
+  https://guides.rubyonrails.org/action_view_helpers.html
+- Rails Active Storage display helpers:
+  https://guides.rubyonrails.org/active_storage_overview.html
+- Bootstrap tables, forms, buttons and modals:
+  https://getbootstrap.com/docs/5.3/content/tables/
+  https://getbootstrap.com/docs/5.3/forms/overview/
+  https://getbootstrap.com/docs/5.3/components/buttons/
+  https://getbootstrap.com/docs/5.3/components/modal/
+- MDN DOM events, dataset and timers:
+  https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
+  https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset
+  https://developer.mozilla.org/en-US/docs/Web/API/setInterval
+%>
+
 <%
 # Refreshes auction statuses before showing the auction table.
 if defined?(Auction)
@@ -7,764 +24,130 @@ if defined?(Auction)
   end
 end
 
-# Loads auctions for the table, including seller, bids and image attachments.
+# Loads auctions with seller, bids and images so the table does not repeatedly query them.
 all_auctions =
   begin
-    defined?(Auction) ? Auction.includes(:seller, :auction_bids, photos_attachments: :blob).order(created_at: :desc).to_a : Array(@auctions)
+    defined?(Auction) ? Auction.includes(:seller, :auction_bids, photos_attachments: :blob).order(created_at: :desc).to_a : []
   rescue
-    Array(@auctions)
+    []
   end
 
 # Controls which auction tab is shown.
 view_tab = params[:auction_tab].to_s
 view_tab = "current" unless %w[current ended sold].include?(view_tab)
 
-# Payment statuses are shown in current auctions because action is still needed.
-payment_waiting_statuses = %w[payment_pending awaiting_payment awaiting_payment_verification payment_confirmed paid pending_payment pending_verification]
+# Filters auctions into the selected tab.
+auctions = all_auctions.select { |auction| auction_status_key(auction) == (view_tab == "current" ? "running" : view_tab) }
 
-# Converts an auction into a simple table status.
-status_key_for = lambda do |auction|
-  explicit_status =
-    if auction.respond_to?(:status) && auction.status.present?
-      auction.status.to_s.downcase
-    else
-      ""
-    end
+# Pulls seller review stats for the visible auctions.
+seller_ids = auctions.map(&:seller_id).compact.uniq
+review_stats = auction_review_stats_for_ids(seller_ids)
 
-  end_time =
-    if auction.respond_to?(:ends_at) && auction.ends_at.present?
-      auction.ends_at
-    elsif auction.respond_to?(:end_at) && auction.end_at.present?
-      auction.end_at
-    elsif auction.respond_to?(:end_time) && auction.end_time.present?
-      auction.end_time
-    elsif auction.respond_to?(:expires_at) && auction.expires_at.present?
-      auction.expires_at
-    end
-
-  if explicit_status == "sold"
-    "sold"
-  elsif payment_waiting_statuses.include?(explicit_status)
-    "running"
-  elsif explicit_status == "ended"
-    "ended"
-  elsif end_time.present? && end_time <= Time.current
-    "ended"
-  else
-    "running"
-  end
-end
-
-# Displays the auction length from stored label or seconds.
-length_label_for = lambda do |auction|
-  label =
-    if auction.respond_to?(:auction_length_label) && auction.auction_length_label.present?
-      auction.auction_length_label.to_s
-    else
-      ""
-    end
-  return label if label.present?
-
-  seconds =
-    if auction.respond_to?(:auction_length_seconds) && auction.auction_length_seconds.present?
-      auction.auction_length_seconds.to_i
-    else
-      0
-    end
-
-  {
-    1.minute.to_i => "1 min",
-    5.minutes.to_i => "5 mins",
-    10.minutes.to_i => "10 mins",
-    30.minutes.to_i => "30 mins",
-    1.hour.to_i => "1 hour",
-    3.hours.to_i => "3 hours",
-    6.hours.to_i => "6 hours",
-    12.hours.to_i => "12 hours",
-    1.day.to_i => "1 day",
-    3.days.to_i => "3 days",
-    1.week.to_i => "1 week"
-  }[seconds.to_i] || "-"
-end
-
-# Filters auctions by the active tab.
-auctions =
-  all_auctions.select do |auction|
-    status_key = status_key_for.call(auction)
-
-    if view_tab == "ended"
-      status_key == "ended"
-    elsif view_tab == "sold"
-      status_key == "sold"
-    else
-      status_key == "running"
-    end
-  end
-
-seller_ids = auctions.map { |a| a.respond_to?(:seller_id) ? a.seller_id : nil }.compact.uniq
-
-# Pulls seller review averages for visible auctions.
-review_averages =
-  if defined?(Review) && seller_ids.any?
-    Review.where(seller_id: seller_ids).group(:seller_id).average(:rating)
-  else
-    {}
-  end
-
-# Pulls seller review counts for visible auctions.
-review_counts =
-  if defined?(Review) && seller_ids.any?
-    Review.where(seller_id: seller_ids).group(:seller_id).count
-  else
-    {}
-  end
-
-# Converts country codes into flag emojis.
-flag_for = lambda do |code|
-  {
-    "AT" => "🇦🇹",
-    "BE" => "🇧🇪",
-    "BG" => "🇧🇬",
-    "HR" => "🇭🇷",
-    "CY" => "🇨🇾",
-    "CZ" => "🇨🇿",
-    "DK" => "🇩🇰",
-    "EE" => "🇪🇪",
-    "FI" => "🇫🇮",
-    "FR" => "🇫🇷",
-    "DE" => "🇩🇪",
-    "GR" => "🇬🇷",
-    "HU" => "🇭🇺",
-    "IE" => "🇮🇪",
-    "IT" => "🇮🇹",
-    "LV" => "🇱🇻",
-    "LT" => "🇱🇹",
-    "LU" => "🇱🇺",
-    "MT" => "🇲🇹",
-    "NL" => "🇳🇱",
-    "PL" => "🇵🇱",
-    "PT" => "🇵🇹",
-    "RO" => "🇷🇴",
-    "SK" => "🇸🇰",
-    "SI" => "🇸🇮",
-    "ES" => "🇪🇸",
-    "SE" => "🇸🇪"
-  }[code.to_s.upcase] || "🌍"
-end
-
-# Builds a clean star display without overlapping stars.
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  parts = []
-  full.times { parts << '<span class="pv-au-table-star">★</span>' }
-  parts << '<span class="pv-au-table-half">½</span>' if half
-
-  %(<span class="pv-au-table-stars">#{parts.join}</span>).html_safe
-end
-
-# Formats live countdown text.
-remaining_text_for = lambda do |end_time|
-  return "-" if end_time.blank?
-
-  diff = (end_time.to_f - Time.current.to_f).to_i
-  return "Ended" if diff <= 0
-
-  days = diff / 86_400
-  hours = (diff % 86_400) / 3_600
-  minutes = (diff % 3_600) / 60
-  seconds = diff % 60
-
-  if days > 0
-    "#{days}d #{hours}h #{minutes}m"
-  elsif hours > 0
-    "#{hours}h #{minutes}m #{seconds}s"
-  else
-    "#{minutes}m #{seconds}s"
-  end
-end
-
-admin_badge_asset = "badges/adminbadge.png"
-empty_label = view_tab == "ended" ? "No ended auctions." : (view_tab == "sold" ? "No sold auctions." : "No current auctions.")
-
-# Condition filters used on the auction page.
-auction_conditions = [
-  "Mint Condition",
-  "Loosely Sealed",
-  "Unsealed",
-  "Big Tear",
-  "Small Tear",
-  "Big Imperfections",
-  "Small Imperfections",
-  "Pressure Marks",
-  "Slightly Dented",
-  "Heavy Dented",
-  "Damaged",
-  "Box Only",
-  "Contents Only"
-]
-
-# Location filter list for EU marketplace focus.
-eu_countries = [
-  ["AT", "🇦🇹 Austria"],
-  ["BE", "🇧🇪 Belgium"],
-  ["BG", "🇧🇬 Bulgaria"],
-  ["HR", "🇭🇷 Croatia"],
-  ["CY", "🇨🇾 Cyprus"],
-  ["CZ", "🇨🇿 Czech Republic"],
-  ["DK", "🇩🇰 Denmark"],
-  ["EE", "🇪🇪 Estonia"],
-  ["FI", "🇫🇮 Finland"],
-  ["FR", "🇫🇷 France"],
-  ["DE", "🇩🇪 Germany"],
-  ["GR", "🇬🇷 Greece"],
-  ["HU", "🇭🇺 Hungary"],
-  ["IE", "🇮🇪 Ireland"],
-  ["IT", "🇮🇹 Italy"],
-  ["LV", "🇱🇻 Latvia"],
-  ["LT", "🇱🇹 Lithuania"],
-  ["LU", "🇱🇺 Luxembourg"],
-  ["MT", "🇲🇹 Malta"],
-  ["NL", "🇳🇱 Netherlands"],
-  ["PL", "🇵🇱 Poland"],
-  ["PT", "🇵🇹 Portugal"],
-  ["RO", "🇷🇴 Romania"],
-  ["SK", "🇸🇰 Slovakia"],
-  ["SI", "🇸🇮 Slovenia"],
-  ["ES", "🇪🇸 Spain"],
-  ["SE", "🇸🇪 Sweden"]
-]
-
-# Checks whether a user is logged in so the Create Auction button can either open the form or show the login pop-up.
 auction_logged_in = current_user.present?
+auction_admin_can_delete = auction_admin_user?(current_user)
 
-# Checks whether the logged-in user can delete auctions from the auction table.
-auction_admin_can_delete =
-  begin
-    current_user.present? && (
-      (current_user.respond_to?(:admin?) && current_user.admin?) ||
-      (current_user.respond_to?(:admin) && !!current_user.admin)
-    )
-  rescue
-    false
+empty_label =
+  case view_tab
+  when "ended"
+    "No ended auctions."
+  when "sold"
+    "No sold auctions."
+  else
+    "No current auctions."
   end
 %>
 
 <div class="container py-3">
   <style>
-    .au-page-header{
-      margin:12px 0 14px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-    }
-    .au-page-title{margin:0;font-size:1.4rem;line-height:1.1;}
-    .au-subtitle{margin:2px 0 0;font-size:.85rem;color:#6b7280;}
-    .au-tabbar{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-bottom:14px;
-    }
-    .au-tabbar a{
-      font-size:.7rem;
-      padding:.28rem .55rem;
-      border-radius:999px;
-      border:1px solid #d1d5db;
-      text-decoration:none;
-      color:#111827;
-      background:#ffffff;
-    }
-    .au-tabbar a.active{
-      border-color:#111827;
-      font-weight:700;
-    }
-    .au-filters-card{
-      background:#ffffff;
-      border-radius:1rem;
-      border:1px solid #d4d4d8;
-      padding:10px;
-      box-shadow:0 10px 25px rgba(15,23,42,0.08);
-      margin-bottom:12px;
-    }
-    .au-filters-card,
-    .au-filters-card:hover,
-    .au-filters-card:focus,
-    .au-filters-card:focus-within{
-      background:var(--pv-surface) !important;
-      background-color:var(--pv-surface) !important;
-      color:var(--pv-text) !important;
-      border-color:var(--pv-border) !important;
-      box-shadow:var(--pv-shadow) !important;
-      filter:none !important;
-    }
-    .au-filters-card *,
-    .au-filters-card:hover *,
-    .au-filters-card:focus *,
-    .au-filters-card:focus-within *{
-      box-shadow:none;
-      filter:none !important;
-    }
-    .au-filters-card label,
-    .au-filters-card .au-field-label,
-    .au-filters-card:hover label,
-    .au-filters-card:hover .au-field-label{
-      background:transparent !important;
-      color:var(--pv-muted) !important;
-    }
-    .au-filters-card .form-control,
-    .au-filters-card .form-select,
-    .au-filters-card input,
-    .au-filters-card select,
-    .au-filters-card textarea,
-    .au-filters-card .form-control:hover,
-    .au-filters-card .form-select:hover,
-    .au-filters-card input:hover,
-    .au-filters-card select:hover,
-    .au-filters-card textarea:hover{
-      background-color:var(--pv-input-bg) !important;
-      color:var(--pv-input-text) !important;
-      border-color:var(--pv-border) !important;
-    }
-    .au-field-label{
-      font-size:.68rem;
-      color:#4b5563;
-      margin-bottom:2px;
-    }
-    .au-table-card{
-      position:relative;
-      background:#ffffff;
-      border-radius:1rem;
-      border:1px solid #d4d4d8;
-      box-shadow:0 10px 25px rgba(15,23,42,0.08);
-      overflow:visible;
-    }
-    .au-table-wrap{
-      overflow-x:visible;
-      min-height:220px;
-    }
-    .au-table{
-      width:100%;
-      border-collapse:collapse;
-      table-layout:fixed;
-      font-size:.72rem;
-    }
-    .au-table thead th{
-      background:#f9fafb;
-      font-weight:900;
-      text-align:center;
-      font-size:.64rem;
-      color:#374151;
-      padding:4px 3px;
-      border-bottom:1px solid #e5e7eb;
-      white-space:nowrap;
-    }
-    .au-table tbody td{
-      padding:4px 3px;
-      border-bottom:1px solid #f1f5f9;
-      font-size:.64rem;
-      vertical-align:middle;
-      text-align:center;
-    }
-    .au-table th:nth-child(1), .au-table td:nth-child(1){width:8%}
-    .au-table th:nth-child(2), .au-table td:nth-child(2){width:6%}
-    .au-table th:nth-child(3), .au-table td:nth-child(3){width:8%}
-    .au-table th:nth-child(4), .au-table td:nth-child(4){width:5%}
-    .au-table th:nth-child(5), .au-table td:nth-child(5){width:6%}
-    .au-table th:nth-child(6), .au-table td:nth-child(6){width:21%}
-    .au-table th:nth-child(7), .au-table td:nth-child(7){width:11%}
-    .au-table th:nth-child(8), .au-table td:nth-child(8){width:4%}
-    .au-table th:nth-child(9), .au-table td:nth-child(9){width:8%}
-    .au-table th:nth-child(10), .au-table td:nth-child(10){width:7%}
-    .au-table th:nth-child(11), .au-table td:nth-child(11){width:9%}
-    .au-table th:nth-child(12), .au-table td:nth-child(12){width:7%}
-    .au-empty-state{
-      position:absolute;
-      inset:0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      pointer-events:none;
-      padding:16px;
-      color:#6b7280;
-      font-size:.8rem;
-    }
-    .au-seller-link{
-      font-weight:600;
-      text-decoration:none;
-    }
-    .au-flag{
-      font-size:.85rem;
-      line-height:1;
-    }
-    .pv-au-table-stars{
-      display:inline-flex !important;
-      align-items:center !important;
-      justify-content:center !important;
-      gap:1px !important;
-      white-space:nowrap !important;
-      line-height:1 !important;
-      vertical-align:middle !important;
-      color:#d4a017 !important;
-    }
-    .pv-au-table-star{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      text-shadow:none !important;
-    }
-    .pv-au-table-half{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      font-weight:900 !important;
-      font-size:.8em !important;
-      text-shadow:none !important;
-    }
-    .au-badges{
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      gap:3px;
-      flex-wrap:wrap;
-    }
-    .au-badges img{
-      height:14px;
-      width:14px;
-      object-fit:contain;
-      display:inline-block;
-      vertical-align:middle;
-    }
-    .au-image-cell{
-      position:relative;
-      overflow:visible;
-    }
-    .au-camera-btn{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      width:22px;
-      height:22px;
-      border-radius:999px;
-      background:#2563eb;
-      color:#ffffff;
-      font-size:.72rem;
-      line-height:1;
-      border:1px solid #1d4ed8;
-      cursor:default;
-      user-select:none;
-    }
-    .au-image-preview{
-      position:fixed;
-      top:50%;
-      left:50%;
-      transform:translate(-50%, -50%);
-      z-index:9999;
-      display:none;
-      width:min(760px, 82vw);
-      max-height:88vh;
-      overflow:auto;
-      padding:12px;
-      background:#ffffff;
-      border:1px solid #d1d5db;
-      border-radius:16px;
-      box-shadow:0 24px 60px rgba(15,23,42,0.28);
-    }
-    .au-image-cell:hover .au-image-preview,
-    .au-image-cell:focus-within .au-image-preview{
-      display:block;
-    }
-    .au-image-grid{
-      display:grid;
-      grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:10px;
-    }
-    .au-image-grid img{
-      width:100%;
-      height:180px;
-      object-fit:cover;
-      border-radius:12px;
-      border:1px solid #e5e7eb;
-    }
-    .au-description{
-      text-align:left;
-    }
-    .au-description-text{
-      display:-webkit-box;
-      -webkit-box-orient:vertical;
-      -webkit-line-clamp:2;
-      line-clamp:2;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:normal;
-      word-break:break-word;
-      line-height:1.2;
-      max-height:2.4em;
-    }
-    .au-actions{
-      display:flex;
-      gap:3px;
-      justify-content:center;
-      align-items:center;
-      flex-wrap:wrap;
-      white-space:nowrap;
-    }
-    .au-actions .btn{
-      font-size:.52rem;
-      padding:.1rem .2rem;
-      line-height:1;
-      flex:0 0 auto;
-    }
-    .au-actions form{
-      margin:0;
-      flex:0 0 auto;
-    }
-    .au-muted{
-      color:#6b7280;
-    }
-    .au-time{
-      white-space:nowrap;
-      font-variant-numeric:tabular-nums;
-    }
-    .au-review-wrap{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:3px;
-      white-space:nowrap;
-    }
-    .auction-confirm-overlay{
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      display:none;
-      align-items:center;
-      justify-content:center;
-      padding:16px;
-      background:rgba(15,23,42,.55)
-    }
-    .auction-confirm-box{
-      width:100%;
-      max-width:430px;
-      border-radius:18px;
-      border:1px solid #000000;
-      background:#ffffff;
-      color:#000000;
-      box-shadow:0 24px 70px rgba(0,0,0,.32);
-      padding:20px;
-      text-align:center
-    }
-    .auction-confirm-text{
-      color:#000000;
-      font-size:.96rem;
-      font-weight:800;
-      line-height:1.45;
-      margin-bottom:18px
-    }
-    .auction-confirm-actions{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:12px;
-      flex-wrap:wrap
-    }
-    .auction-confirm-yes,
-    .auction-confirm-no{
-      min-width:86px;
-      border-radius:999px;
-      font-weight:800;
-      font-size:.86rem;
-      padding:.42rem .9rem;
-      border:1px solid #000000 !important;
-      transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important
-    }
-    .auction-confirm-yes{
-      background:#000000 !important;
-      color:#ffffff !important
-    }
-    .auction-confirm-no{
-      background:#ffffff !important;
-      color:#000000 !important
-    }
-    .auction-confirm-yes:hover,
-    .auction-confirm-yes:focus,
-    .auction-confirm-yes:active,
-    .auction-confirm-no:hover,
-    .auction-confirm-no:focus,
-    .auction-confirm-no:active{
-      background:#d4af37 !important;
-      color:#000000 !important;
-      border-color:#d4af37 !important;
-      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
-    }
-    :root[data-pv-theme="dark"] .auction-confirm-box,
-    html[data-bs-theme="dark"] .auction-confirm-box,
-    body[data-bs-theme="dark"] .auction-confirm-box,
-    html[data-theme="dark"] .auction-confirm-box,
-    body[data-theme="dark"] .auction-confirm-box,
-    html.dark .auction-confirm-box,
-    body.dark .auction-confirm-box,
-    html.dark-mode .auction-confirm-box,
-    body.dark-mode .auction-confirm-box,
-    body:has(.navbar-dark) .auction-confirm-box{
-      background:#000000 !important;
-      color:#d4af37 !important;
-      border-color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .auction-confirm-text,
-    html[data-bs-theme="dark"] .auction-confirm-text,
-    body[data-bs-theme="dark"] .auction-confirm-text,
-    html[data-theme="dark"] .auction-confirm-text,
-    body[data-theme="dark"] .auction-confirm-text,
-    html.dark .auction-confirm-text,
-    body.dark .auction-confirm-text,
-    html.dark-mode .auction-confirm-text,
-    body.dark-mode .auction-confirm-text,
-    body:has(.navbar-dark) .auction-confirm-text{
-      color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .auction-confirm-yes,
-    :root[data-pv-theme="dark"] .auction-confirm-no,
-    html[data-bs-theme="dark"] .auction-confirm-yes,
-    html[data-bs-theme="dark"] .auction-confirm-no,
-    body[data-bs-theme="dark"] .auction-confirm-yes,
-    body[data-bs-theme="dark"] .auction-confirm-no,
-    html[data-theme="dark"] .auction-confirm-yes,
-    html[data-theme="dark"] .auction-confirm-no,
-    body[data-theme="dark"] .auction-confirm-yes,
-    body[data-theme="dark"] .auction-confirm-no,
-    html.dark .auction-confirm-yes,
-    html.dark .auction-confirm-no,
-    body.dark .auction-confirm-yes,
-    body.dark .auction-confirm-no,
-    html.dark-mode .auction-confirm-yes,
-    html.dark-mode .auction-confirm-no,
-    body.dark-mode .auction-confirm-yes,
-    body.dark-mode .auction-confirm-no,
-    body:has(.navbar-dark) .auction-confirm-yes,
-    body:has(.navbar-dark) .auction-confirm-no{
-      background:#000000 !important;
-      color:#d4af37 !important;
-      border-color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .auction-confirm-yes:hover,
-    :root[data-pv-theme="dark"] .auction-confirm-yes:focus,
-    :root[data-pv-theme="dark"] .auction-confirm-yes:active,
-    :root[data-pv-theme="dark"] .auction-confirm-no:hover,
-    :root[data-pv-theme="dark"] .auction-confirm-no:focus,
-    :root[data-pv-theme="dark"] .auction-confirm-no:active,
-    html[data-bs-theme="dark"] .auction-confirm-yes:hover,
-    html[data-bs-theme="dark"] .auction-confirm-yes:focus,
-    html[data-bs-theme="dark"] .auction-confirm-yes:active,
-    html[data-bs-theme="dark"] .auction-confirm-no:hover,
-    html[data-bs-theme="dark"] .auction-confirm-no:focus,
-    html[data-bs-theme="dark"] .auction-confirm-no:active,
-    body[data-bs-theme="dark"] .auction-confirm-yes:hover,
-    body[data-bs-theme="dark"] .auction-confirm-yes:focus,
-    body[data-bs-theme="dark"] .auction-confirm-yes:active,
-    body[data-bs-theme="dark"] .auction-confirm-no:hover,
-    body[data-bs-theme="dark"] .auction-confirm-no:focus,
-    body[data-bs-theme="dark"] .auction-confirm-no:active,
-    html[data-theme="dark"] .auction-confirm-yes:hover,
-    html[data-theme="dark"] .auction-confirm-yes:focus,
-    html[data-theme="dark"] .auction-confirm-yes:active,
-    html[data-theme="dark"] .auction-confirm-no:hover,
-    html[data-theme="dark"] .auction-confirm-no:focus,
-    html[data-theme="dark"] .auction-confirm-no:active,
-    body[data-theme="dark"] .auction-confirm-yes:hover,
-    body[data-theme="dark"] .auction-confirm-yes:focus,
-    body[data-theme="dark"] .auction-confirm-yes:active,
-    body[data-theme="dark"] .auction-confirm-no:hover,
-    body[data-theme="dark"] .auction-confirm-no:focus,
-    body[data-theme="dark"] .auction-confirm-no:active,
-    html.dark .auction-confirm-yes:hover,
-    html.dark .auction-confirm-yes:focus,
-    html.dark .auction-confirm-yes:active,
-    html.dark .auction-confirm-no:hover,
-    html.dark .auction-confirm-no:focus,
-    html.dark .auction-confirm-no:active,
-    body.dark .auction-confirm-yes:hover,
-    body.dark .auction-confirm-yes:focus,
-    body.dark .auction-confirm-yes:active,
-    body.dark .auction-confirm-no:hover,
-    body.dark .auction-confirm-no:focus,
-    body.dark .auction-confirm-no:active,
-    html.dark-mode .auction-confirm-yes:hover,
-    html.dark-mode .auction-confirm-yes:focus,
-    html.dark-mode .auction-confirm-yes:active,
-    html.dark-mode .auction-confirm-no:hover,
-    html.dark-mode .auction-confirm-no:focus,
-    html.dark-mode .auction-confirm-no:active,
-    body.dark-mode .auction-confirm-yes:hover,
-    body.dark-mode .auction-confirm-yes:focus,
-    body.dark-mode .auction-confirm-yes:active,
-    body.dark-mode .auction-confirm-no:hover,
-    body.dark-mode .auction-confirm-no:focus,
-    body.dark-mode .auction-confirm-no:active,
-    body:has(.navbar-dark) .auction-confirm-yes:hover,
-    body:has(.navbar-dark) .auction-confirm-yes:focus,
-    body:has(.navbar-dark) .auction-confirm-yes:active,
-    body:has(.navbar-dark) .auction-confirm-no:hover,
-    body:has(.navbar-dark) .auction-confirm-no:focus,
-    body:has(.navbar-dark) .auction-confirm-no:active{
-      background:#d4af37 !important;
-      color:#000000 !important;
-      border-color:#d4af37 !important;
-      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
-    }
+    .au-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 14px}
+    .au-title{margin:0;font-size:1.4rem;line-height:1.1}
+    .au-sub{margin:2px 0 0;font-size:.85rem;color:#6b7280}
+    .au-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .au-tabs a{font-size:.7rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #d1d5db;text-decoration:none;color:#111827;background:#fff}
+    .au-tabs a.active{border-color:#111827;font-weight:700}
+    .au-card{background:#fff;border:1px solid #d4d4d8;border-radius:1rem;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .au-filters{padding:10px;margin-bottom:12px}
+    .au-label{font-size:.68rem;color:#4b5563;margin-bottom:2px}
+    .au-table-wrap{overflow-x:visible;min-height:220px}
+    .au-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.72rem}
+    .au-table th,.au-table td{text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;padding:4px 3px;font-size:.64rem}
+    .au-table th{background:#f9fafb;font-weight:900;color:#374151;white-space:nowrap}
+    .au-table th:nth-child(1),.au-table td:nth-child(1){width:8%}
+    .au-table th:nth-child(2),.au-table td:nth-child(2){width:6%}
+    .au-table th:nth-child(3),.au-table td:nth-child(3){width:8%}
+    .au-table th:nth-child(4),.au-table td:nth-child(4){width:5%}
+    .au-table th:nth-child(5),.au-table td:nth-child(5){width:6%}
+    .au-table th:nth-child(6),.au-table td:nth-child(6){width:21%}
+    .au-table th:nth-child(7),.au-table td:nth-child(7){width:11%}
+    .au-table th:nth-child(8),.au-table td:nth-child(8){width:4%}
+    .au-table th:nth-child(9),.au-table td:nth-child(9){width:8%}
+    .au-table th:nth-child(10),.au-table td:nth-child(10){width:7%}
+    .au-table th:nth-child(11),.au-table td:nth-child(11){width:9%}
+    .au-table th:nth-child(12),.au-table td:nth-child(12){width:7%}
+    .au-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#6b7280;font-size:.8rem}
+    .au-table-card{position:relative;overflow:visible}
+    .au-link{font-weight:600;text-decoration:none}
+    .au-muted{color:#6b7280}
+    .au-desc{text-align:left}
+    .au-desc-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis;line-height:1.2;max-height:2.4em;word-break:break-word}
+    .au-actions{display:flex;gap:3px;justify-content:center;align-items:center;flex-wrap:wrap;white-space:nowrap}
+    .au-actions .btn{font-size:.52rem;padding:.1rem .2rem;line-height:1}
+    .au-actions form{margin:0}
+    .au-time{white-space:nowrap;font-variant-numeric:tabular-nums}
+    .pv-au-table-stars{display:inline-flex;align-items:center;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
+    .pv-au-table-star,.pv-au-table-half{display:inline-block;color:#d4a017;line-height:1}
+    .pv-au-table-half{font-weight:900;font-size:.8em}
+    .au-badges{display:flex;justify-content:center;align-items:center;gap:3px;flex-wrap:wrap}
+    .au-badges img{height:14px;width:14px;object-fit:contain}
+    .au-image-cell{position:relative;overflow:visible}
+    .au-camera{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:#2563eb;color:#fff;font-size:.72rem;border:1px solid #1d4ed8}
+    .au-preview{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;display:none;width:min(760px,82vw);max-height:88vh;overflow:auto;padding:12px;background:#fff;border:1px solid #d1d5db;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
+    .au-image-cell:hover .au-preview,.au-image-cell:focus-within .au-preview{display:block}
+    .au-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .au-img-grid img{width:100%;height:180px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb}
+    .au-confirm{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
+    .au-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
+    .au-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
+    .au-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+    .au-confirm-yes,.au-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000}
+    .au-confirm-yes{background:#000;color:#fff}
+    .au-confirm-no{background:#fff;color:#000}
+    .au-confirm-yes:hover,.au-confirm-no:hover{background:#d4af37;color:#000;border-color:#d4af37}
   </style>
 
-  <div class="au-page-header">
+  <div class="au-head">
     <div>
-      <h1 class="au-page-title">Auction</h1>
-      <p class="au-subtitle mb-0">Bid on live auctions and browse ended or sold auctions.</p>
+      <h1 class="au-title">Auction</h1>
+      <p class="au-sub">Bid on live auctions and browse ended or sold auctions.</p>
     </div>
 
     <% if auction_logged_in %>
       <%= link_to "Create Auction", new_auction_path, class: "btn btn-success btn-sm" %>
     <% else %>
-      <%# Logged-out users see a login pop-up instead of being sent to /login, because SessionsController#new has no page template. %>
-      <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#auctionCreateLoginModal">
-        Create Auction
-      </button>
+      <%# Logged-out users get a login pop-up instead of the protected create-auction route. %>
+      <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#auctionLoginModal">Create Auction</button>
     <% end %>
   </div>
 
-  <%# Login modal shown when a logged-out user clicks Create Auction. %>
   <% unless auction_logged_in %>
-    <div class="modal fade" id="auctionCreateLoginModal" tabindex="-1" aria-labelledby="auctionCreateLoginModalLabel" aria-hidden="true">
+    <div class="modal fade" id="auctionLoginModal" tabindex="-1" aria-labelledby="auctionLoginModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="auctionCreateLoginModalLabel">Log in to create auction</h5>
+            <h5 class="modal-title" id="auctionLoginModalLabel">Log in to create auction</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
           </div>
 
           <div class="modal-body">
             <%= form_with url: login_path, method: :post, local: true do %>
               <div class="mb-3">
-                <label class="form-label" for="auction_create_login_username">Username</label>
-                <%= text_field_tag :username, nil, class: "form-control", id: "auction_create_login_username", required: true, autocomplete: "username" %>
+                <label class="form-label" for="auction_login_username">Username</label>
+                <%= text_field_tag :username, nil, class: "form-control", id: "auction_login_username", required: true, autocomplete: "username" %>
               </div>
 
               <div class="mb-3">
-                <label class="form-label" for="auction_create_login_password">Password</label>
-                <%= password_field_tag :password, nil, class: "form-control", id: "auction_create_login_password", required: true, autocomplete: "current-password" %>
+                <label class="form-label" for="auction_login_password">Password</label>
+                <%= password_field_tag :password, nil, class: "form-control", id: "auction_login_password", required: true, autocomplete: "current-password" %>
               </div>
 
               <div class="d-flex justify-content-end gap-2">
@@ -785,33 +168,34 @@ auction_admin_can_delete =
     </div>
   <% end %>
 
-  <div class="au-tabbar">
+  <div class="au-tabs">
     <%= link_to "Current Auctions", auction_path(auction_tab: "current"), class: (view_tab == "current" ? "active" : nil) %>
     <%= link_to "Ended Auctions", auction_path(auction_tab: "ended"), class: (view_tab == "ended" ? "active" : nil) %>
     <%= link_to "Sold Auctions", auction_path(auction_tab: "sold"), class: (view_tab == "sold" ? "active" : nil) %>
   </div>
 
-  <section class="au-filters-card" data-auction-view-tab="<%= view_tab %>">
+  <%# Client-side filters keep the auction table responsive without extra routes. %>
+  <section class="au-card au-filters" data-auction-tab="<%= view_tab %>">
     <div class="row g-2 mb-2">
       <div class="col-12">
-        <label for="au-search" class="au-field-label">Search</label>
+        <label for="au-search" class="au-label">Search</label>
         <input id="au-search" type="search" class="form-control form-control-sm" placeholder="Search seller, auction description, condition...">
       </div>
     </div>
 
     <div class="row g-2">
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-location" class="au-field-label">Location</label>
+        <label for="au-location" class="au-label">Location</label>
         <select id="au-location" class="form-select form-select-sm">
           <option value="">All EU Countries</option>
-          <% eu_countries.each do |code, label| %>
+          <% auction_country_options.each do |code, label| %>
             <option value="<%= code %>"><%= label %></option>
           <% end %>
         </select>
       </div>
 
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-condition" class="au-field-label">Condition</label>
+        <label for="au-condition" class="au-label">Condition</label>
         <select id="au-condition" class="form-select form-select-sm">
           <option value="">Any</option>
           <% auction_conditions.each do |condition| %>
@@ -821,17 +205,17 @@ auction_admin_can_delete =
       </div>
 
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-min-bids" class="au-field-label">Min Bids</label>
+        <label for="au-min-bids" class="au-label">Min Bids</label>
         <input id="au-min-bids" type="number" min="0" step="1" class="form-control form-control-sm" placeholder="0">
       </div>
 
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-max-bids" class="au-field-label">Max Bids</label>
+        <label for="au-max-bids" class="au-label">Max Bids</label>
         <input id="au-max-bids" type="number" min="0" step="1" class="form-control form-control-sm" placeholder="0">
       </div>
 
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-reserve" class="au-field-label">Reserve Status</label>
+        <label for="au-reserve" class="au-label">Reserve Status</label>
         <select id="au-reserve" class="form-select form-select-sm">
           <option value="">Any</option>
           <option value="reserve">Reserve</option>
@@ -840,7 +224,7 @@ auction_admin_can_delete =
       </div>
 
       <div class="col-6 col-md-4 col-lg-2">
-        <label for="au-sort" class="au-field-label">Sort by</label>
+        <label for="au-sort" class="au-label">Sort by</label>
         <select id="au-sort" class="form-select form-select-sm">
           <option value="ending-soonest" <%= "selected" if view_tab == "current" %>>Ending Soonest</option>
           <option value="newest" <%= "selected" if view_tab != "current" %>>Newest</option>
@@ -855,7 +239,7 @@ auction_admin_can_delete =
     </div>
   </section>
 
-  <section class="au-table-card">
+  <section class="au-card au-table-card">
     <div class="au-table-wrap">
       <table class="au-table" aria-label="Auction Listings">
         <thead>
@@ -874,104 +258,76 @@ auction_admin_can_delete =
             <th>Actions</th>
           </tr>
         </thead>
+
         <tbody id="au-table-body">
           <% auctions.each do |auction| %>
             <%
-            seller = auction.respond_to?(:seller) ? auction.seller : nil
-            seller_id = seller&.id || auction.seller_id
-
-            seller_name =
-              if seller&.respond_to?(:username) && seller.username.present?
-                seller.username
-              elsif seller_id.present?
-                "User ##{seller_id}"
-              else
-                "-"
-              end
-
-            seller_path = seller_id.present? ? user_path(seller_id) : "#"
-
-            country_code =
-              if seller&.respond_to?(:country_code) && seller.country_code.present?
-                seller.country_code.to_s.upcase
-              else
-                ""
-              end
-
-            avg_rating = review_averages[seller_id].to_f
-            count_rating = review_counts[seller_id].to_i
-
-            is_admin =
-              seller && (
-                (seller.respond_to?(:admin?) && seller.admin?) ||
-                (seller.respond_to?(:admin) && !!seller.admin)
-              )
-
-            description_text = auction.auction_description.to_s.presence || "-"
-            condition_text = auction.condition.to_s.presence || "-"
-            reserve_label = auction.reserve_status.to_s.downcase.include?("no") ? "No Reserve" : "Reserve"
-            reserve_key = reserve_label.downcase
-            bids_count = auction.bids_count.to_i
-            end_time = auction.ends_at
-            status_key = status_key_for.call(auction)
-            explicit_status = auction.respond_to?(:status) ? auction.status.to_s.downcase : ""
-            payment_waiting = payment_waiting_statuses.include?(explicit_status)
-            end_timestamp = end_time.present? ? (end_time.to_f * 1000).to_i : 0
-            created_timestamp = auction.respond_to?(:created_at) && auction.created_at.present? ? (auction.created_at.to_f * 1000).to_i : 0
-            length_text = length_label_for.call(auction)
-            initial_time_text =
-              if status_key == "running" && end_time.present? && end_time > Time.current && !payment_waiting
-                remaining_text_for.call(end_time)
-              else
-                length_text
-              end
-            owner_can_end = defined?(current_user) && current_user && auction.can_end_early_by?(current_user)
-            auction_images = auction.photos.attached? ? auction.photos.first(4) : []
+              seller = auction.seller
+              seller_id = auction.seller_id
+              seller_name = seller&.username.to_s.presence || "User ##{seller_id}"
+              country_code = seller&.country_code.to_s.upcase
+              stats = review_stats[seller_id] || { avg: 0.0, count: 0 }
+              status_key = auction_status_key(auction)
+              payment_waiting = auction_payment_waiting_status?(auction.status)
+              end_timestamp = auction.ends_at.present? ? (auction.ends_at.to_f * 1000).to_i : 0
+              created_timestamp = auction.created_at.present? ? (auction.created_at.to_f * 1000).to_i : 0
+              description = auction.auction_description.to_s.presence || "-"
+              condition = auction.condition.to_s.presence || "-"
+              reserve_label = auction.no_reserve? ? "No Reserve" : "Reserve"
+              reserve_key = reserve_label.downcase
+              length_label = auction_length_label(auction)
+              images = auction_images_for(auction)
+              owner_can_end = current_user && auction.can_end_early_by?(current_user)
             %>
 
             <tr
               data-auction-row="true"
-              data-seller="<%= seller_name.to_s.downcase %>"
-              data-description="<%= description_text.to_s.downcase %>"
-              data-condition="<%= condition_text.to_s.downcase %>"
-              data-location="<%= country_code.to_s.downcase %>"
-              data-bids="<%= bids_count %>"
+              data-seller="<%= seller_name.downcase %>"
+              data-description="<%= description.downcase %>"
+              data-condition="<%= condition.downcase %>"
+              data-location="<%= country_code.downcase %>"
+              data-bids="<%= auction.bids_count.to_i %>"
               data-reserve="<%= reserve_key %>"
               data-status="<%= status_key %>"
               data-payment-waiting="<%= payment_waiting ? "true" : "false" %>"
+              data-length-text="<%= length_label %>"
               data-end-timestamp="<%= end_timestamp %>"
               data-created-timestamp="<%= created_timestamp %>"
             >
-              <td><%= link_to seller_name, seller_path, class: "au-seller-link" %></td>
+              <td><%= link_to seller_name, user_path(seller_id), class: "au-link" %></td>
+
               <td>
                 <% if country_code.present? %>
-                  <span class="au-flag" title="<%= country_code %>"><%= flag_for.call(country_code) %></span>
+                  <span title="<%= auction_country_name(country_code) %>"><%= auction_flag(country_code) %></span>
                 <% else %>
                   <span class="au-muted">-</span>
                 <% end %>
               </td>
-              <td>
-                <span class="au-review-wrap" title="<%= "#{avg_rating.round(1)}/5 (#{count_rating})" %>">
-                  <%= stars.call(avg_rating) %>
-                  <span>(<%= count_rating %>)</span>
-                </span>
+
+              <td title="<%= "#{stats[:avg].round(1)}/5 (#{stats[:count]})" %>">
+                <%= auction_star_rating(stats[:avg], prefix: "pv-au-table") %> (<%= stats[:count] %>)
               </td>
+
               <td>
                 <div class="au-badges">
-                  <% if is_admin %>
-                    <span title="Admin"><%= image_tag admin_badge_asset, alt: "Admin" %></span>
+                  <% badges = auction_badges_for(seller) %>
+                  <% if badges.any? %>
+                    <% badges.each do |badge| %>
+                      <%= image_tag badge, alt: "Badge" %>
+                    <% end %>
                   <% else %>
                     <span class="au-muted">None</span>
                   <% end %>
                 </div>
               </td>
+
               <td class="au-image-cell">
-                <% if auction_images.any? %>
-                  <span class="au-camera-btn" tabindex="0">📷</span>
-                  <div class="au-image-preview">
-                    <div class="au-image-grid">
-                      <% auction_images.each do |img| %>
-                        <%= image_tag url_for(img), alt: "" %>
+                <% if images.any? %>
+                  <span class="au-camera" tabindex="0">📷</span>
+                  <div class="au-preview">
+                    <div class="au-img-grid">
+                      <% images.each do |image| %>
+                        <%= image_tag url_for(image), alt: "Auction image" %>
                       <% end %>
                     </div>
                   </div>
@@ -979,31 +335,39 @@ auction_admin_can_delete =
                   <span class="au-muted">N/A</span>
                 <% end %>
               </td>
-              <td class="au-description"><div class="au-description-text" title="<%= description_text %>"><%= description_text %></div></td>
-              <td><%= condition_text %></td>
-              <td><%= bids_count %></td>
+
+              <td class="au-desc">
+                <div class="au-desc-text" title="<%= description %>"><%= description %></div>
+              </td>
+
+              <td><%= condition %></td>
+              <td><%= auction.bids_count.to_i %></td>
               <td><%= reserve_label %></td>
-              <td data-auction-length="true"><%= length_text %></td>
-              <td class="au-time-remaining au-time"><%= initial_time_text %></td>
+              <td data-auction-length="true"><%= length_label %></td>
+              <td class="au-time-remaining au-time"><%= auction_time_left_text(auction) %></td>
+
               <td>
                 <div class="au-actions">
                   <%= link_to "View", auction_listing_path(auction), class: "btn btn-outline-primary btn-sm" %>
-                  <% if status_key == "running" && end_time.present? && end_time > Time.current && !payment_waiting %>
+
+                  <% if status_key == "running" && auction.running? && !payment_waiting %>
                     <%= link_to "Bid", bid_auction_path(auction), class: "btn btn-primary btn-sm" %>
                   <% end %>
+
                   <% if owner_can_end %>
                     <%= button_to "End",
                                   end_auction_path(auction),
                                   method: :post,
                                   class: "btn btn-outline-danger btn-sm",
-                                  form: { class: "d-inline", data: { auction_confirm_form: "true", confirm_message: "Are you sure you want to end this auction?", turbo: "false" } } %>
+                                  form: { data: { auction_confirm: "true", message: "Are you sure you want to end this auction?", turbo: "false" } } %>
                   <% end %>
+
                   <% if auction_admin_can_delete %>
                     <%= button_to "Delete",
                                   delete_auction_path(auction),
                                   method: :delete,
                                   class: "btn btn-outline-danger btn-sm",
-                                  form: { class: "d-inline", data: { auction_confirm_form: "true", confirm_message: "Are you sure you want to delete this auction?", turbo: "false" } } %>
+                                  form: { data: { auction_confirm: "true", message: "Are you sure you want to delete this auction?", turbo: "false" } } %>
                   <% end %>
                 </div>
               </td>
@@ -1013,259 +377,202 @@ auction_admin_can_delete =
       </table>
     </div>
 
-    <div id="au-empty-state" class="au-empty-state" <%= 'style="display:none;"'.html_safe if auctions.any? %>>
+    <div id="au-empty-state" class="au-empty" <%= 'style="display:none;"'.html_safe if auctions.any? %>>
       <%= empty_label %>
     </div>
   </section>
 
-  <div class="auction-confirm-overlay" id="auctionConfirmOverlay" aria-hidden="true">
-    <div class="auction-confirm-box">
-      <div class="auction-confirm-text" id="auctionConfirmText">
-        Are you sure you want to continue?
-      </div>
-      <div class="auction-confirm-actions">
-        <button type="button" class="auction-confirm-yes" id="auctionConfirmYes">Yes</button>
-        <button type="button" class="auction-confirm-no" id="auctionConfirmNo">No</button>
+  <%# Custom confirmation overlay used before ending or deleting auctions. %>
+  <div class="au-confirm" id="auctionConfirm" aria-hidden="true">
+    <div class="au-confirm-box">
+      <div class="au-confirm-text" id="auctionConfirmText">Are you sure you want to continue?</div>
+      <div class="au-confirm-actions">
+        <button type="button" class="au-confirm-yes" id="auctionConfirmYes">Yes</button>
+        <button type="button" class="au-confirm-no" id="auctionConfirmNo">No</button>
       </div>
     </div>
   </div>
 
   <script>
-    (function () {
-      let pendingAuctionForm = null;
+    (() => {
+      let pendingForm = null
+
+      function formatRemaining(ms) {
+        if (ms <= 0) return "Ended"
+
+        const total = Math.floor(ms / 1000)
+        const days = Math.floor(total / 86400)
+        const hours = Math.floor((total % 86400) / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        const seconds = total % 60
+
+        if (days > 0) return `${days}d ${hours}h ${minutes}m`
+        if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+        return `${minutes}m ${seconds}s`
+      }
 
       function initAuctionConfirm() {
-        const overlay = document.getElementById("auctionConfirmOverlay");
-        const text = document.getElementById("auctionConfirmText");
-        const yesButton = document.getElementById("auctionConfirmYes");
-        const noButton = document.getElementById("auctionConfirmNo");
+        const overlay = document.getElementById("auctionConfirm")
+        const text = document.getElementById("auctionConfirmText")
+        const yes = document.getElementById("auctionConfirmYes")
+        const no = document.getElementById("auctionConfirmNo")
 
-        if (!overlay || !text || !yesButton || !noButton) return;
-        if (overlay.dataset.bound === "1") return;
-        overlay.dataset.bound = "1";
+        if (!overlay || overlay.dataset.bound === "1") return
+        overlay.dataset.bound = "1"
 
-        document.addEventListener("submit", function (event) {
-          const form = event.target.closest("form[data-auction-confirm-form='true']");
-          if (!form) return;
-          if (form.dataset.confirmedAuctionAction === "true") return;
+        document.addEventListener("submit", (event) => {
+          const form = event.target.closest("form[data-auction-confirm='true']")
+          if (!form || form.dataset.confirmed === "true") return
 
-          event.preventDefault();
-          pendingAuctionForm = form;
-          text.textContent = form.dataset.confirmMessage || "Are you sure you want to continue?";
-          overlay.style.display = "flex";
-          overlay.setAttribute("aria-hidden", "false");
-        });
+          event.preventDefault()
+          pendingForm = form
+          if (text) text.textContent = form.dataset.message || "Are you sure you want to continue?"
+          overlay.style.display = "flex"
+          overlay.setAttribute("aria-hidden", "false")
+        })
 
-        noButton.addEventListener("click", function () {
-          pendingAuctionForm = null;
-          overlay.style.display = "none";
-          overlay.setAttribute("aria-hidden", "true");
-        });
+        no?.addEventListener("click", () => {
+          pendingForm = null
+          overlay.style.display = "none"
+          overlay.setAttribute("aria-hidden", "true")
+        })
 
-        yesButton.addEventListener("click", function () {
-          if (!pendingAuctionForm) return;
+        yes?.addEventListener("click", () => {
+          if (!pendingForm) return
 
-          const form = pendingAuctionForm;
-          pendingAuctionForm = null;
-          overlay.style.display = "none";
-          overlay.setAttribute("aria-hidden", "true");
-          form.dataset.confirmedAuctionAction = "true";
-          form.submit();
-        });
+          const form = pendingForm
+          pendingForm = null
+          overlay.style.display = "none"
+          overlay.setAttribute("aria-hidden", "true")
+          form.dataset.confirmed = "true"
+          form.submit()
+        })
 
-        overlay.addEventListener("click", function (event) {
-          if (event.target !== overlay) return;
+        overlay.addEventListener("click", (event) => {
+          if (event.target !== overlay) return
 
-          pendingAuctionForm = null;
-          overlay.style.display = "none";
-          overlay.setAttribute("aria-hidden", "true");
-        });
+          pendingForm = null
+          overlay.style.display = "none"
+          overlay.setAttribute("aria-hidden", "true")
+        })
       }
 
-      function initAuctionPage() {
-        initAuctionConfirm();
+      function initAuctionTable() {
+        initAuctionConfirm()
 
-        const tbody = document.getElementById("au-table-body");
-        if (!tbody) return;
+        const tbody = document.getElementById("au-table-body")
+        if (!tbody) return
 
-        const rows = Array.from(tbody.querySelectorAll("tr[data-auction-row='true']"));
-        const emptyState = document.getElementById("au-empty-state");
-        const filtersCard = document.querySelector(".au-filters-card");
-        const defaultTab = filtersCard ? (filtersCard.getAttribute("data-auction-view-tab") || "current") : "current";
+        const rows = Array.from(tbody.querySelectorAll("tr[data-auction-row='true']"))
+        const empty = document.getElementById("au-empty-state")
+        const tab = document.querySelector(".au-filters")?.dataset.auctionTab || "current"
+        const search = document.getElementById("au-search")
+        const location = document.getElementById("au-location")
+        const condition = document.getElementById("au-condition")
+        const minBids = document.getElementById("au-min-bids")
+        const maxBids = document.getElementById("au-max-bids")
+        const reserve = document.getElementById("au-reserve")
+        const sort = document.getElementById("au-sort")
+        const clear = document.getElementById("au-clear-filters")
+        const apply = document.getElementById("au-apply-filters")
 
-        const searchInput = document.getElementById("au-search");
-        const locationSelect = document.getElementById("au-location");
-        const conditionSelect = document.getElementById("au-condition");
-        const minBidsInput = document.getElementById("au-min-bids");
-        const maxBidsInput = document.getElementById("au-max-bids");
-        const reserveSelect = document.getElementById("au-reserve");
-        const sortSelect = document.getElementById("au-sort");
-        const clearButton = document.getElementById("au-clear-filters");
-        const applyButton = document.getElementById("au-apply-filters");
+        const normalize = (value) => String(value || "").trim().toLowerCase()
+        const numberOrNull = (value) => value === "" || value == null ? null : (Number.isNaN(parseInt(value, 10)) ? null : parseInt(value, 10))
 
-        const normalize = function (value) {
-          return (value || "").toString().trim().toLowerCase();
-        };
+        function updateTimers() {
+          const now = Date.now()
 
-        const toNumber = function (value) {
-          if (value === null || value === undefined || value === "") return null;
-          const parsed = parseInt(value, 10);
-          return Number.isNaN(parsed) ? null : parsed;
-        };
+          rows.forEach((row) => {
+            const cell = row.querySelector(".au-time-remaining")
+            if (!cell) return
 
-        const formatRemaining = function (milliseconds) {
-          if (milliseconds <= 0) return "Ended";
+            const end = parseInt(row.dataset.endTimestamp || "0", 10)
 
-          const totalSeconds = Math.floor(milliseconds / 1000);
-          const days = Math.floor(totalSeconds / 86400);
-          const hours = Math.floor((totalSeconds % 86400) / 3600);
-          const minutes = Math.floor((totalSeconds % 3600) / 60);
-          const seconds = totalSeconds % 60;
-
-          if (days > 0) {
-            return days + "d " + hours + "h " + minutes + "m";
-          }
-
-          if (hours > 0) {
-            return hours + "h " + minutes + "m " + seconds + "s";
-          }
-
-          return minutes + "m " + seconds + "s";
-        };
-
-        const rowLengthText = function (row) {
-          const lengthCell = row.querySelector("[data-auction-length='true']");
-          return lengthCell ? lengthCell.textContent.trim() : "-";
-        };
-
-        // Updates time remaining values for every visible row.
-        const updateTimers = function () {
-          const now = Date.now();
-
-          rows.forEach(function (row) {
-            const timeCell = row.querySelector(".au-time-remaining");
-            const endTimestamp = parseInt(row.dataset.endTimestamp || "0", 10);
-
-            if (!timeCell) return;
-
-            if (!endTimestamp || row.dataset.status === "sold" || row.dataset.status === "ended" || row.dataset.paymentWaiting === "true") {
-              timeCell.textContent = rowLengthText(row);
-              return;
+            if (!end || row.dataset.status !== "running" || row.dataset.paymentWaiting === "true") {
+              cell.textContent = row.dataset.lengthText || "-"
+              return
             }
 
-            const remaining = endTimestamp - now;
+            const left = end - now
 
-            if (remaining <= 0) {
-              timeCell.textContent = rowLengthText(row);
-              if (row.dataset.status === "running") {
-                row.dataset.status = "ended";
-              }
+            if (left <= 0) {
+              cell.textContent = row.dataset.lengthText || "Ended"
+              row.dataset.status = "ended"
             } else {
-              timeCell.textContent = formatRemaining(remaining);
+              cell.textContent = formatRemaining(left)
             }
-          });
-        };
+          })
+        }
 
-        // Applies filters and sorting without reloading the page.
-        const applyFilters = function () {
-          updateTimers();
+        function applyFilters() {
+          updateTimers()
 
-          const searchValue = normalize(searchInput ? searchInput.value : "");
-          const locationValue = normalize(locationSelect ? locationSelect.value : "");
-          const conditionValue = normalize(conditionSelect ? conditionSelect.value : "");
-          const minBidsValue = toNumber(minBidsInput ? minBidsInput.value : "");
-          const maxBidsValue = toNumber(maxBidsInput ? maxBidsInput.value : "");
-          const reserveValue = normalize(reserveSelect ? reserveSelect.value : "");
-          const sortValue = normalize(sortSelect ? sortSelect.value : "");
+          const q = normalize(search?.value)
+          const loc = normalize(location?.value)
+          const cond = normalize(condition?.value)
+          const min = numberOrNull(minBids?.value)
+          const max = numberOrNull(maxBids?.value)
+          const res = normalize(reserve?.value)
+          const sortBy = normalize(sort?.value)
 
-          rows.forEach(function (row) {
-            const searchBlob = [row.dataset.seller, row.dataset.description, row.dataset.condition].join(" ");
-            const rowBids = parseInt(row.dataset.bids || "0", 10);
-            const rowLocation = normalize(row.dataset.location);
-            const rowCondition = normalize(row.dataset.condition);
-            const rowReserve = normalize(row.dataset.reserve);
-            const rowStatus = normalize(row.dataset.status);
+          rows.forEach((row) => {
+            const blob = [row.dataset.seller, row.dataset.description, row.dataset.condition].join(" ")
+            const bids = parseInt(row.dataset.bids || "0", 10)
+            let visible = true
 
-            let visible = true;
+            if (tab === "current" && row.dataset.status !== "running") visible = false
+            if (tab === "ended" && row.dataset.status !== "ended") visible = false
+            if (tab === "sold" && row.dataset.status !== "sold") visible = false
+            if (q && !blob.includes(q)) visible = false
+            if (loc && normalize(row.dataset.location) !== loc) visible = false
+            if (cond && normalize(row.dataset.condition) !== cond) visible = false
+            if (min !== null && bids < min) visible = false
+            if (max !== null && bids > max) visible = false
+            if (res && normalize(row.dataset.reserve) !== res) visible = false
 
-            if (defaultTab === "current" && rowStatus !== "running") visible = false;
-            if (defaultTab === "ended" && rowStatus !== "ended") visible = false;
-            if (defaultTab === "sold" && rowStatus !== "sold") visible = false;
-            if (searchValue && !searchBlob.includes(searchValue)) visible = false;
-            if (locationValue && rowLocation !== locationValue) visible = false;
-            if (conditionValue && rowCondition !== conditionValue) visible = false;
-            if (minBidsValue !== null && rowBids < minBidsValue) visible = false;
-            if (maxBidsValue !== null && rowBids > maxBidsValue) visible = false;
-            if (reserveValue && rowReserve !== reserveValue) visible = false;
+            row.style.display = visible ? "" : "none"
+          })
 
-            row.style.display = visible ? "" : "none";
-          });
+          rows.slice().sort((a, b) => {
+            const aEnd = parseInt(a.dataset.endTimestamp || "0", 10)
+            const bEnd = parseInt(b.dataset.endTimestamp || "0", 10)
+            const aCreated = parseInt(a.dataset.createdTimestamp || "0", 10)
+            const bCreated = parseInt(b.dataset.createdTimestamp || "0", 10)
 
-          rows.slice().sort(function (a, b) {
-            const aStatus = normalize(a.dataset.status);
-            const bStatus = normalize(b.dataset.status);
-            const aEnd = parseInt(a.dataset.endTimestamp || "0", 10);
-            const bEnd = parseInt(b.dataset.endTimestamp || "0", 10);
-            const aCreated = parseInt(a.dataset.createdTimestamp || "0", 10);
-            const bCreated = parseInt(b.dataset.createdTimestamp || "0", 10);
+            if (sortBy === "oldest") return aCreated - bCreated
+            if (sortBy === "newest") return bCreated - aCreated
+            return aEnd - bEnd
+          }).forEach((row) => tbody.appendChild(row))
 
-            if (sortValue === "ending-soonest" || sortValue === "") {
-              const aBucket = aStatus === "running" ? 0 : 1;
-              const bBucket = bStatus === "running" ? 0 : 1;
-
-              if (aBucket !== bBucket) return aBucket - bBucket;
-              return aEnd - bEnd;
-            }
-
-            if (sortValue === "oldest") {
-              return aCreated - bCreated;
-            }
-
-            return bCreated - aCreated;
-          }).forEach(function (row) {
-            tbody.appendChild(row);
-          });
-
-          const visibleRows = rows.filter(function (row) {
-            return row.style.display !== "none";
-          }).length;
-
-          if (emptyState) {
-            emptyState.style.display = visibleRows === 0 ? "flex" : "none";
+          if (empty) {
+            const visibleRows = rows.filter((row) => row.style.display !== "none").length
+            empty.style.display = visibleRows === 0 ? "flex" : "none"
           }
-        };
+        }
 
-        // Resets all filters back to defaults.
-        const clearFilters = function () {
-          if (searchInput) searchInput.value = "";
-          if (locationSelect) locationSelect.value = "";
-          if (conditionSelect) conditionSelect.value = "";
-          if (minBidsInput) minBidsInput.value = "";
-          if (maxBidsInput) maxBidsInput.value = "";
-          if (reserveSelect) reserveSelect.value = "";
-          if (sortSelect) sortSelect.value = defaultTab === "current" ? "ending-soonest" : "newest";
-          applyFilters();
-        };
+        function clearFilters() {
+          if (search) search.value = ""
+          if (location) location.value = ""
+          if (condition) condition.value = ""
+          if (minBids) minBids.value = ""
+          if (maxBids) maxBids.value = ""
+          if (reserve) reserve.value = ""
+          if (sort) sort.value = tab === "current" ? "ending-soonest" : "newest"
+          applyFilters()
+        }
 
-        if (applyButton) applyButton.addEventListener("click", applyFilters);
-        if (clearButton) clearButton.addEventListener("click", clearFilters);
+        apply?.addEventListener("click", applyFilters)
+        clear?.addEventListener("click", clearFilters)
+        ;[search, minBids, maxBids].forEach((el) => el?.addEventListener("input", applyFilters))
+        ;[location, condition, reserve, sort].forEach((el) => el?.addEventListener("change", applyFilters))
 
-        [searchInput, minBidsInput, maxBidsInput].forEach(function (input) {
-          if (input) input.addEventListener("input", applyFilters);
-        });
-
-        [locationSelect, conditionSelect, reserveSelect, sortSelect].forEach(function (select) {
-          if (select) select.addEventListener("change", applyFilters);
-        });
-
-        if (window.auctionPageTimerId) clearInterval(window.auctionPageTimerId);
-
-        applyFilters();
-        window.auctionPageTimerId = setInterval(applyFilters, 1000);
+        if (window.auctionTimerId) clearInterval(window.auctionTimerId)
+        applyFilters()
+        window.auctionTimerId = setInterval(applyFilters, 1000)
       }
 
-      document.addEventListener("DOMContentLoaded", initAuctionPage);
-      document.addEventListener("turbo:load", initAuctionPage);
-    })();
+      document.addEventListener("DOMContentLoaded", initAuctionTable)
+      document.addEventListener("turbo:load", initAuctionTable)
+    })()
   </script>
 </div>

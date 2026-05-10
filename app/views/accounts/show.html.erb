@@ -1,6 +1,5 @@
 <%
 require "json"
-require "yaml"
 
 # Refreshes auction statuses before showing account auction data
 if defined?(Auction)
@@ -103,98 +102,6 @@ rescue
   "-"
 end
 
-# Reads refund/debug data even if it was saved as JSON, YAML or Ruby-style hash text
-parse_debug_context = lambda do |raw|
-  return {} if raw.nil?
-  s = raw.to_s.strip
-  return {} if s.blank?
-
-  begin
-    v = JSON.parse(s)
-    return v.is_a?(Hash) ? v : {}
-  rescue
-  end
-
-  begin
-    v = YAML.safe_load(s, permitted_classes: [Time, Date], aliases: true)
-    return v.is_a?(Hash) ? v : {}
-  rescue
-  end
-
-  if s.start_with?("{") && s.include?("=>")
-    s2 = s.dup
-    s2.gsub!(/:(\w+)\s*=>/, '"\1"=>')
-    s2.gsub!("=>", ":")
-    s2.gsub!(/\bnil\b/, "null")
-    begin
-      v = JSON.parse(s2)
-      return v.is_a?(Hash) ? v : {}
-    rescue
-    end
-  end
-
-  {}
-rescue
-  {}
-end
-
-# Finds the refund note from whichever purchase column stores it
-refund_note_for = lambda do |p|
-  cols = p.class.column_names rescue []
-  %w[refund_note seller_note note notes].each do |c|
-    if cols.include?(c) && p.respond_to?(c)
-      v = p.public_send(c) rescue nil
-      return v.to_s if v.present?
-    end
-  end
-
-  if cols.include?("debug_context") && p.respond_to?(:debug_context)
-    h = parse_debug_context.call(p.debug_context)
-    return h["refund_note"].to_s if h["refund_note"].present?
-    return h["note"].to_s if h["note"].present?
-    return h["notes"].to_s if h["notes"].present?
-    if h["refund"].is_a?(Hash)
-      r = h["refund"]
-      return r["refund_note"].to_s if r["refund_note"].present?
-      return r["note"].to_s if r["note"].present?
-      return r["notes"].to_s if r["notes"].present?
-    end
-  end
-
-  ""
-rescue
-  ""
-end
-
-# Finds the refund date from direct columns or saved debug context
-refund_date_for = lambda do |p|
-  cols = p.class.column_names rescue []
-
-  if cols.include?("refunded_at") && p.respond_to?(:refunded_at) && p.refunded_at.present?
-    p.refunded_at
-  elsif cols.include?("debug_context") && p.respond_to?(:debug_context)
-    h = parse_debug_context.call(p.debug_context)
-    t = h["refunded_at"].presence || h["refund_at"].presence
-    if t.blank? && h["refund"].is_a?(Hash)
-      r = h["refund"]
-      t = r["refunded_at"].presence || r["refund_at"].presence || r["at"].presence
-    end
-    if t.present?
-      begin
-        Time.zone.parse(t.to_s)
-      rescue
-        p.updated_at
-      end
-    else
-      p.updated_at
-    end
-  else
-    p.updated_at
-  end
-rescue
-  p.updated_at
-end
-
 # Calculates total cents from whichever purchase price columns exist
 total_cents_for = lambda do |p|
   cols = p.class.column_names rescue []
@@ -232,7 +139,7 @@ is_self = defined?(@is_self) ? !!@is_self : false
 
 # Keeps the selected marketplace, auction and raffle account tabs safe
 tab = params[:tab].to_s.presence || (defined?(@tab) && @tab.present? ? @tab.to_s : "current")
-tab = "current" unless %w[current sold bought refunded].include?(tab)
+tab = "current" unless %w[current sold bought].include?(tab)
 
 auction_tab = params[:auction_tab].to_s.presence || (defined?(@auction_tab) && @auction_tab.present? ? @auction_tab.to_s : "current")
 auction_tab = "current" unless %w[current ended sold won].include?(auction_tab)
@@ -456,9 +363,6 @@ sold_qty_for = lambda do |listing|
   q > 0 ? q : 1
 end
 
-refunds_issued = (defined?(@refunds_issued) && @refunds_issued) ? @refunds_issued : []
-refunds_received = (defined?(@refunds_received) && @refunds_received) ? @refunds_received : []
-
 # Loads purchases made by the logged-in user
 bought_purchases =
   if is_self
@@ -484,9 +388,9 @@ bought_purchases =
     []
   end
 
-# Preloads related listings for bought and refunded purchase rows
+# Preloads related listings for bought purchase rows
 purchase_listing_ids = []
-(Array(refunds_issued) + Array(refunds_received) + Array(bought_purchases)).each do |p|
+Array(bought_purchases).each do |p|
   if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
     purchase_listing_ids << p.marketplace_listing_id.to_i
   elsif p.respond_to?(:listing_id) && p.listing_id.present?
@@ -524,10 +428,6 @@ purchase_set = lambda do |p, l|
   (p.respond_to?(:set_name) ? p.set_name.to_s : "").presence ||
     (l && l.respond_to?(:set_name) ? l.set_name.to_s : "").presence ||
     set_name_for.call(purchase_slug.call(p, l))
-end
-
-purchase_era = lambda do |p, l|
-  (p.respond_to?(:era) ? p.era.to_s : "").presence || era_for.call(purchase_slug.call(p, l))
 end
 
 purchase_type = lambda do |p, l|
@@ -822,7 +722,6 @@ eu_countries = [
     .w-total{width:11%}
     .w-date{width:10%}
     .w-actions{width:8%}
-    .w-note{width:10%}
     .w-status{width:10%}
     .w-price{width:10%}
     .w-seller{width:14%}
@@ -1060,7 +959,6 @@ eu_countries = [
           <%= link_to "Sold Listings", account_base_path.call(tab: "sold", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "sold" ? "active" : nil)].compact.join(" ") %>
           <% if is_self %>
             <%= link_to "Bought Listings", account_base_path.call(tab: "bought", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "bought" ? "active" : nil)].compact.join(" ") %>
-            <%= link_to "Refunded Listings", account_base_path.call(tab: "refunded", auction_tab: auction_tab, raffle_tab: raffle_tab), class: ["", (tab == "refunded" ? "active" : nil)].compact.join(" ") %>
           <% end %>
         </div>
 
@@ -1163,93 +1061,6 @@ eu_countries = [
           <% else %>
             <div class="mp-empty">No bought listings.</div>
           <% end %>
-
-        <% elsif tab == "refunded" && is_self %>
-          <div class="mb-3">
-            <div class="subhead">Refunds you issued</div>
-
-            <% if refunds_issued.any? %>
-              <div class="table-responsive">
-                <table class="mp-table">
-                  <thead>
-                    <tr>
-                      <th class="w-era">Era</th>
-                      <th class="w-set">Set</th>
-                      <th class="w-type">Product Type</th>
-                      <th class="w-cond">Condition</th>
-                      <th class="w-qty">Qty</th>
-                      <th class="w-total">Total</th>
-                      <th class="w-date">Refund Date</th>
-                      <th class="w-note">Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <% refunds_issued.each do |p| %>
-                      <% l = purchase_listing_for.call(p) %>
-                      <% cents = total_cents_for.call(p) %>
-                      <% note = refund_note_for.call(p).to_s %>
-                      <% rdate = refund_date_for.call(p) %>
-                      <tr>
-                        <td class="w-era"><%= purchase_era.call(p, l).presence || "-" %></td>
-                        <td class="w-set"><%= purchase_set.call(p, l).presence || "-" %></td>
-                        <td class="w-type"><%= purchase_type.call(p, l).presence || "-" %></td>
-                        <td class="w-cond"><%= purchase_condition.call(p, l).presence || "-" %></td>
-                        <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
-                        <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
-                        <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
-                        <td class="w-note"><%= note.present? ? note : "No note" %></td>
-                      </tr>
-                    <% end %>
-                  </tbody>
-                </table>
-              </div>
-            <% else %>
-              <div class="mp-empty">No refunds issued.</div>
-            <% end %>
-          </div>
-
-          <div>
-            <div class="subhead">Refunds you received</div>
-
-            <% if refunds_received.any? %>
-              <div class="table-responsive">
-                <table class="mp-table">
-                  <thead>
-                    <tr>
-                      <th class="w-era">Era</th>
-                      <th class="w-set">Set</th>
-                      <th class="w-type">Product Type</th>
-                      <th class="w-cond">Condition</th>
-                      <th class="w-qty">Qty</th>
-                      <th class="w-total">Total</th>
-                      <th class="w-date">Refund Date</th>
-                      <th class="w-note">Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <% refunds_received.each do |p| %>
-                      <% l = purchase_listing_for.call(p) %>
-                      <% cents = total_cents_for.call(p) %>
-                      <% note = refund_note_for.call(p).to_s %>
-                      <% rdate = refund_date_for.call(p) %>
-                      <tr>
-                        <td class="w-era"><%= purchase_era.call(p, l).presence || "-" %></td>
-                        <td class="w-set"><%= purchase_set.call(p, l).presence || "-" %></td>
-                        <td class="w-type"><%= purchase_type.call(p, l).presence || "-" %></td>
-                        <td class="w-cond"><%= purchase_condition.call(p, l).presence || "-" %></td>
-                        <td class="w-qty"><%= p.respond_to?(:quantity) ? p.quantity.to_i : "-" %></td>
-                        <td class="w-total"><%= number_to_currency(cents / 100.0, unit: "€") %></td>
-                        <td class="w-date"><%= rdate ? rdate.strftime("%d %b %Y") : "" %></td>
-                        <td class="w-note"><%= note.present? ? note : "No note" %></td>
-                      </tr>
-                    <% end %>
-                  </tbody>
-                </table>
-              </div>
-            <% else %>
-              <div class="mp-empty">No refunds received.</div>
-            <% end %>
-          </div>
 
         <% else %>
           <% if current_listings.any? %>

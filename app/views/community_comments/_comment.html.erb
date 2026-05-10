@@ -1,81 +1,39 @@
 <%
-  # Prepares reaction, reply, and modal data for this individual comment
-  comment_reaction_counts = community_comment_reaction_counts(comment)
-  total_comment_reactions = comment_reaction_counts.values.sum
-  current_comment_reaction = current_user ? comment.community_comment_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
-  replies = comment.replies.sort_by(&:created_at)
-  reactions_modal_id = "communityCommentReactionsModal-#{comment.id}"
-  reply_form_id = "communityReplyForm-#{comment.id}"
+comment_reaction_counts = community_comment_reaction_counts(comment)
+total_comment_reactions = comment_reaction_counts.values.sum
+current_comment_reaction = current_user ? comment.community_comment_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
+replies = comment.replies.sort_by(&:created_at)
+reactions_modal_id = "communityCommentReactionsModal-#{comment.id}"
+reply_form_id = "communityReplyForm-#{comment.id}"
 %>
 
 <div class="community-comment-thread depth-<%= [depth, 2].min %> <%= "d-none" if hidden %>" data-community-hidden-comment="<%= hidden ? "true" : "false" %>">
-  <style>
-    .community-comment-react-btn{position:relative}
-    .community-comment-react-btn:hover::after{
-      content:attr(data-comment-reaction-label);
-      position:absolute;
-      left:50%;
-      bottom:calc(100% + 8px);
-      transform:translateX(-50%);
-      background:#111827;
-      color:#fff;
-      padding:.32rem .55rem;
-      border-radius:.55rem;
-      font-size:.72rem;
-      font-weight:700;
-      line-height:1;
-      white-space:nowrap;
-      pointer-events:none;
-      z-index:20
-    }
-  </style>
-
   <div class="community-comment-card">
-    <%# Comment header with username, country flag, badges, and time posted %>
     <div class="community-comment-line">
       <span class="community-comment-user"><%= comment.user.username %></span>
-
       <% comment_flag = community_flag_emoji(comment.user.country_code) %>
-      <% if comment_flag.present? %>
-        <span class="community-flag"><%= comment_flag %></span>
-      <% end %>
-
+      <% if comment_flag.present? %><span class="community-flag"><%= comment_flag %></span><% end %>
       <% community_user_badges(comment.user).each do |badge| %>
         <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
       <% end %>
-
       <span class="community-comment-time"><%= time_ago_in_words(comment.created_at) %> ago</span>
     </div>
 
-    <%# Escapes and formats the comment body safely for display %>
     <div class="community-comment-body">
       <%= simple_format(h(comment.body), {}, wrapper_tag: "div") %>
     </div>
 
-    <%# Shows the total reactions and opens the reply form %>
     <div class="community-comment-social">
-      <button type="button" class="community-comment-summary-link" data-community-comment-total-reactions data-comment-id="<%= comment.id %>" data-bs-toggle="modal" data-bs-target="#<%= reactions_modal_id %>">
-        👍 <%= total_comment_reactions %>
-      </button>
-
-      <button type="button" class="community-comment-summary-link" data-bs-toggle="collapse" data-bs-target="#<%= reply_form_id %>" aria-expanded="false" aria-controls="<%= reply_form_id %>">
-        Reply
-      </button>
+      <button type="button" class="community-comment-summary-link" data-community-comment-total-reactions data-comment-id="<%= comment.id %>" data-bs-toggle="modal" data-bs-target="#<%= reactions_modal_id %>">👍 <%= total_comment_reactions %></button>
+      <button type="button" class="community-comment-summary-link" data-bs-toggle="collapse" data-bs-target="#<%= reply_form_id %>" aria-expanded="false" aria-controls="<%= reply_form_id %>">Reply</button>
     </div>
 
-    <%# Builds one reaction button for each available comment reaction type %>
     <div class="community-comment-reactions-row">
       <% CommunityCommentReaction::KINDS.each do |kind| %>
         <%= form_with url: react_community_post_community_comment_path(post, comment), method: :post, local: true, html: { class: "community-comment-react-form", data: { turbo: false, community_comment_id: comment.id } } do %>
           <%= hidden_field_tag :kind, kind %>
           <%= hidden_field_tag :channel, selected_channel %>
-          <button
-            type="submit"
-            class="community-comment-react-btn <%= "active" if current_comment_reaction&.kind == kind %>"
-            data-comment-reaction-kind="<%= kind %>"
-            data-comment-reaction-emoji="<%= CommunityCommentReaction.emoji_for(kind) %>"
-            data-comment-reaction-label="<%= CommunityCommentReaction.label_for(kind) %>"
-            title="<%= CommunityCommentReaction.label_for(kind) %>">
+          <button type="submit" class="community-comment-react-btn <%= "active" if current_comment_reaction&.kind == kind %>" data-comment-reaction-kind="<%= kind %>" data-comment-reaction-emoji="<%= CommunityCommentReaction.emoji_for(kind) %>" data-comment-reaction-label="<%= CommunityCommentReaction.label_for(kind) %>" title="<%= CommunityCommentReaction.label_for(kind) %>">
             <span><%= CommunityCommentReaction.emoji_for(kind) %></span>
             <span data-comment-reaction-count><%= comment_reaction_counts[kind].to_i.positive? ? comment_reaction_counts[kind].to_i : "" %></span>
           </button>
@@ -83,7 +41,6 @@
       <% end %>
     </div>
 
-    <%# Logged-in users can reply directly underneath the comment %>
     <% if current_user %>
       <div class="collapse community-reply-form-wrap" id="<%= reply_form_id %>">
         <%= form_with model: [post, CommunityComment.new], url: community_post_community_comments_path(post), local: true, class: "community-comment-form" do |f| %>
@@ -95,7 +52,6 @@
       </div>
     <% end %>
 
-    <%# Recursively renders nested replies below this comment %>
     <% if replies.any? %>
       <div class="community-replies-wrap">
         <% replies.each do |reply| %>
@@ -106,7 +62,6 @@
   </div>
 </div>
 
-<%# Modal listing every user who reacted to this comment %>
 <div class="modal fade" id="<%= reactions_modal_id %>" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
@@ -128,17 +83,12 @@
               <div class="community-reaction-person" data-kind="<%= reaction.kind %>">
                 <div class="community-reaction-person-left">
                   <span class="community-reaction-person-name"><%= reaction.user.username %></span>
-
                   <% reaction_flag = community_flag_emoji(reaction.user.country_code) %>
-                  <% if reaction_flag.present? %>
-                    <span class="community-flag"><%= reaction_flag %></span>
-                  <% end %>
-
+                  <% if reaction_flag.present? %><span class="community-flag"><%= reaction_flag %></span><% end %>
                   <% community_user_badges(reaction.user).each do |badge| %>
                     <span class="community-badge <%= badge == "Admin" ? "community-badge-admin" : "community-badge-default" %>"><%= badge %></span>
                   <% end %>
                 </div>
-
                 <div class="community-reaction-kind">
                   <span><%= CommunityCommentReaction.emoji_for(reaction.kind) %></span>
                   <span><%= CommunityCommentReaction.label_for(reaction.kind) %></span>

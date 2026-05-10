@@ -2,292 +2,69 @@
 References:
 - Rails Action View helpers:
   https://guides.rubyonrails.org/action_view_helpers.html
-- Rails Active Storage display helpers:
+- Rails Active Storage:
   https://guides.rubyonrails.org/active_storage_overview.html
-- Rails form helpers:
-  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
 - Bootstrap modals and buttons:
   https://getbootstrap.com/docs/5.3/components/modal/
   https://getbootstrap.com/docs/5.3/components/buttons/
-- MDN DOM events and dataset:
-  https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
-  https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset
 %>
 
 <%
-require "json"
-
-# Loads the set catalogue so listing details can display clean product metadata.
-sets_data =
-  begin
-    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-    JSON.parse(raw)
-  rescue
-    {}
-  end
-
-# Converts product route codes into user-friendly names.
-type_map = {
-  "etb"                      => "Elite Trainer Box",
-  "pc_etb"                   => "Pokemon Center Elite Trainer Box",
-  "booster_box"              => "Booster Box",
-  "booster_bundle"           => "Booster Bundle",
-  "booster_bundle_display"   => "Booster Bundle Display",
-  "enhanced_booster_box"     => "Enhanced Booster Box",
-  "ultra_premium_collection" => "Ultra Premium Collection",
-  "upc"                      => "Ultra Premium Collection",
-  "spc"                      => "Super Premium Collection",
-  "mini_tin"                 => "Mini Tin",
-  "mini_tin_display"         => "Mini Tin Display"
-}
-
-# Converts codes into title case.
-titleize = lambda do |s|
-  s.to_s.tr("_", " ").tr("-", " ").split.map(&:capitalize).join(" ")
-end
-
-# Splits route type and product variant.
-split_type_variant = lambda do |t|
-  x = t.to_s
-
-  if x.include?("--v-")
-    base, raw = x.split("--v-", 2)
-    variant = raw.to_s.tr("-", " ").split.map(&:capitalize).join(" ")
-    [base.to_s, variant.to_s]
-  else
-    [x.to_s, ""]
-  end
-end
-
-# Normalises product names so product type and variant are shown consistently.
-normalize_name_to_type_and_variant = lambda do |name, base_name|
-  n = name.to_s.strip
-  b = base_name.to_s.strip
-  next [b, ""] if n.blank?
-
-  if n.downcase.start_with?(b.downcase)
-    variant = n[b.length..-1].to_s.strip
-
-    if variant.start_with?("(") && variant.end_with?(")")
-      variant = variant[1..-2].to_s.strip
-    end
-
-    [b, variant.presence || ""]
-  elsif n.downcase.end_with?(b.downcase)
-    variant = n[0...(n.length - b.length)].to_s.strip
-    variant = variant.sub(/\(([^)]+)\)\s*$/) { Regexp.last_match(1).to_s }.strip if variant.include?("(") && variant.include?(")")
-    variant = variant.sub(/[-–—]\s*$/, "").strip
-    [b, variant.presence || ""]
-  else
-    extracted = n[/\(([^)]+)\)/, 1].to_s.strip
-    extracted.present? ? [b, extracted] : [b, ""]
-  end
-end
-
-# Builds a simple non-overlapping star display from an average score.
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  parts = []
-  full.times { parts << '<span class="pv-ml-rating-star">★</span>' }
-  parts << '<span class="pv-ml-rating-half">½</span>' if half
-
-  %(<span class="pv-ml-rating-stars">#{parts.join}</span>).html_safe
-end
-
-admin_badge_asset = "badges/adminbadge.png"
-
-# Adds seller badge images when the seller has a badge-earning role.
-badge_imgs_for = lambda do |u|
-  out = []
-
-  begin
-    if u && u.respond_to?(:admin?) && u.admin?
-      out << admin_badge_asset
-    elsif u && u.respond_to?(:admin) && !!u.admin
-      out << admin_badge_asset
-    end
-  rescue
-  end
-
-  out
-end
-
-# Converts marketplace offer status codes into readable labels.
-offer_status_label = lambda do |status|
-  case status.to_s
-  when "pending"
-    "Pending"
-  when "accepted"
-    "Accepted"
-  when "paid"
-    "Payment Sent"
-  when "confirmed_paid"
-    "Confirmed Paid"
-  when "rejected"
-    "Rejected"
-  when "cancelled"
-    "Cancelled"
-  else
-    titleize.call(status.to_s.presence || "Unknown")
-  end
-end
-
-# Applies different badge colours to each offer status.
-offer_status_class = lambda do |status|
-  case status.to_s
-  when "pending"
-    "ml-offer-pending"
-  when "accepted"
-    "ml-offer-accepted"
-  when "paid"
-    "ml-offer-paid"
-  when "confirmed_paid"
-    "ml-offer-confirmed"
-  when "rejected", "cancelled"
-    "ml-offer-rejected"
-  else
-    "ml-offer-pending"
-  end
-end
-
-l = @listing
-slug = l.set_slug.to_s
-route_type = l.route_type.to_s
-base, v_from_code = split_type_variant.call(route_type)
-base_name = type_map[base.to_s].presence || titleize.call(base)
-
-s = sets_data[slug] || sets_data.values.find { |x| x["slug"].to_s == slug }
-era = s ? s["era"].to_s : ""
-set_name = s ? s["name"].to_s : (l.set_name.to_s.presence || slug)
-
-# Matches the listing to its catalogue product so variants display correctly.
-json_name = ""
-
-if s
-  products = Array(s["products"] || s["sealed"])
-  candidates = products.select { |p| p["type"].to_s == base.to_s }
-
-  if v_from_code.present?
-    c = candidates.find { |p| p["name"].to_s.downcase.include?(v_from_code.downcase) }
-    json_name = c ? c["name"].to_s : ""
-  else
-    json_name = candidates.first ? candidates.first["name"].to_s : ""
-  end
-end
-
-tn, vn =
-  if json_name.present?
-    normalize_name_to_type_and_variant.call(json_name, base_name)
-  elsif l.product_type_name.to_s.include?("(") && l.product_type_name.to_s.end_with?(")")
-    b2 = l.product_type_name.to_s.sub(/\s*\([^)]+\)\s*$/, "").strip
-    v2 = l.product_type_name.to_s[/\(([^)]+)\)/, 1].to_s.strip
-    [b2.presence || base_name, v2.to_s]
-  else
-    [base_name, v_from_code.to_s]
-  end
-
-display_product = vn.present? ? "#{tn} (#{vn})" : tn
-subtitle_product = tn
-
-# Collects up to four uploaded listing images.
-images = []
-
-if l.respond_to?(:photos) && l.photos.attached?
-  images += l.photos.to_a
-end
-
-if images.empty? && l.respond_to?(:photo) && l.photo.respond_to?(:attached?) && l.photo.attached?
-  images << l.photo
-end
-
-images = images.first(4)
-
+listing = @listing
+seller = listing.seller
+seller_name = marketplace_seller_name(seller, listing.seller_id)
 stats = @seller_stats || { avg: 0.0, count: 0 }
-
-seller = l.respond_to?(:seller) ? l.seller : nil
-seller_name = seller && seller.respond_to?(:username) && seller.username.present? ? seller.username : "User ##{l.seller_id}"
-seller_badges = badge_imgs_for.call(seller)
-
-is_seller = defined?(@is_seller) ? @is_seller : (current_user && current_user.id.to_i == l.seller_id.to_i)
-can_offer = defined?(@can_offer) ? @can_offer : (current_user.present? && !is_seller && l.respond_to?(:active?) && l.active?)
-my_offers = defined?(@my_offers) && @my_offers ? @my_offers : []
-seller_offers = defined?(@seller_offers) && @seller_offers ? @seller_offers : []
-admin_can_delete = defined?(@admin_can_delete) && @admin_can_delete
-can_edit_listing = current_user && (is_seller || admin_can_delete) && l.status.to_s == "active"
-edit_route_available = respond_to?(:edit_marketplace_listing_path)
-
-# Allows a buyer to review this seller only after their payment has been confirmed.
+images = marketplace_listing_images(listing)
+era = marketplace_era(listing.set_slug)
+display_product = marketplace_display_product(listing)
+seller_badges = marketplace_badges_for(seller)
+admin_can_delete = @admin_can_delete
+is_seller = @is_seller
+can_offer = @can_offer
+my_offers = @my_offers || []
+seller_offers = @seller_offers || []
+reviews = @recent_reviews || []
+can_edit_listing = current_user && (is_seller || admin_can_delete) && listing.status.to_s == "active"
 confirmed_paid_buyer =
   current_user &&
   !is_seller &&
-  defined?(MarketplaceOffer) &&
   MarketplaceOffer.where(
-    marketplace_listing_id: l.id,
-    seller_id: l.seller_id,
+    marketplace_listing_id: listing.id,
+    seller_id: listing.seller_id,
     buyer_id: current_user.id,
     status: "confirmed_paid"
   ).exists?
-
 already_reviewed_seller =
   current_user &&
-  defined?(Review) &&
-  Review.where(seller_id: l.seller_id, reviewer_id: current_user.id).exists?
-
+  Review.where(seller_id: listing.seller_id, reviewer_id: current_user.id).exists?
 can_review_seller = confirmed_paid_buyer && !already_reviewed_seller
-review_form_id = "ml-review-form-#{l.id}"
-reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
+review_form_id = "ml-review-form-#{listing.id}"
 %>
 
 <div id="marketplace-listing-show" class="container py-4">
   <style>
-    #marketplace-listing-show{border:0 !important;box-shadow:none !important;background:transparent !important;outline:0 !important}
-    #marketplace-listing-show .ml-wrap{border:0 !important;box-shadow:none !important;background:transparent !important;outline:0 !important;padding:0 !important}
-    #marketplace-listing-show .ml-left{border:0 !important;box-shadow:none !important;background:transparent !important;outline:0 !important;padding:0 !important}
-    #marketplace-listing-show .ml-right{border:0 !important;box-shadow:none !important;background:transparent !important;outline:0 !important;padding:0 !important}
     .ml-wrap{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
     .ml-left{flex:1;min-width:320px}
     .ml-right{width:420px;max-width:100%}
+    .ml-block,.ml-section{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
+    .ml-section{margin-top:14px}
     .ml-title{font-size:1.2rem;margin:0 0 6px}
     .ml-sub{color:#6b7280;font-size:.85rem;margin:0 0 14px}
-    .ml-block{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);overflow:visible}
-    .ml-section{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-top:14px;overflow:visible}
     .ml-line{font-size:.88rem;margin:6px 0}
-    .ml-line strong{font-weight:700}
-    .ml-flag{font-size:1.2rem;line-height:1;display:inline-block;position:relative;top:3px}
-    .ml-rev{white-space:nowrap}
     .ml-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .ml-buybtn{padding:6px 10px;font-size:.85rem}
     .ml-thumbgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-    .ml-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer;transition:transform .12s ease}
-    .ml-thumb:hover{transform:scale(1.03)}
-    .ml-noimg{color:#6b7280;font-size:.9rem}
-    .ml-reviews-title{margin:0 0 10px;font-size:1rem}
-    .ml-review-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:10px}
-    .ml-review-card:last-child{margin-bottom:0}
-    .ml-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
-    .ml-review-name{font-weight:900;font-size:.9rem}
-    .ml-review-stars{display:flex;align-items:center;gap:6px;white-space:nowrap}
-    .ml-review-body{margin-top:6px;color:#111827;font-size:.9rem;white-space:pre-wrap}
-    .ml-review-meta{color:#6b7280;font-size:.8rem}
+    .ml-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer}
     .ml-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .ml-badges img{height:22px;width:22px;display:block;object-fit:contain}
-    .pv-ml-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
-    .pv-ml-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
-    .pv-ml-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
+    .ml-badges img{height:22px;width:22px;object-fit:contain}
+    .pv-rating-stars{display:inline-flex;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
+    .pv-rating-star,.pv-rating-half{display:inline-block;color:#d4a017;line-height:1;font-weight:900}
     .ml-offer-grid{display:grid;grid-template-columns:1fr;gap:10px}
-    .ml-offer-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
-    .ml-offer-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
-    .ml-offer-name{font-weight:800;color:#111827;font-size:.9rem}
-    .ml-offer-meta{color:#6b7280;font-size:.78rem}
+    .ml-offer-card,.ml-review-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
+    .ml-offer-top,.ml-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .ml-offer-name,.ml-review-name{font-weight:800;color:#111827;font-size:.9rem}
+    .ml-offer-meta,.ml-review-meta{color:#6b7280;font-size:.78rem}
     .ml-offer-amount{font-weight:900;color:#111827}
-    .ml-offer-status{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:.22rem .55rem;font-size:.68rem;font-weight:900;border:1px solid #d1d5db;background:#fff;color:#111827}
+    .ml-offer-status{display:inline-flex;border-radius:999px;padding:.22rem .55rem;font-size:.68rem;font-weight:900;border:1px solid #d1d5db;background:#fff;color:#111827}
     .ml-offer-pending{background:#fffbeb;border-color:#fcd34d;color:#92400e}
     .ml-offer-accepted{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
     .ml-offer-paid{background:#f0fdf4;border-color:#86efac;color:#166534}
@@ -295,16 +72,16 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
     .ml-offer-rejected{background:#fef2f2;border-color:#fca5a5;color:#991b1b}
     .ml-tag-hidden{display:inline-block;background:#111827;color:#111827;border-radius:6px;padding:.15rem .55rem;min-width:120px;user-select:none}
     .ml-tag-value{font-weight:800;color:#111827}
+    .ml-review-body{margin-top:6px;color:#111827;font-size:.9rem;white-space:pre-wrap}
     .ml-confirm-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
-    .ml-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000000;background:#ffffff;color:#000000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
-    .ml-confirm-title{font-size:1.05rem;font-weight:900;color:#000000;margin-bottom:8px}
-    .ml-confirm-text{color:#000000;font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
+    .ml-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
+    .ml-confirm-title{font-size:1.05rem;font-weight:900;margin-bottom:8px}
+    .ml-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
     .ml-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
-    .ml-confirm-yes,.ml-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000000 !important;transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important}
-    .ml-confirm-yes{background:#000000 !important;color:#ffffff !important}
-    .ml-confirm-no{background:#ffffff !important;color:#000000 !important}
-    .ml-confirm-yes:hover,.ml-confirm-yes:focus,.ml-confirm-yes:active,.ml-confirm-no:hover,.ml-confirm-no:focus,.ml-confirm-no:active{background:#d4af37 !important;color:#000000 !important;border-color:#d4af37 !important;box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important}
-    .form-control-sm{font-size:.85rem}
+    .ml-confirm-yes,.ml-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000!important}
+    .ml-confirm-yes{background:#000!important;color:#fff!important}
+    .ml-confirm-no{background:#fff!important;color:#000!important}
+    .ml-confirm-yes:hover,.ml-confirm-no:hover{background:#d4af37!important;color:#000!important;border-color:#d4af37!important}
   </style>
 
   <div class="mb-3">
@@ -315,26 +92,18 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
     <div class="ml-left">
       <div class="ml-block">
         <h1 class="ml-title">Listing Information:</h1>
-        <p class="ml-sub"><%= [era.presence, set_name.presence, subtitle_product.presence].compact.join(" · ") %></p>
+        <p class="ml-sub"><%= [era.presence, listing.set_name.presence, display_product.presence].compact.join(" · ") %></p>
 
-        <div class="ml-line"><strong>Seller:</strong> <%= link_to seller_name, user_path(l.seller_id), class: "text-decoration-none" %></div>
-
-        <div class="ml-line">
-          <strong>Location:</strong>
-          <span class="ml-flag" title="<%= country_name(l.country_code) %>"><%= flag_emoji(l.country_code) %></span>
-        </div>
-
-        <div class="ml-line">
-          <strong>Reviews:</strong>
-          <span class="ml-rev" title="<%= "#{stats[:avg].round(1)}/5" %>"><%= stars.call(stats[:avg]) %> (<%= stats[:count] %>)</span>
-        </div>
+        <div class="ml-line"><strong>Seller:</strong> <%= link_to seller_name, user_path(listing.seller_id), class: "text-decoration-none" %></div>
+        <div class="ml-line"><strong>Location:</strong> <span title="<%= country_name(listing.country_code) %>"><%= flag_emoji(listing.country_code) %></span></div>
+        <div class="ml-line"><strong>Reviews:</strong> <%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</div>
 
         <div class="ml-line">
           <strong>Badges:</strong>
           <% if seller_badges.any? %>
             <span class="ml-badges">
-              <% seller_badges.each do |img| %>
-                <%= image_tag img, alt: "" %>
+              <% seller_badges.each do |badge| %>
+                <%= image_tag badge, alt: "" %>
               <% end %>
             </span>
           <% else %>
@@ -343,30 +112,30 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
         </div>
 
         <div class="ml-line"><strong>Product Type:</strong> <%= display_product %></div>
-        <div class="ml-line"><strong>Condition:</strong> <%= l.condition %></div>
-        <div class="ml-line"><strong>Asking Price:</strong> <%= number_to_currency(l.price_cents.to_i / 100.0, unit: "€") %></div>
-        <div class="ml-line"><strong>Available:</strong> <%= l.quantity %></div>
-        <div class="ml-line"><strong>Status:</strong> <%= l.status.to_s.titleize %></div>
+        <div class="ml-line"><strong>Condition:</strong> <%= listing.condition %></div>
+        <div class="ml-line"><strong>Asking Price:</strong> <%= number_to_currency(listing.price_cents.to_i / 100.0, unit: "€") %></div>
+        <div class="ml-line"><strong>Available:</strong> <%= listing.quantity %></div>
+        <div class="ml-line"><strong>Status:</strong> <%= listing.status.to_s.titleize %></div>
 
         <div class="ml-actions">
           <% if current_user.blank? %>
-            <button type="button" class="btn btn-secondary ml-buybtn" disabled>Log in to send offer</button>
+            <button type="button" class="btn btn-secondary btn-sm" disabled>Log in to send offer</button>
           <% elsif is_seller %>
             <span class="text-muted small">This is your listing.</span>
-          <% elsif l.status.to_s != "active" %>
-            <button type="button" class="btn btn-secondary ml-buybtn" disabled>Listing not active</button>
+          <% elsif listing.status.to_s != "active" %>
+            <button type="button" class="btn btn-secondary btn-sm" disabled>Listing not active</button>
           <% end %>
 
-          <% if can_edit_listing && edit_route_available %>
-            <%= link_to "Edit Listing", edit_marketplace_listing_path(l), class: "btn btn-outline-primary ml-buybtn" %>
+          <% if can_edit_listing %>
+            <%= link_to "Edit Listing", edit_marketplace_listing_path(listing), class: "btn btn-outline-primary btn-sm" %>
           <% end %>
 
-          <% if current_user && current_user.id == l.seller_id && l.status.to_s == "active" %>
-            <%= button_to "Delete Listing", cancel_marketplace_listing_path(l), method: :post, class: "btn btn-outline-danger ml-buybtn", form: { class: "d-inline ml-confirm-form", data: { hide_confirm_title: "true", confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
+          <% if current_user && current_user.id == listing.seller_id && listing.status == "active" %>
+            <%= button_to "Delete Listing", cancel_marketplace_listing_path(listing), method: :post, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline ml-confirm-form", data: { hide_confirm_title: "true", confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
           <% end %>
 
           <% if admin_can_delete %>
-            <%= button_to "Delete Listing", marketplace_listing_path(l), method: :delete, class: "btn btn-outline-danger ml-buybtn", form: { class: "d-inline ml-confirm-form", data: { hide_confirm_title: "true", confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
+            <%= button_to "Delete Listing", marketplace_listing_path(listing), method: :delete, class: "btn btn-outline-danger btn-sm", form: { class: "d-inline ml-confirm-form", data: { hide_confirm_title: "true", confirm_text: "Are you sure you want to delete this listing?", turbo: "false" } } %>
           <% end %>
         </div>
       </div>
@@ -375,7 +144,7 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
         <div class="ml-section">
           <h2 class="h6 mb-3">Send Offer</h2>
 
-          <%= form_with url: create_offer_marketplace_listing_path(l), method: :post, local: true, html: { class: "ml-confirm-form", data: { confirm_title: "Confirm Offer", confirm_text: "Do you want to confirm this offer?" } } do %>
+          <%= form_with url: create_offer_marketplace_listing_path(listing), method: :post, local: true, html: { class: "ml-confirm-form", data: { confirm_title: "Confirm Offer", confirm_text: "Do you want to confirm this offer?" } } do %>
             <div class="mb-3">
               <label class="form-label">Offer Amount (€)</label>
               <%= text_field_tag :offer_amount, "", class: "form-control", inputmode: "decimal", placeholder: "e.g. 340", required: true %>
@@ -401,17 +170,17 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
 
                   <div class="text-end">
                     <div class="ml-offer-amount"><%= number_to_currency(offer.offer_cents.to_i / 100.0, unit: "€") %></div>
-                    <span class="ml-offer-status <%= offer_status_class.call(offer.status) %>"><%= offer_status_label.call(offer.status) %></span>
+                    <span class="ml-offer-status <%= marketplace_offer_status_class(offer.status) %>"><%= marketplace_offer_status_label(offer.status) %></span>
                   </div>
                 </div>
 
-                <% if offer.status.to_s == "accepted" %>
+                <% if offer.accepted? %>
                   <div class="mt-3">
-                    <%= link_to "Pay", pay_marketplace_listing_path(l, offer_id: offer.id), class: "btn btn-success btn-sm" %>
+                    <%= link_to "Pay", pay_marketplace_listing_path(listing, offer_id: offer.id), class: "btn btn-success btn-sm" %>
                   </div>
-                <% elsif offer.status.to_s == "paid" %>
+                <% elsif offer.paid? %>
                   <div class="mt-3 text-muted small">Payment marked as sent. Waiting for seller to confirm payment.</div>
-                <% elsif offer.status.to_s == "confirmed_paid" %>
+                <% elsif offer.confirmed_paid? %>
                   <div class="mt-3 text-success small fw-semibold">Seller confirmed payment.</div>
                 <% end %>
               </div>
@@ -427,11 +196,11 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
           <% if seller_offers.any? %>
             <div class="ml-offer-grid">
               <% seller_offers.each do |offer| %>
-                <% buyer = offer.respond_to?(:buyer) ? offer.buyer : User.find_by(id: offer.buyer_id) %>
-                <% buyer_name = buyer&.respond_to?(:username) && buyer.username.present? ? buyer.username : "User ##{offer.buyer_id}" %>
+                <% buyer = offer.buyer %>
+                <% buyer_name = marketplace_seller_name(buyer, offer.buyer_id) %>
                 <% tag_id = "buyer_tag_#{offer.id}" %>
                 <% hidden_id = "buyer_tag_hidden_#{offer.id}" %>
-                <% buyer_tag = offer.respond_to?(:buyer_revolut_tag) ? offer.buyer_revolut_tag.to_s : "" %>
+                <% buyer_tag = offer.buyer_revolut_tag.to_s %>
 
                 <div class="ml-offer-card">
                   <div class="ml-offer-top">
@@ -442,7 +211,7 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
 
                     <div class="text-end">
                       <div class="ml-offer-amount"><%= number_to_currency(offer.offer_cents.to_i / 100.0, unit: "€") %></div>
-                      <span class="ml-offer-status <%= offer_status_class.call(offer.status) %>"><%= offer_status_label.call(offer.status) %></span>
+                      <span class="ml-offer-status <%= marketplace_offer_status_class(offer.status) %>"><%= marketplace_offer_status_label(offer.status) %></span>
                     </div>
                   </div>
 
@@ -456,12 +225,12 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
                   <% end %>
 
                   <div class="ml-actions">
-                    <% if offer.status.to_s == "pending" && l.status.to_s == "active" %>
-                      <%= button_to "Accept", accept_offer_marketplace_listing_path(l, offer_id: offer.id), method: :post, class: "btn btn-primary btn-sm", form: { class: "d-inline ml-confirm-form", data: { confirm_title: "Accept Offer", confirm_text: "Do you want to accept this offer?" } } %>
+                    <% if offer.pending? && listing.status == "active" %>
+                      <%= button_to "Accept", accept_offer_marketplace_listing_path(listing, offer_id: offer.id), method: :post, class: "btn btn-primary btn-sm", form: { class: "d-inline ml-confirm-form", data: { confirm_title: "Accept Offer", confirm_text: "Do you want to accept this offer?" } } %>
                     <% end %>
 
-                    <% if offer.status.to_s == "paid" && l.status.to_s == "active" %>
-                      <%= button_to "Confirm Paid", confirm_paid_marketplace_listing_path(l, offer_id: offer.id), method: :post, class: "btn btn-success btn-sm", form: { class: "d-inline ml-confirm-form", data: { confirm_title: "Confirm Payment", confirm_text: "Do you want to confirm that this buyer paid?" } } %>
+                    <% if offer.paid? && listing.status == "active" %>
+                      <%= button_to "Confirm Paid", confirm_paid_marketplace_listing_path(listing, offer_id: offer.id), method: :post, class: "btn btn-success btn-sm", form: { class: "d-inline ml-confirm-form", data: { confirm_title: "Confirm Payment", confirm_text: "Do you want to confirm that this buyer paid?" } } %>
                     <% end %>
                   </div>
                 </div>
@@ -475,33 +244,30 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
 
       <div class="ml-section">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-          <h3 class="ml-reviews-title">Reviews</h3>
+          <h3 class="h6 m-0">Reviews</h3>
 
           <% if can_review_seller %>
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm"
-              onclick="var wrap=document.getElementById('<%= review_form_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('<%= review_form_id %>').classList.toggle('d-none')">
               Give Review
             </button>
           <% end %>
         </div>
 
         <% if can_review_seller %>
-          <div class="ml-review-card">
+          <div class="ml-review-card mb-2">
             <strong>Leave a Review</strong>
 
-            <div id="<%= review_form_id %>" style="display:none;" class="mt-2">
+            <div id="<%= review_form_id %>" class="mt-2 d-none">
               <%= form_with url: reviews_path, method: :post, local: true do %>
-                <%= hidden_field_tag "review[seller_id]", l.seller_id %>
+                <%= hidden_field_tag "review[seller_id]", listing.seller_id %>
 
                 <div class="mb-2">
-                  <label class="form-label mb-1" style="font-size:.8rem;">Rating (0 to 5)</label>
+                  <label class="form-label mb-1 small">Rating (0 to 5)</label>
                   <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
                 </div>
 
                 <div class="mb-2">
-                  <label class="form-label mb-1" style="font-size:.8rem;">Comment</label>
+                  <label class="form-label mb-1 small">Comment</label>
                   <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
                 </div>
 
@@ -515,31 +281,21 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
           <div class="text-muted small mb-2">You have already reviewed this seller.</div>
         <% end %>
 
-        <% if reviews.present? && reviews.any? %>
-          <% reviews.each do |r| %>
-            <% reviewer = r.respond_to?(:reviewer) ? r.reviewer : nil %>
-            <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{r.reviewer_id}" %>
+        <% if reviews.any? %>
+          <% reviews.each do |review| %>
+            <% reviewer_name = marketplace_seller_name(review.reviewer, review.reviewer_id) %>
 
-            <div class="ml-review-card">
+            <div class="ml-review-card mb-2">
               <div class="ml-review-top">
                 <div>
                   <div class="ml-review-name"><%= reviewer_name %></div>
-                  <div class="ml-review-stars">
-                    <%= stars.call(r.respond_to?(:rating) ? r.rating : 0) %>
-                    <strong><%= number_with_precision(r.rating.to_f, precision: 1) %>/5</strong>
-                  </div>
+                  <div><%= marketplace_stars(review.rating) %> <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong></div>
                 </div>
 
-                <div class="ml-review-meta"><%= r.respond_to?(:created_at) ? r.created_at.strftime("%d %b %Y") : "" %></div>
+                <div class="ml-review-meta"><%= review.created_at.strftime("%d %b %Y") %></div>
               </div>
 
-              <% body = (r.respond_to?(:comment) ? r.comment : (r.respond_to?(:body) ? r.body : "")).to_s %>
-
-              <% if body.present? %>
-                <div class="ml-review-body"><%= body %></div>
-              <% else %>
-                <div class="ml-review-body text-muted">No comment left.</div>
-              <% end %>
+              <div class="ml-review-body"><%= review.comment.to_s.presence || "No comment left." %></div>
             </div>
           <% end %>
         <% else %>
@@ -554,18 +310,17 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
 
         <% if images.any? %>
           <div class="ml-thumbgrid">
-            <% images.each_with_index do |img, idx| %>
-              <%= image_tag url_for(img), class: "ml-thumb", alt: "Listing image #{idx + 1}", data: { bs_toggle: "modal", bs_target: "#imgModal", full_src: url_for(img) } %>
+            <% images.each_with_index do |image, index| %>
+              <%= image_tag url_for(image), class: "ml-thumb", alt: "Listing image #{index + 1}", data: { bs_toggle: "modal", bs_target: "#imgModal", full_src: url_for(image) } %>
             <% end %>
           </div>
         <% else %>
-          <div class="ml-noimg">No images uploaded.</div>
+          <div class="text-muted">No images uploaded.</div>
         <% end %>
       </div>
     </div>
   </div>
 
-  <%# Custom confirmation overlay used before destructive or payment-related actions. %>
   <div class="ml-confirm-overlay" id="mlConfirmOverlay" aria-hidden="true">
     <div class="ml-confirm-box">
       <div class="ml-confirm-title" id="mlConfirmTitle">Confirm</div>
@@ -578,7 +333,6 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
   </div>
 </div>
 
-<%# Modal for enlarging uploaded listing images. %>
 <div class="modal fade" id="imgModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
@@ -596,124 +350,82 @@ reviews = defined?(@recent_reviews) && @recent_reviews ? @recent_reviews : []
 
 <script>
   (() => {
-    function initMarketplaceListingShow() {
-      const modalEl = document.getElementById("imgModalEl")
+    const modalImage = document.getElementById("imgModalEl")
 
-      document.addEventListener("click", (event) => {
-        const img = event.target.closest("img[data-bs-target='#imgModal']")
-        if (!img) return
+    document.addEventListener("click", (event) => {
+      const image = event.target.closest("img[data-full-src]")
+      if (image && modalImage) modalImage.src = image.dataset.fullSrc || ""
+    })
 
-        const src = img.getAttribute("data-full-src")
-        if (modalEl && src) modalEl.src = src
+    document.querySelectorAll(".ml-reveal-tag-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        const hidden = document.getElementById(button.dataset.hiddenId)
+        const value = document.getElementById(button.dataset.valueId)
+        if (!hidden || !value) return
+
+        const showing = value.style.display !== "none" && value.style.display !== ""
+
+        hidden.style.display = showing ? "inline-block" : "none"
+        value.style.display = showing ? "none" : "inline"
+        button.textContent = showing ? "Reveal" : "Hide"
       })
+    })
 
-      let pendingForm = null
-      let confirmedForm = false
+    let pendingForm = null
+    let confirmed = false
 
-      const overlay = document.getElementById("mlConfirmOverlay")
-      const titleEl = document.getElementById("mlConfirmTitle")
-      const textEl = document.getElementById("mlConfirmText")
-      const yesBtn = document.getElementById("mlConfirmYes")
-      const noBtn = document.getElementById("mlConfirmNo")
+    const overlay = document.getElementById("mlConfirmOverlay")
+    const title = document.getElementById("mlConfirmTitle")
+    const text = document.getElementById("mlConfirmText")
+    const yes = document.getElementById("mlConfirmYes")
+    const no = document.getElementById("mlConfirmNo")
 
-      if (document.body.dataset.mlConfirmBound !== "1") {
-        document.body.dataset.mlConfirmBound = "1"
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest(".ml-confirm-form")
+      if (!form) return
 
-        document.addEventListener("submit", (event) => {
-          const form = event.target.closest(".ml-confirm-form")
-          if (!form) return
-
-          if (confirmedForm) {
-            confirmedForm = false
-            return
-          }
-
-          event.preventDefault()
-
-          pendingForm = form
-
-          if (titleEl) {
-            if (form.dataset.hideConfirmTitle === "true") {
-              titleEl.textContent = ""
-              titleEl.style.display = "none"
-            } else {
-              titleEl.textContent = form.dataset.confirmTitle || "Confirm"
-              titleEl.style.display = ""
-            }
-          }
-
-          if (textEl) textEl.textContent = form.dataset.confirmText || "Do you want to continue?"
-
-          if (overlay) {
-            overlay.style.display = "flex"
-            overlay.setAttribute("aria-hidden", "false")
-          }
-        })
-
-        yesBtn?.addEventListener("click", () => {
-          if (!pendingForm) return
-
-          const form = pendingForm
-          pendingForm = null
-
-          if (overlay) {
-            overlay.style.display = "none"
-            overlay.setAttribute("aria-hidden", "true")
-          }
-
-          confirmedForm = true
-
-          if (form.requestSubmit) {
-            form.requestSubmit()
-          } else {
-            form.submit()
-          }
-        })
-
-        noBtn?.addEventListener("click", () => {
-          pendingForm = null
-
-          if (overlay) {
-            overlay.style.display = "none"
-            overlay.setAttribute("aria-hidden", "true")
-          }
-        })
-
-        overlay?.addEventListener("click", (event) => {
-          if (event.target !== overlay) return
-
-          pendingForm = null
-          overlay.style.display = "none"
-          overlay.setAttribute("aria-hidden", "true")
-        })
+      if (confirmed) {
+        confirmed = false
+        return
       }
 
-      document.querySelectorAll(".ml-reveal-tag-btn").forEach((button) => {
-        if (button.dataset.bound === "1") return
-        button.dataset.bound = "1"
+      event.preventDefault()
+      pendingForm = form
 
-        button.addEventListener("click", () => {
-          const hiddenEl = document.getElementById(button.dataset.hiddenId)
-          const valueEl = document.getElementById(button.dataset.valueId)
+      if (title) {
+        title.textContent = form.dataset.hideConfirmTitle === "true" ? "" : (form.dataset.confirmTitle || "Confirm")
+        title.style.display = form.dataset.hideConfirmTitle === "true" ? "none" : ""
+      }
 
-          if (!hiddenEl || !valueEl) return
+      if (text) text.textContent = form.dataset.confirmText || "Do you want to continue?"
+      if (overlay) overlay.style.display = "flex"
+    })
 
-          const visible = valueEl.style.display !== "none" && valueEl.style.display !== ""
+    yes?.addEventListener("click", () => {
+      if (!pendingForm) return
 
-          if (visible) {
-            hiddenEl.style.display = "inline-block"
-            valueEl.style.display = "none"
-            button.textContent = "Reveal"
-          } else {
-            hiddenEl.style.display = "none"
-            valueEl.style.display = "inline"
-            button.textContent = "Hide"
-          }
-        })
-      })
-    }
+      const form = pendingForm
+      pendingForm = null
+      confirmed = true
 
-    document.addEventListener("DOMContentLoaded", initMarketplaceListingShow)
-    document.addEventListener("turbo:load", initMarketplaceListingShow)
+      if (overlay) overlay.style.display = "none"
+
+      if (form.requestSubmit) {
+        form.requestSubmit()
+      } else {
+        form.submit()
+      }
+    })
+
+    no?.addEventListener("click", () => {
+      pendingForm = null
+      if (overlay) overlay.style.display = "none"
+    })
+
+    overlay?.addEventListener("click", (event) => {
+      if (event.target !== overlay) return
+      pendingForm = null
+      overlay.style.display = "none"
+    })
   })()
 </script>

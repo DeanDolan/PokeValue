@@ -1,10 +1,12 @@
 <div class="container py-4" style="max-width:680px;">
   <h1 class="mb-3">Set up Admin MFA</h1>
 
+  <%# Explains that admin MFA must be enabled before the admin can continue. %>
   <div class="alert alert-warning">
     You must enable MFA for the admin account before continuing.
   </div>
 
+  <%# Secret copied into Google Authenticator or another TOTP authenticator app. %>
   <div class="card mb-3">
     <div class="card-body">
       <div class="mb-2 fw-semibold">Secret</div>
@@ -13,6 +15,7 @@
     </div>
   </div>
 
+  <%# otpauth URI follows the Google Authenticator key URI format. %>
   <div class="card mb-3">
     <div class="card-body">
       <div class="mb-2 fw-semibold">Provisioning URI</div>
@@ -20,7 +23,8 @@
     </div>
   </div>
 
-  <%= form_with url: mfa_enable_path, method: :post, local: true do %>
+  <%# This route is PATCH /mfa/enable, so the form method must be patch. %>
+  <%= form_with url: mfa_enable_path, method: :patch, local: true do %>
     <div class="mb-3">
       <label class="form-label">Enter a 6-digit code to enable</label>
       <%= text_field_tag :code, nil, class: "form-control", required: true, autocomplete: "one-time-code" %>
@@ -31,6 +35,7 @@
     </div>
   <% end %>
 
+  <%# Recovery codes are shown once after MFA is enabled. %>
   <% if defined?(@recovery_codes) && @recovery_codes.present? %>
     <hr class="my-4">
 
@@ -41,8 +46,8 @@
     <div class="card">
       <div class="card-body">
         <ul class="mb-0">
-          <% @recovery_codes.each do |c| %>
-            <li class="font-monospace"><%= c %></li>
+          <% @recovery_codes.each do |code| %>
+            <li class="font-monospace"><%= code %></li>
           <% end %>
         </ul>
       </div>

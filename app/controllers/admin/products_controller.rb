@@ -2,91 +2,80 @@ require "json"
 require "date"
 
 module Admin
-  class ProductsController < ApplicationController
-    include Authentication
-
-    TYPE_MAP = {
-      "etb"                      => "Elite Trainer Box",
-      "pc_etb"                   => "Pokemon Center Elite Trainer Box",
-      "booster_box"              => "Booster Box",
-      "half_booster_box"         => "Half Booster Box",
-      "booster_pack"             => "Booster Pack",
-      "booster_bundle"           => "Booster Bundle",
-      "booster_bundle_display"   => "Booster Bundle Display",
-      "enhanced_booster_box"     => "Enhanced Booster Box",
-      "ultra_premium_collection" => "Ultra Premium Collection",
-      "upc"                      => "Ultra Premium Collection",
-      "spc"                      => "Super Premium Collection",
-      "collection_box"           => "Collection Box",
-      "tin"                      => "Tin",
-      "mini_tin"                 => "Mini Tin",
-      "mini_tin_display"         => "Mini Tin Display",
-      "blister_pack"             => "Blister Pack",
-      "blister_pack_display"     => "Blister Pack Display"
-    }.freeze
-
-    before_action :require_admin
+  class ProductsController < BaseController
+    # Extra sealed products not already stored in config/sets.json.
+    MANUAL_EXTRA_PRODUCTS = {
+      "phantasmalflames" => [
+        [ "collection_box", "First Partner Illustration Collection Series 1", "phantasmalflames_firstpartnerseries1.png" ],
+        [ "collection_box", "Pokémon Day 2026 Collection", "phantasmalflames_pokemonday2026collection.png" ],
+        [ "tin", "Mega Charizard Y Ex Tin", "phantasmalflames_megacharizardyextin.png" ],
+        [ "tin", "Mega Charizard X Ex Tin", "phantasmalflames_megacharizardxextin.png" ]
+      ],
+      "destinedrivals" => [
+        [ "booster_pack", "Booster Pack", "destinedrivals_booster.png" ],
+        [ "ultra_premium_collection", "Team Rocket's Moltres Ultra Premium Collection", "destinedrivals_teamrocketsmoltresultrapremiumcollection.png" ],
+        [ "half_booster_box", "Half Booster Box (18 Packs)", "destinedrivals_halfboosterbox.png" ]
+      ],
+      "151" => [
+        [ "mini_tin", "Mini Tin", "151_minitin.png" ],
+        [ "mini_tin_display", "Mini Tin Display", "151_minitindisplay.png" ]
+      ],
+      "prismaticevolutions" => [
+        [ "mini_tin", "Mini Tin", "prismaticevolutions_minitin.png" ],
+        [ "mini_tin_display", "Mini Tin Display", "prismaticevolutions_minitindisplay.png" ]
+      ],
+      "ascendedheroes" => [
+        [ "mini_tin", "Mini Tin", "ascendedheroes_minitin.png" ],
+        [ "mini_tin_display", "Mini Tin Display", "ascendedheroes_minitindisplay.png" ],
+        [ "collection_box", "Mega Feraligatr Ex Box", "ascendedheroes_megaferaligatrexbox.png" ],
+        [ "collection_box", "Mega Meganium Ex Box", "ascendedheroes_megameganiumexbox.png" ],
+        [ "collection_box", "Mega Emboar Ex Box", "ascendedheroes_megaemboarexbox.png" ],
+        [ "collection_box", "First Partners Deluxe Pin Collection", "ascendedheroes_firstpartnersdeluxepincollection.png" ],
+        [ "collection_box", "Mega Lucario Premium Poster Collection", "ascendedheroes_megalucariopremiumpostercollection.png" ],
+        [ "collection_box", "Mega Gardevoir Premium Poster Collection", "ascendedheroes_megagardevoirpremiumpostercollection.png" ],
+        [ "blister_pack", "Charmander Tech Sticker Collection", "ascendedheroes_charmandertechstickercollection.png" ],
+        [ "blister_pack", "Gastly Tech Sticker Collection", "ascendedheroes_gastlytechstickercollection.png" ],
+        [ "blister_pack", "Erika's Tangela 2-Pack Blister", "ascendedheroes_erikastangela2packblister.png" ],
+        [ "blister_pack", "Larry's Komala 2-Pack Blister", "ascendedheroes_larryskomala2packblister.png" ],
+        [ "blister_pack_display", "2-Pack Blister Display", "ascendedheroes2packblisterdisplay.png" ],
+        [ "blister_pack_display", "Tech Sticker Collection Display", "ascendedheroes_techstickercollectiondisplay.png" ]
+      ]
+    }.transform_values do |products|
+      products.map do |type, name, image|
+        { "type" => type, "name" => name, "img" => "images/sealed/#{image}" }
+      end
+    end.freeze
 
     def index
       @groups = build_groups
     end
 
+    # Updates all edited product values from the admin products table.
     def update_values
-      values = to_plain_hash(params[:values])
-      names = to_plain_hash(params[:names])
-      set_names = to_plain_hash(params[:set_names])
-      eras = to_plain_hash(params[:eras])
-      product_type_names = to_plain_hash(params[:product_type_names])
-      route_types = to_plain_hash(params[:route_types])
-      image_urls = to_plain_hash(params[:image_urls])
+      values = param_hash(params[:values])
+      names = param_hash(params[:names])
+      set_names = param_hash(params[:set_names])
+      eras = param_hash(params[:eras])
+      product_type_names = param_hash(params[:product_type_names])
+      image_urls = param_hash(params[:image_urls])
       changed = 0
 
       Product.transaction do
-        values.each do |sku, raw|
-          sku = sku.to_s.strip
-          next if sku.blank?
+        values.each do |sku, raw_value|
+          next if sku.to_s.strip.blank?
+          next if raw_value.to_s.strip.blank?
 
-          raw_s = raw.to_s.strip
-          next if raw_s.blank?
-
-          value = begin
-            BigDecimal(raw_s)
-          rescue
-            nil
-          end
-
-          raise ActionController::BadRequest if value.nil?
-          raise ActionController::BadRequest if value < 0
-          raise ActionController::BadRequest if value > 1_000_000
-
-          name = names[sku].to_s.strip
-          name = "Product" if name.blank?
-
-          product = Product.lock.find_or_initialize_by(sku: sku)
-          old = product.respond_to?(:value) ? product.value : nil
-
-          product.name = name
-          product.value = value
-          product.set_name = set_names[sku].to_s.strip if product.respond_to?(:set_name=)
-          product.era = eras[sku].to_s.strip if product.respond_to?(:era=)
-          product.product_type = product_type_names[sku].to_s.strip if product.respond_to?(:product_type=)
-          product.image = image_urls[sku].to_s.strip if product.respond_to?(:image=)
-
-          product.save!
+          product = save_product_value!(
+            sku: sku,
+            value: decimal_param(raw_value, max: 1_000_000),
+            name: names[sku],
+            set_name: set_names[sku],
+            era: eras[sku],
+            product_type: product_type_names[sku],
+            image: image_urls[sku]
+          )
 
           Product.refresh_holdings_for_product!(product) if Product.respond_to?(:refresh_holdings_for_product!)
-
-          if defined?(AdminAudit)
-            AdminAudit.create!(
-              user_id: current_user.id,
-              sku: product.sku.to_s,
-              old_value: old,
-              new_value: value,
-              ip: request.remote_ip,
-              user_agent: request.user_agent.to_s
-            )
-          end
-
           changed += 1
         end
       end
@@ -96,390 +85,196 @@ module Admin
 
     private
 
-    def to_plain_hash(obj)
-      return obj.to_unsafe_h if obj.is_a?(ActionController::Parameters)
-      return obj if obj.is_a?(Hash)
-      {}
+    # Saves one admin product value and records the audit row.
+    def save_product_value!(sku:, value:, name:, set_name:, era:, product_type:, image:)
+      product = Product.lock.find_or_initialize_by(sku: sku.to_s.strip)
+      old_value = product.value
+
+      product.name = name.to_s.strip.presence || "Product"
+      product.value = value
+      product.set_name = set_name.to_s.strip if product.respond_to?(:set_name=)
+      product.era = era.to_s.strip if product.respond_to?(:era=)
+      product.product_type = product_type.to_s.strip if product.respond_to?(:product_type=)
+      product.image = image.to_s.strip if product.respond_to?(:image=)
+      product.save!
+
+      AdminAudit.record_change!(
+        user: current_user,
+        product: product,
+        old_value: old_value,
+        new_value: value,
+        request: request
+      )
+
+      product
     end
 
-    def require_admin
-      ok =
-        if respond_to?(:admin_signed_in?)
-          admin_signed_in?
-        elsif respond_to?(:current_user) && current_user
-          current_user.respond_to?(:admin?) ? current_user.admin? : false
-        else
-          false
-        end
-
-      redirect_to(root_path, alert: "Not authorized.", status: :see_other) unless ok
-    end
-
+    # Builds product rows grouped by product type.
     def build_groups
-      sets_data = load_sets_data
+      products = product_rows
+      grouped = products.group_by { |row| row[:type_name] }
+      preferred_order = type_map.values.uniq
 
-      images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-      overrides = Product.column_names.include?("sku") ? Product.all.index_by { |p| p.sku.to_s } : {}
+      (preferred_order + (grouped.keys - preferred_order).sort).filter_map do |type_name|
+        rows = grouped[type_name]
+        next if rows.blank?
 
-      products = []
+        [ type_name, rows.sort_by { |row| [ -row[:release_key], row[:set_index], row[:product_index] ] } ]
+      end
+    end
 
-      sets_data.values.each_with_index do |s, set_index|
-        set_slug = (s["slug"] || s[:slug]).to_s
-        set_name = (s["name"] || s[:name]).to_s
-        era = (s["era"] || s[:era] || s["series"] || s[:series]).to_s
-        release_raw = (s["releaseDate"] || s[:releaseDate] || s["release_date"] || s[:release_date] || s["release"] || s[:release]).to_s
-        release_key = date_key(release_raw)
-        release_display = format_date(release_raw)
+    # Builds one flat list of admin product rows from the JSON catalogue.
+    def product_rows
+      data = merge_manual_products(sets_data)
+      overrides = Product.all.index_by { |product| product.sku.to_s }
+      images_folder = Rails.root.join("app", "assets", "images", "sealed")
+      rows = []
 
-        Array(s["products"] || s[:products] || s["sealed"] || s[:sealed]).each_with_index do |p, product_index|
-          type_code = (p["type"] || p[:type]).to_s
-          next if type_code.blank?
-
-          prod_name = (p["name"] || p[:name] || "").to_s
-          base = normalize_type(type_code)
-          type_name = TYPE_MAP[base] || base.tr("_", " ").split.map(&:capitalize).join(" ")
-          route_type = build_route_type_for_product(type_key: base, name: prod_name)
-
-          sku = build_value_override_sku(set_slug: set_slug, route_type: route_type)
-          fallback_skus = value_override_sku_candidates(set_slug: set_slug, route_type: route_type, type_code: base)
-
-          img_base = File.basename((p["img"] || p[:img]).to_s) rescue ""
-          img_url =
-            if img_base.present? && File.exist?(images_sealed.join(img_base))
-              safe_asset_path("sealed/#{img_base}")
-            else
-              safe_asset_path("pokevaluelogo.png")
-            end
-
-          fallback_value =
-            (p["value"] || p[:value] || p["product_value"] || p[:product_value] || p["estimated_value"] || p[:estimated_value] || p["price"] || p[:price])
-
-          db_value = nil
-          fallback_skus.each do |candidate_sku|
-            row = overrides[candidate_sku]
-            if row&.respond_to?(:value)
-              db_value = row.value
-              break
-            end
-          end
-
-          listings = marketplace_listing_quantity(set_slug: set_slug, route_type: route_type, type_name: type_name)
-
-          href = set_product_path(slug: set_slug, type: route_type)
-
-          products << {
-            sku: sku,
-            type_name: type_name,
-            product_name: (prod_name.presence || type_name),
-            img_url: img_url,
-            href: href,
-            era: era,
-            set_slug: set_slug,
-            set_name: set_name,
-            release_key: release_key,
-            release_date: release_display,
-            route_type: route_type,
-            listings: listings,
-            value: (db_value.nil? ? fallback_value : db_value),
-            set_index: set_index,
-            product_index: product_index
-          }
+      data.values.each_with_index do |set, set_index|
+        Array(set["products"] || set["sealed"]).each_with_index do |product, product_index|
+          row = build_row(set, product, set_index, product_index, overrides, images_folder)
+          rows << row if row
         end
       end
 
-      grouped = products.group_by { |x| x[:type_name] }
-
-      ordered = TYPE_MAP.values.uniq
-      (ordered + (grouped.keys - ordered).sort).filter_map do |k|
-        rows = grouped[k]
-        next if rows.blank?
-        [ k, rows.sort_by { |r| [ -r[:release_key], r[:set_index].to_i, r[:product_index].to_i ] } ]
-      end
+      rows
     end
 
-    def load_sets_data
-      raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-      data = JSON.parse(raw)
-      merge_manual_extra_products(data)
-    rescue
-      {}
+    # Builds one product row for the admin table.
+    def build_row(set, product, set_index, product_index, overrides, images_folder)
+      set_slug = set["slug"].to_s
+      type_code = Product.normalize_type(product["type"])
+      return nil if set_slug.blank? || type_code.blank?
+
+      name = product["name"].to_s
+      type_name = type_map[type_code] || type_code.tr("_", " ").titleize
+      route_type = build_route_type(type_code, name)
+      sku = Product.value_override_sku(set_slug: set_slug, route_type: route_type)
+
+      {
+        sku: sku,
+        type_name: type_name,
+        product_name: name.presence || type_name,
+        img_url: product_image(product["img"], images_folder),
+        href: set_product_path(slug: set_slug, type: route_type),
+        era: set["era"].to_s,
+        set_slug: set_slug,
+        set_name: set["name"].to_s,
+        release_key: date_key(set["releaseDate"]),
+        release_date: display_date(set["releaseDate"]),
+        route_type: route_type,
+        listings: marketplace_listing_quantity(set_slug, route_type, type_name),
+        value: override_value(overrides, set_slug, route_type, type_code) || fallback_value(product),
+        set_index: set_index,
+        product_index: product_index
+      }
     end
 
-    def merge_manual_extra_products(data)
-      manual_extra_products_by_slug.each do |slug, products|
-        target = data[slug.to_s] || data.values.find { |x| x["slug"].to_s == slug.to_s }
-        next unless target
+    # Adds manually listed products without duplicating JSON products.
+    def merge_manual_products(data)
+      MANUAL_EXTRA_PRODUCTS.each do |slug, products|
+        set = data[slug] || data.values.find { |row| row["slug"].to_s == slug }
+        next unless set
 
-        key = target.key?("products") ? "products" : "sealed"
-        target[key] = Array(target[key] || target["sealed"] || target["products"])
+        key = set.key?("products") ? "products" : "sealed"
+        set[key] = Array(set[key] || set["products"] || set["sealed"])
 
         products.each do |product|
-          exists = target[key].any? do |existing|
-            normalize_text(existing["name"] || existing[:name]) == normalize_text(product["name"]) &&
-              normalize_type(existing["type"] || existing[:type]) == normalize_type(product["type"])
+          already_exists = set[key].any? do |existing|
+            Product.normalize_text(existing["name"]) == Product.normalize_text(product["name"]) &&
+              Product.normalize_type(existing["type"]) == Product.normalize_type(product["type"])
           end
 
-          target[key] << product unless exists
+          set[key] << product unless already_exists
         end
       end
 
       data
     end
 
-    def manual_extra_products_by_slug
-      {
-        "phantasmalflames" => [
-          {
-            "type" => "collection_box",
-            "name" => "First Partner Illustration Collection Series 1",
-            "img" => "images/sealed/phantasmalflames_firstpartnerseries1.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Pokémon Day 2026 Collection",
-            "img" => "images/sealed/phantasmalflames_pokemonday2026collection.png"
-          },
-          {
-            "type" => "tin",
-            "name" => "Mega Charizard Y Ex Tin",
-            "img" => "images/sealed/phantasmalflames_megacharizardyextin.png"
-          },
-          {
-            "type" => "tin",
-            "name" => "Mega Charizard X Ex Tin",
-            "img" => "images/sealed/phantasmalflames_megacharizardxextin.png"
-          }
-        ],
-        "destinedrivals" => [
-          {
-            "type" => "booster_pack",
-            "name" => "Booster Pack",
-            "img" => "images/sealed/destinedrivals_booster.png"
-          },
-          {
-            "type" => "ultra_premium_collection",
-            "name" => "Team Rocket's Moltres Ultra Premium Collection",
-            "img" => "images/sealed/destinedrivals_teamrocketsmoltresultrapremiumcollection.png"
-          },
-          {
-            "type" => "half_booster_box",
-            "name" => "Half Booster Box (18 Packs)",
-            "img" => "images/sealed/destinedrivals_halfboosterbox.png"
-          }
-        ],
-        "151" => [
-          {
-            "type" => "mini_tin",
-            "name" => "Mini Tin",
-            "img" => "images/sealed/151_minitin.png"
-          },
-          {
-            "type" => "mini_tin_display",
-            "name" => "Mini Tin Display",
-            "img" => "images/sealed/151_minitindisplay.png"
-          }
-        ],
-        "prismaticevolutions" => [
-          {
-            "type" => "mini_tin",
-            "name" => "Mini Tin",
-            "img" => "images/sealed/prismaticevolutions_minitin.png"
-          },
-          {
-            "type" => "mini_tin_display",
-            "name" => "Mini Tin Display",
-            "img" => "images/sealed/prismaticevolutions_minitindisplay.png"
-          }
-        ],
-        "ascendedheroes" => [
-          {
-            "type" => "mini_tin",
-            "name" => "Mini Tin",
-            "img" => "images/sealed/ascendedheroes_minitin.png"
-          },
-          {
-            "type" => "mini_tin_display",
-            "name" => "Mini Tin Display",
-            "img" => "images/sealed/ascendedheroes_minitindisplay.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Mega Feraligatr Ex Box",
-            "img" => "images/sealed/ascendedheroes_megaferaligatrexbox.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Mega Meganium Ex Box",
-            "img" => "images/sealed/ascendedheroes_megameganiumexbox.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Mega Emboar Ex Box",
-            "img" => "images/sealed/ascendedheroes_megaemboarexbox.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "First Partners Deluxe Pin Collection",
-            "img" => "images/sealed/ascendedheroes_firstpartnersdeluxepincollection.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Mega Lucario Premium Poster Collection",
-            "img" => "images/sealed/ascendedheroes_megalucariopremiumpostercollection.png"
-          },
-          {
-            "type" => "collection_box",
-            "name" => "Mega Gardevoir Premium Poster Collection",
-            "img" => "images/sealed/ascendedheroes_megagardevoirpremiumpostercollection.png"
-          },
-          {
-            "type" => "blister_pack",
-            "name" => "Charmander Tech Sticker Collection",
-            "img" => "images/sealed/ascendedheroes_charmandertechstickercollection.png"
-          },
-          {
-            "type" => "blister_pack",
-            "name" => "Gastly Tech Sticker Collection",
-            "img" => "images/sealed/ascendedheroes_gastlytechstickercollection.png"
-          },
-          {
-            "type" => "blister_pack",
-            "name" => "Erika's Tangela 2-Pack Blister",
-            "img" => "images/sealed/ascendedheroes_erikastangela2packblister.png"
-          },
-          {
-            "type" => "blister_pack",
-            "name" => "Larry's Komala 2-Pack Blister",
-            "img" => "images/sealed/ascendedheroes_larryskomala2packblister.png"
-          },
-          {
-            "type" => "blister_pack_display",
-            "name" => "2-Pack Blister Display",
-            "img" => "images/sealed/ascendedheroes2packblisterdisplay.png"
-          },
-          {
-            "type" => "blister_pack_display",
-            "name" => "Tech Sticker Collection Display",
-            "img" => "images/sealed/ascendedheroes_techstickercollectiondisplay.png"
-          }
-        ]
-      }
+    # Returns the existing admin override value for a product if one exists.
+    def override_value(overrides, set_slug, route_type, type_code)
+      override_skus(set_slug, route_type, type_code).each do |sku|
+        value = overrides[sku]&.value
+        return value if value.present?
+      end
+
+      nil
     end
 
-    def marketplace_listing_quantity(set_slug:, route_type:, type_name:)
+    # Builds the possible SKU formats used by older and newer product value rows.
+    def override_skus(set_slug, route_type, type_code)
+      skus = [
+        Product.value_override_sku(set_slug: set_slug, route_type: route_type),
+        "#{set_slug}:#{route_type}"
+      ]
+
+      unless Product.route_needs_product_slug?(type_code) && route_type.include?("--p-")
+        skus << Product.value_override_sku(set_slug: set_slug, route_type: type_code)
+        skus << "#{set_slug}:#{type_code}"
+      end
+
+      skus.map(&:to_s).uniq
+    end
+
+    # Finds how many active marketplace listings exist for this product.
+    def marketplace_listing_quantity(set_slug, route_type, type_name)
       return 0 unless defined?(MarketplaceListing)
 
-      quantity = MarketplaceListing.active.where(set_slug: set_slug.to_s, route_type: route_type.to_s).sum(:quantity).to_i
+      scope = MarketplaceListing.active
+      checks = [
+        scope.where(set_slug: set_slug, route_type: route_type),
+        scope.where(product_sku: "#{set_slug}:#{route_type}"),
+        scope.where(product_sku: "#{set_slug}--#{route_type}"),
+        scope.where(set_slug: set_slug, product_type_name: type_name)
+      ]
 
-      if quantity.zero?
-        quantity = MarketplaceListing.active.where(product_sku: "#{set_slug}:#{route_type}").sum(:quantity).to_i
+      checks.each do |query|
+        quantity = query.sum(:quantity).to_i
+        return quantity if quantity.positive?
       end
 
-      if quantity.zero?
-        quantity = MarketplaceListing.active.where(product_sku: "#{set_slug}--#{route_type}").sum(:quantity).to_i
-      end
-
-      if quantity.zero?
-        quantity = MarketplaceListing.active.where(set_slug: set_slug.to_s, product_type_name: type_name.to_s).sum(:quantity).to_i
-      end
-
-      quantity
+      0
     rescue
       0
     end
 
-    def safe_asset_path(logical)
-      ActionController::Base.helpers.asset_path(logical)
+    # Picks the product image from app/assets/images/sealed.
+    def product_image(image_path, images_folder)
+      file = File.basename(image_path.to_s)
+      return safe_asset_path("sealed/#{file}") if file.present? && File.exist?(images_folder.join(file))
+
+      safe_asset_path("pokevaluelogo.png")
+    end
+
+    # Uses the fallback value stored in config/sets.json.
+    def fallback_value(product)
+      product["value"] || product["product_value"] || product["estimated_value"] || product["price"]
+    end
+
+    # Reuses the same product names used by the public product pages.
+    def type_map
+      PagesController::PRODUCT_TYPE_NAMES
     rescue
-      "/assets/#{logical}"
+      {}
     end
 
-    def normalize_text(s)
-      s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
+    # Builds the same route type format used by product pages.
+    def build_route_type(type_code, name)
+      route = Product.normalize_type(type_code)
+      variant = name.to_s[/\(([^)]+)\)/, 1].to_s.strip
+      origin = route == "pc_etb" || name.to_s.downcase.include?("pokemon center") ? "Pokemon Center" : ""
+
+      route += "--v-#{slugify(variant)}" if variant.present?
+      route += "--o-#{slugify(origin)}" if origin.present?
+      route += "--p-#{slugify(name)}" if Product.route_needs_product_slug?(route) && name.present?
+
+      route
     end
 
-    def normalize_type(t)
-      x = t.to_s.strip.downcase
-      x = x.tr("-", "_")
-      x = x.gsub(/\s+/, "_")
-      x
-    end
-
-    def slugify(s)
-      normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
-    end
-
-    def extract_variant(name)
-      m = name.to_s.match(/\(([^)]+)\)/)
-      m ? m[1].to_s.strip : nil
-    end
-
-    def infer_origin(type_key:, name:)
-      t = normalize_type(type_key)
-      n = normalize_text(name)
-      return "Pokemon Center" if t == "pc_etb"
-      return "Pokemon Center" if n.include?("pokemon center")
-      nil
-    end
-
-    def route_needs_product_slug?(base)
-      [
-        "collection_box",
-        "tin",
-        "mini_tin",
-        "mini_tin_display",
-        "booster_pack",
-        "blister_pack",
-        "blister_pack_display",
-        "half_booster_box"
-      ].include?(base.to_s)
-    end
-
-    def build_route_type_for_product(type_key:, name:)
-      base = normalize_type(type_key)
-      variant = extract_variant(name)
-      origin = infer_origin(type_key: type_key, name: name)
-
-      out = base.dup
-      out << "--v-#{slugify(variant)}" if variant.present?
-      out << "--o-#{slugify(origin)}" if origin.present?
-      out << "--p-#{slugify(name)}" if route_needs_product_slug?(base) && name.to_s.present?
-      out
-    end
-
-    def build_value_override_sku(set_slug:, route_type:)
-      Product.value_override_sku(set_slug: set_slug, route_type: route_type)
-    end
-
-    def value_override_sku_candidates(set_slug:, route_type:, type_code:)
-      candidates = []
-      candidates << build_value_override_sku(set_slug: set_slug, route_type: route_type)
-      candidates << "#{set_slug}:#{route_type}"
-
-      unless route_needs_product_slug?(type_code) && route_type.to_s.include?("--p-")
-        candidates << build_value_override_sku(set_slug: set_slug, route_type: type_code)
-        candidates << "#{set_slug}:#{type_code}"
-      end
-
-      candidates.map(&:to_s).uniq
-    end
-
-    def date_key(s)
-      d = begin
-        Date.parse(s.to_s)
-      rescue
-        nil
-      end
-      d ? d.jd : 0
-    end
-
-    def format_date(s)
-      d = begin
-        Date.parse(s.to_s)
-      rescue
-        nil
-      end
-      d ? d.strftime("%d/%m/%Y") : s.to_s
+    # Turns product names and variants into route-safe text.
+    def slugify(value)
+      Product.normalize_text(value).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
     end
   end
 end

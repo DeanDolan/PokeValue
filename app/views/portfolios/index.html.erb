@@ -48,11 +48,12 @@ conditions_from_controller =
 condition_order = [
   "Mint Sealed",
   "Loosely Sealed",
+  "Mini Tear/Hole (<2cm)",
   "Unsealed",
-  "Big Tear",
-  "Small Tear",
-  "Big Imperfections",
+  "Small Tear (>2cm)",
+  "Big Tear (>1 inch)",
   "Small Imperfections",
+  "Big Imperfections",
   "Pressure Marks",
   "Slightly Dented",
   "Heavy Dented",
@@ -61,9 +62,7 @@ condition_order = [
   "Contents Only"
 ].freeze
 
-conditions_ordered =
-  condition_order.select { |c| conditions_from_controller.include?(c) } +
-  (conditions_from_controller - condition_order).sort
+conditions_ordered = (condition_order + (conditions_from_controller - condition_order).sort).uniq
 
 portfolio_type_options =
   if defined?(@types) && @types.is_a?(Array) && @types.any?
@@ -398,7 +397,6 @@ summary_rows = []
   summary_rows << {
     kind: "added",
     record: holding,
-    timestamp: holding.purchase_date || holding.created_at&.to_date,
     created_at: holding.created_at
   }
 end
@@ -407,7 +405,6 @@ sold_summary_entries.each do |entry|
   summary_rows << {
     kind: "manual_sold",
     record: entry,
-    timestamp: entry.purchase_date || entry.created_at&.to_date,
     created_at: entry.created_at
   }
 end
@@ -416,24 +413,18 @@ sales_rows.each do |purchase|
   summary_rows << {
     kind: "marketplace_sold",
     record: purchase,
-    timestamp: purchase.created_at&.to_date,
     created_at: purchase.created_at
   }
 end
 
-summary_rows = summary_rows.sort_by do |row|
-  [
-    row[:timestamp] || Date.new(1900, 1, 1),
-    row[:created_at] || Time.at(0)
-  ]
-end.reverse
+summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.reverse
 %>
 
 <script>
   window.__REALIZED_PL_METRICS__ = <%= raw(sales_series.to_json) %>;
 </script>
 
-<div data-controller="portfolios-filters">
+<div>
   <h4 class="mb-3">Portfolio Overview</h4>
 
   <style>
@@ -584,43 +575,7 @@ end.reverse
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-remove,
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-sold,
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-remove,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-sold,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-yes,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-no,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-remove,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-sold,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-yes,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-no,
-    html[data-theme="dark"] .portfolio-remove-confirm-remove,
-    html[data-theme="dark"] .portfolio-remove-confirm-sold,
-    html[data-theme="dark"] .portfolio-remove-confirm-yes,
-    html[data-theme="dark"] .portfolio-remove-confirm-no,
-    body[data-theme="dark"] .portfolio-remove-confirm-remove,
-    body[data-theme="dark"] .portfolio-remove-confirm-sold,
-    body[data-theme="dark"] .portfolio-remove-confirm-yes,
-    body[data-theme="dark"] .portfolio-remove-confirm-no,
-    html.dark .portfolio-remove-confirm-remove,
-    html.dark .portfolio-remove-confirm-sold,
-    html.dark .portfolio-remove-confirm-yes,
-    html.dark .portfolio-remove-confirm-no,
-    body.dark .portfolio-remove-confirm-remove,
-    body.dark .portfolio-remove-confirm-sold,
-    body.dark .portfolio-remove-confirm-yes,
-    body.dark .portfolio-remove-confirm-no,
-    html.dark-mode .portfolio-remove-confirm-remove,
-    html.dark-mode .portfolio-remove-confirm-sold,
-    html.dark-mode .portfolio-remove-confirm-yes,
-    html.dark-mode .portfolio-remove-confirm-no,
-    body.dark-mode .portfolio-remove-confirm-remove,
-    body.dark-mode .portfolio-remove-confirm-sold,
-    body.dark-mode .portfolio-remove-confirm-yes,
-    body.dark-mode .portfolio-remove-confirm-no,
-    body:has(.navbar-dark) .portfolio-remove-confirm-remove,
-    body:has(.navbar-dark) .portfolio-remove-confirm-sold,
-    body:has(.navbar-dark) .portfolio-remove-confirm-yes,
-    body:has(.navbar-dark) .portfolio-remove-confirm-no{
+    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no{
       background:#000000 !important;
       color:#d4af37 !important;
       border-color:#d4af37 !important
@@ -636,115 +591,7 @@ end.reverse
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes:active,
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:hover,
     :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:focus,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:active,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-remove:hover,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-remove:focus,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-remove:active,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-sold:hover,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-sold:focus,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-sold:active,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-yes:hover,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-yes:focus,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-yes:active,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-no:hover,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-no:focus,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-no:active,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-remove:hover,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-remove:focus,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-remove:active,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-sold:hover,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-sold:focus,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-sold:active,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-yes:hover,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-yes:focus,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-yes:active,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-no:hover,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-no:focus,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-no:active,
-    html[data-theme="dark"] .portfolio-remove-confirm-remove:hover,
-    html[data-theme="dark"] .portfolio-remove-confirm-remove:focus,
-    html[data-theme="dark"] .portfolio-remove-confirm-remove:active,
-    html[data-theme="dark"] .portfolio-remove-confirm-sold:hover,
-    html[data-theme="dark"] .portfolio-remove-confirm-sold:focus,
-    html[data-theme="dark"] .portfolio-remove-confirm-sold:active,
-    html[data-theme="dark"] .portfolio-remove-confirm-yes:hover,
-    html[data-theme="dark"] .portfolio-remove-confirm-yes:focus,
-    html[data-theme="dark"] .portfolio-remove-confirm-yes:active,
-    html[data-theme="dark"] .portfolio-remove-confirm-no:hover,
-    html[data-theme="dark"] .portfolio-remove-confirm-no:focus,
-    html[data-theme="dark"] .portfolio-remove-confirm-no:active,
-    body[data-theme="dark"] .portfolio-remove-confirm-remove:hover,
-    body[data-theme="dark"] .portfolio-remove-confirm-remove:focus,
-    body[data-theme="dark"] .portfolio-remove-confirm-remove:active,
-    body[data-theme="dark"] .portfolio-remove-confirm-sold:hover,
-    body[data-theme="dark"] .portfolio-remove-confirm-sold:focus,
-    body[data-theme="dark"] .portfolio-remove-confirm-sold:active,
-    body[data-theme="dark"] .portfolio-remove-confirm-yes:hover,
-    body[data-theme="dark"] .portfolio-remove-confirm-yes:focus,
-    body[data-theme="dark"] .portfolio-remove-confirm-yes:active,
-    body[data-theme="dark"] .portfolio-remove-confirm-no:hover,
-    body[data-theme="dark"] .portfolio-remove-confirm-no:focus,
-    body[data-theme="dark"] .portfolio-remove-confirm-no:active,
-    html.dark .portfolio-remove-confirm-remove:hover,
-    html.dark .portfolio-remove-confirm-remove:focus,
-    html.dark .portfolio-remove-confirm-remove:active,
-    html.dark .portfolio-remove-confirm-sold:hover,
-    html.dark .portfolio-remove-confirm-sold:focus,
-    html.dark .portfolio-remove-confirm-sold:active,
-    html.dark .portfolio-remove-confirm-yes:hover,
-    html.dark .portfolio-remove-confirm-yes:focus,
-    html.dark .portfolio-remove-confirm-yes:active,
-    html.dark .portfolio-remove-confirm-no:hover,
-    html.dark .portfolio-remove-confirm-no:focus,
-    html.dark .portfolio-remove-confirm-no:active,
-    body.dark .portfolio-remove-confirm-remove:hover,
-    body.dark .portfolio-remove-confirm-remove:focus,
-    body.dark .portfolio-remove-confirm-remove:active,
-    body.dark .portfolio-remove-confirm-sold:hover,
-    body.dark .portfolio-remove-confirm-sold:focus,
-    body.dark .portfolio-remove-confirm-sold:active,
-    body.dark .portfolio-remove-confirm-yes:hover,
-    body.dark .portfolio-remove-confirm-yes:focus,
-    body.dark .portfolio-remove-confirm-yes:active,
-    body.dark .portfolio-remove-confirm-no:hover,
-    body.dark .portfolio-remove-confirm-no:focus,
-    body.dark .portfolio-remove-confirm-no:active,
-    html.dark-mode .portfolio-remove-confirm-remove:hover,
-    html.dark-mode .portfolio-remove-confirm-remove:focus,
-    html.dark-mode .portfolio-remove-confirm-remove:active,
-    html.dark-mode .portfolio-remove-confirm-sold:hover,
-    html.dark-mode .portfolio-remove-confirm-sold:focus,
-    html.dark-mode .portfolio-remove-confirm-sold:active,
-    html.dark-mode .portfolio-remove-confirm-yes:hover,
-    html.dark-mode .portfolio-remove-confirm-yes:focus,
-    html.dark-mode .portfolio-remove-confirm-yes:active,
-    html.dark-mode .portfolio-remove-confirm-no:hover,
-    html.dark-mode .portfolio-remove-confirm-no:focus,
-    html.dark-mode .portfolio-remove-confirm-no:active,
-    body.dark-mode .portfolio-remove-confirm-remove:hover,
-    body.dark-mode .portfolio-remove-confirm-remove:focus,
-    body.dark-mode .portfolio-remove-confirm-remove:active,
-    body.dark-mode .portfolio-remove-confirm-sold:hover,
-    body.dark-mode .portfolio-remove-confirm-sold:focus,
-    body.dark-mode .portfolio-remove-confirm-sold:active,
-    body.dark-mode .portfolio-remove-confirm-yes:hover,
-    body.dark-mode .portfolio-remove-confirm-yes:focus,
-    body.dark-mode .portfolio-remove-confirm-yes:active,
-    body.dark-mode .portfolio-remove-confirm-no:hover,
-    body.dark-mode .portfolio-remove-confirm-no:focus,
-    body.dark-mode .portfolio-remove-confirm-no:active,
-    body:has(.navbar-dark) .portfolio-remove-confirm-remove:hover,
-    body:has(.navbar-dark) .portfolio-remove-confirm-remove:focus,
-    body:has(.navbar-dark) .portfolio-remove-confirm-remove:active,
-    body:has(.navbar-dark) .portfolio-remove-confirm-sold:hover,
-    body:has(.navbar-dark) .portfolio-remove-confirm-sold:focus,
-    body:has(.navbar-dark) .portfolio-remove-confirm-sold:active,
-    body:has(.navbar-dark) .portfolio-remove-confirm-yes:hover,
-    body:has(.navbar-dark) .portfolio-remove-confirm-yes:focus,
-    body:has(.navbar-dark) .portfolio-remove-confirm-yes:active,
-    body:has(.navbar-dark) .portfolio-remove-confirm-no:hover,
-    body:has(.navbar-dark) .portfolio-remove-confirm-no:focus,
-    body:has(.navbar-dark) .portfolio-remove-confirm-no:active{
+    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:active{
       background:#d4af37 !important;
       color:#000000 !important;
       border-color:#d4af37 !important;
@@ -1145,7 +992,7 @@ end.reverse
                       <% h = row[:record] %>
                       <% meta = meta_for.call(h.set_name, h.product_type, h.image) %>
                       <tr>
-                        <td class="text-nowrap"><%= (h.purchase_date || h.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
+                        <td class="text-nowrap"><%= h.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
                         <td>
                           <% if meta %>
                             <%= link_to meta[:href] do %>
@@ -1201,7 +1048,7 @@ end.reverse
                       <% roi = cost_t > 0 ? (pl / cost_t) * 100.0 : 0.0 %>
 
                       <tr>
-                        <td class="text-nowrap"><%= (entry.purchase_date || entry.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
+                        <td class="text-nowrap"><%= entry.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
                         <td>
                           <% if meta %>
                             <%= link_to meta[:href] do %>
@@ -1258,7 +1105,7 @@ end.reverse
                       <% roi = cost_t > 0 ? (pl / cost_t) * 100.0 : 0.0 %>
 
                       <tr>
-                        <td class="text-nowrap"><%= p.created_at&.to_date&.strftime("%d/%m/%Y") || "—" %></td>
+                        <td class="text-nowrap"><%= p.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
                         <td>
                           <% if meta %>
                             <%= link_to meta[:href] do %>
@@ -1778,6 +1625,9 @@ end.reverse
       if(soldDate) soldDate.value = todayIso()
       if(text) text.textContent = "Choose whether to remove this product from your portfolio or mark it as sold."
 
+      const oldActions = document.getElementById("portfolioDeleteEntryActions")
+      if(oldActions) oldActions.remove()
+
       if(overlay){
         overlay.style.display = "none"
         overlay.setAttribute("aria-hidden", "true")
@@ -1883,9 +1733,6 @@ end.reverse
           overlay.querySelector(".portfolio-remove-confirm-box").appendChild(confirmActions)
 
           yes.addEventListener("click", function(){
-            const oldActionsNow = document.getElementById("portfolioDeleteEntryActions")
-            if(oldActionsNow) oldActionsNow.remove()
-
             const formToSubmit = pendingPortfolioRemoveForm
             pendingPortfolioRemoveForm = null
             resetRemoveOverlay()
@@ -1894,8 +1741,6 @@ end.reverse
           })
 
           no.addEventListener("click", function(){
-            const oldActionsNow = document.getElementById("portfolioDeleteEntryActions")
-            if(oldActionsNow) oldActionsNow.remove()
             pendingPortfolioRemoveForm = null
             resetRemoveOverlay()
           })
@@ -1971,10 +1816,6 @@ end.reverse
 
       overlay.addEventListener("click", function(event){
         if(event.target !== overlay) return
-
-        const oldActions = document.getElementById("portfolioDeleteEntryActions")
-        if(oldActions) oldActions.remove()
-
         pendingPortfolioRemoveForm = null
         resetRemoveOverlay()
       })

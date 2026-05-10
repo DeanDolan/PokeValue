@@ -39,7 +39,7 @@ export default class extends Controller {
 
     try {
       await this._ensureChartJS()
-    } catch (err) {
+    } catch (_) {
       this._setError("Future projections are temporarily unavailable.\n\nThe chart could not be loaded. Please come back later and try again.")
       return
     }
@@ -241,12 +241,5 @@ export default class extends Controller {
     const n = Number(v)
     if (!isFinite(n)) return "—"
     return "€" + n.toFixed(2)
-  }
-
-  // Converts an error object into readable text
-  _errMsg(err) {
-    if (!err) return "Unknown error"
-    if (typeof err === "string") return err
-    return err.message || String(err)
   }
 }

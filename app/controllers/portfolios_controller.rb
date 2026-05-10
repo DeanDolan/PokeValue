@@ -3,11 +3,20 @@ class PortfoliosController < ApplicationController
 
   # Default condition options used by the portfolio condition filter
   DEFAULT_CONDITIONS = [
-    "Mint Sealed", "Loosely Sealed", "Unsealed",
-    "Big Tear", "Small Tear",
-    "Big Imperfections", "Small Imperfections",
-    "Pressure Marks", "Slightly Dented", "Heavy Dented", "Damaged",
-    "Box Only", "Contents Only"
+    "Mint Sealed",
+    "Loosely Sealed",
+    "Mini Tear/Hole (<2cm)",
+    "Unsealed",
+    "Small Tear (>2cm)",
+    "Big Tear (>1 inch)",
+    "Small Imperfections",
+    "Big Imperfections",
+    "Pressure Marks",
+    "Slightly Dented",
+    "Heavy Dented",
+    "Damaged",
+    "Box Only",
+    "Contents Only"
   ]
 
   # Loads the user's portfolio holdings and calculates overview totals
@@ -27,7 +36,7 @@ class PortfoliosController < ApplicationController
 
       @eras = @holdings.map(&:era).compact.uniq.sort
       @types = @holdings.map(&:product_type).compact.uniq.sort
-      @conditions = (@holdings.map(&:condition).compact.uniq + DEFAULT_CONDITIONS).uniq.sort
+      @conditions = (@holdings.map(&:condition).compact.uniq + DEFAULT_CONDITIONS).uniq
       @realised_pl_total = realised_pl_total_for(current_user)
     else
       @holdings = []

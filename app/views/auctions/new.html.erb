@@ -1,32 +1,22 @@
-<%
-# Builds safe paths for the auction form and back button.
-back_to_auction_path = respond_to?(:auction_path) ? (auction_path rescue "#") : "#"
-create_auction_path = respond_to?(:auctions_path) ? (auctions_path rescue "#") : "#"
-
-# Condition options shown in the auction form.
-conditions = [
-  "Mint Condition",
-  "Loosely Sealed",
-  "Unsealed",
-  "Big Tear",
-  "Small Tear",
-  "Big Imperfections",
-  "Small Imperfections",
-  "Pressure Marks",
-  "Slightly Dented",
-  "Heavy Dented",
-  "Damaged",
-  "Box Only",
-  "Contents Only"
-]
+<%#
+References:
+- Rails form helpers:
+  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+- Rails Active Storage file uploads:
+  https://guides.rubyonrails.org/active_storage_overview.html
+- Bootstrap forms and grid:
+  https://getbootstrap.com/docs/5.3/forms/overview/
+  https://getbootstrap.com/docs/5.3/layout/grid/
+- MDN DOM events:
+  https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
 %>
 
 <div class="container py-4">
   <style>
-    .au-new-wrap{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.06)}
+    .au-new-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.06)}
     .au-new-title{font-size:1.2rem;margin:0 0 10px}
     .au-new-muted{color:#6b7280;font-size:.9rem}
-    .au-new-rowlabel{font-size:.85rem}
+    .au-new-label{font-size:.85rem}
     .au-new-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .au-new-note{font-size:.78rem;color:#6b7280;line-height:1.35}
     .au-new-count{text-align:right;font-size:.78rem;color:#6b7280;margin-top:4px}
@@ -37,74 +27,79 @@ conditions = [
       <div class="au-new-title">Create Auction</div>
       <div class="au-new-muted">Add the auction details, choose reserve status, and upload up to 4 images.</div>
     </div>
-    <%= link_to "← Back to Auction", back_to_auction_path, class: "btn btn-outline-secondary btn-sm" %>
+
+    <%= link_to "← Back to Auction", auction_path, class: "btn btn-outline-secondary btn-sm" %>
   </div>
 
-  <div class="au-new-wrap">
-    <%= form_with url: create_auction_path, method: :post, local: true, html: { multipart: true, id: "auction-form" } do %>
+  <div class="au-new-card">
+    <%# Multipart form allows up to four uploaded images. %>
+    <%= form_with url: auctions_path, method: :post, local: true, html: { multipart: true, id: "auction-form" } do %>
       <div class="row g-2 mb-3">
         <div class="col-12">
-          <label class="form-label mb-1 au-new-rowlabel">Auction Description</label>
-          <%= text_area_tag :auction_description, "", rows: 4, maxlength: 250, class: "form-control", placeholder: "Describe exactly what is being auctioned...", required: true, id: "au-auction-description" %>
-          <div id="au-description-count" class="au-new-count">0 / 250</div>
+          <label class="form-label mb-1 au-new-label" for="auction-description">Auction Description</label>
+          <%= text_area_tag :auction_description,
+                            "",
+                            rows: 4,
+                            maxlength: 250,
+                            class: "form-control",
+                            placeholder: "Describe exactly what is being auctioned...",
+                            required: true,
+                            id: "auction-description" %>
+          <div id="auction-description-count" class="au-new-count">0 / 250</div>
         </div>
       </div>
 
       <div class="row g-2 mb-1">
         <div class="col-12 col-lg-3">
-          <label class="form-label mb-1 au-new-rowlabel">Condition</label>
-          <select class="form-select" id="au-condition" name="condition" required>
-            <option value=""></option>
-            <% conditions.each do |c| %>
-              <option value="<%= c %>"><%= c %></option>
-            <% end %>
-          </select>
+          <label class="form-label mb-1 au-new-label" for="auction-condition">Condition</label>
+          <%= select_tag :condition,
+                         options_for_select(auction_conditions),
+                         include_blank: true,
+                         class: "form-select",
+                         id: "auction-condition",
+                         required: true %>
         </div>
 
         <div class="col-12 col-lg-3">
-          <label class="form-label mb-1 au-new-rowlabel">Reserve Status</label>
-          <select class="form-select" id="au-reserve-status" name="reserve_status" required>
-            <option value=""></option>
-            <option value="Reserve">Reserve</option>
-            <option value="No Reserve">No Reserve</option>
-          </select>
+          <label class="form-label mb-1 au-new-label" for="auction-reserve-status">Reserve Status</label>
+          <%= select_tag :reserve_status,
+                         options_for_select(Auction::RESERVE_STATUSES),
+                         include_blank: true,
+                         class: "form-select",
+                         id: "auction-reserve-status",
+                         required: true %>
         </div>
 
         <div class="col-12 col-lg-3">
-          <label class="form-label mb-1 au-new-rowlabel">Auction Time Length</label>
-          <select class="form-select" id="au-auction-duration" name="auction_duration" required>
-            <option value=""></option>
-            <option value="1_minute">1 min</option>
-            <option value="5_minutes">5 mins</option>
-            <option value="10_minutes">10 mins</option>
-            <option value="30_minutes">30 mins</option>
-            <option value="1_hour">1 hour</option>
-            <option value="3_hours">3 hours</option>
-            <option value="6_hours">6 hours</option>
-            <option value="12_hours">12 hours</option>
-            <option value="1_day">1 day</option>
-            <option value="3_days">3 days</option>
-            <option value="1_week">1 week</option>
-          </select>
+          <label class="form-label mb-1 au-new-label" for="auction-duration">Auction Time Length</label>
+          <%= select_tag :auction_duration,
+                         options_for_select(auction_duration_select_options),
+                         include_blank: true,
+                         class: "form-select",
+                         id: "auction-duration",
+                         required: true %>
         </div>
 
         <div class="col-12 col-lg-3">
-          <label class="form-label mb-1 au-new-rowlabel">Reserve Price (€)</label>
-          <%= text_field_tag :reserve_price, "", class: "form-control", inputmode: "decimal", placeholder: "e.g. 100.00", id: "au-reserve-price" %>
+          <label class="form-label mb-1 au-new-label" for="auction-reserve-price">Reserve Price (€)</label>
+          <%= text_field_tag :reserve_price,
+                             "",
+                             class: "form-control",
+                             inputmode: "decimal",
+                             placeholder: "e.g. 100.00",
+                             id: "auction-reserve-price" %>
         </div>
       </div>
 
       <div class="row g-2 mb-3">
         <div class="col-12">
-          <div id="au-reserve-note" class="au-new-note">
-            Select a reserve status to continue.
-          </div>
+          <div id="auction-reserve-note" class="au-new-note">Select a reserve status to continue.</div>
         </div>
       </div>
 
       <div class="row g-2 mb-3">
         <div class="col-12">
-          <label class="form-label mb-1 au-new-rowlabel">Images (up to 4)</label>
+          <label class="form-label mb-1 au-new-label">Images (up to 4)</label>
 
           <div class="au-new-img-grid">
             <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
@@ -124,53 +119,50 @@ conditions = [
   </div>
 
   <script>
-    (function () {
+    (() => {
       function initAuctionForm() {
-        const reserveStatus = document.getElementById("au-reserve-status");
-        const reservePrice = document.getElementById("au-reserve-price");
-        const reserveNote = document.getElementById("au-reserve-note");
-        const description = document.getElementById("au-auction-description");
-        const descriptionCount = document.getElementById("au-description-count");
+        const reserveStatus = document.getElementById("auction-reserve-status")
+        const reservePrice = document.getElementById("auction-reserve-price")
+        const reserveNote = document.getElementById("auction-reserve-note")
+        const description = document.getElementById("auction-description")
+        const count = document.getElementById("auction-description-count")
 
-        // Keeps the character counter synced with the description field.
-        if (description && descriptionCount) {
-          const syncDescriptionCount = function () {
-            descriptionCount.textContent = String(description.value.length) + " / 250";
-          };
+        if (description && count && description.dataset.bound !== "1") {
+          description.dataset.bound = "1"
 
-          description.addEventListener("input", syncDescriptionCount);
-          syncDescriptionCount();
+          const syncCount = () => {
+            count.textContent = `${description.value.length} / 250`
+          }
+
+          description.addEventListener("input", syncCount)
+          syncCount()
         }
 
-        if (!reserveStatus || !reservePrice || !reserveNote) return;
+        if (!reserveStatus || !reservePrice || !reserveNote || reserveStatus.dataset.bound === "1") return
+        reserveStatus.dataset.bound = "1"
 
-        // Enables reserve price only when Reserve is selected.
-        const syncReserveFields = function () {
-          const value = reserveStatus.value;
-          const isReserve = value === "Reserve";
+        const syncReserve = () => {
+          const reserve = reserveStatus.value === "Reserve"
 
-          reservePrice.disabled = !isReserve;
-          reservePrice.required = isReserve;
+          reservePrice.disabled = !reserve
+          reservePrice.required = reserve
+          if (!reserve) reservePrice.value = ""
 
-          if (!isReserve) {
-            reservePrice.value = "";
-          }
-
-          if (value === "Reserve") {
-            reserveNote.textContent = "Reserve selected. The auction can only be ended early if the reserve price has not been met.";
-          } else if (value === "No Reserve") {
-            reserveNote.textContent = "No Reserve selected. Reserve price is disabled. The highest final bid wins, regardless of amount.";
+          if (reserveStatus.value === "Reserve") {
+            reserveNote.textContent = "Reserve selected. The auction can only be ended early if the reserve price has not been met."
+          } else if (reserveStatus.value === "No Reserve") {
+            reserveNote.textContent = "No Reserve selected. Reserve price is disabled. The highest final bid wins, regardless of amount."
           } else {
-            reserveNote.textContent = "Select a reserve status to continue.";
+            reserveNote.textContent = "Select a reserve status to continue."
           }
-        };
+        }
 
-        reserveStatus.addEventListener("change", syncReserveFields);
-        syncReserveFields();
+        reserveStatus.addEventListener("change", syncReserve)
+        syncReserve()
       }
 
-      document.addEventListener("DOMContentLoaded", initAuctionForm);
-      document.addEventListener("turbo:load", initAuctionForm);
-    })();
+      document.addEventListener("DOMContentLoaded", initAuctionForm)
+      document.addEventListener("turbo:load", initAuctionForm)
+    })()
   </script>
 </div>

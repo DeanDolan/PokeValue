@@ -1,6 +1,6 @@
 class RafflesController < ApplicationController
-  before_action :require_login, only: [ :new, :create, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle, :destroy ]
-  before_action :set_raffle, only: [ :show, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :end_raffle, :destroy ]
+  before_action :require_login, only: [ :new, :create, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :destroy ]
+  before_action :set_raffle, only: [ :show, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :destroy ]
 
   def index
     @raffle_filters = {
@@ -117,8 +117,7 @@ class RafflesController < ApplicationController
     random_count = params[:random_quantity].to_i
 
     assign_name = params[:assigned_name].to_s.strip
-    assign_reason = params[:assignment_reason].presence || params[:assign_reason].presence || params[:reason].presence
-    assign_reason = assign_reason.to_s.strip
+    assign_reason = params[:assignment_reason].to_s.strip
 
     if current_user.id == @raffle.host_id.to_i
       target_user_id = nil
@@ -155,9 +154,10 @@ class RafflesController < ApplicationController
 
     ActiveRecord::Base.transaction do
       chosen_numbers.each do |number|
-        attrs = {
+        @raffle.raffle_tickets.create!(
           user_id: target_user_id,
           assigned_name: chosen_name,
+          assignment_reason: assign_reason,
           ticket_number: number,
           paid: false,
           paid_at: nil,
@@ -165,17 +165,7 @@ class RafflesController < ApplicationController
           verified_at: nil,
           revolut_tag: nil,
           amount_paid_cents: @raffle.ticket_price_cents.to_i
-        }
-
-        if RaffleTicket.column_names.include?("assignment_reason")
-          attrs[:assignment_reason] = assign_reason
-        elsif RaffleTicket.column_names.include?("assign_reason")
-          attrs[:assign_reason] = assign_reason
-        elsif RaffleTicket.column_names.include?("reason")
-          attrs[:reason] = assign_reason
-        end
-
-        @raffle.raffle_tickets.create!(attrs)
+        )
       end
     end
 
@@ -306,15 +296,6 @@ class RafflesController < ApplicationController
       format.html { redirect_to raffle_path(@raffle), alert: e.record.errors.full_messages.to_sentence }
       format.json { render json: { ok: false, message: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity }
     end
-  end
-
-  def end_raffle
-    unless @raffle.can_be_ended_by?(current_user)
-      return redirect_to raffle_path(@raffle), alert: "This raffle cannot be ended."
-    end
-
-    move_raffle_to_incompleted!(@raffle)
-    redirect_to raffles_path, notice: "Raffle ended and moved to Incompleted."
   end
 
   def destroy
@@ -464,24 +445,12 @@ class RafflesController < ApplicationController
     (value.to_s.tr(",", ".").to_f * 100).round
   end
 
-  def ticket_assignment_reason(ticket)
-    if ticket.respond_to?(:assignment_reason)
-      ticket.assignment_reason.to_s
-    elsif ticket.respond_to?(:assign_reason)
-      ticket.assign_reason.to_s
-    elsif ticket.respond_to?(:reason)
-      ticket.reason.to_s
-    else
-      ""
-    end
-  end
-
   def build_participant_rows(tickets)
     grouped = tickets.group_by { |ticket| [ ticket.user_id, ticket.display_name ] }
 
     grouped.map do |(user_id, display_name), rows|
       revolut_tags = rows.map(&:revolut_tag).map { |tag| tag.to_s.strip }.reject(&:blank?).uniq
-      assignment_reasons = rows.map { |ticket| ticket_assignment_reason(ticket) }.map(&:strip).reject(&:blank?).uniq
+      assignment_reasons = rows.map { |ticket| ticket.assignment_reason.to_s.strip }.reject(&:blank?).uniq
 
       {
         user_id: user_id,

@@ -17,6 +17,7 @@ class AuctionBid < ApplicationRecord
 
   private
 
+  # Copies the address from the bidder's previous bid when no new address is submitted.
   def inherit_previous_address
     return if saved_address_id.present?
     return unless auction && bidder_id.present?
@@ -25,6 +26,7 @@ class AuctionBid < ApplicationRecord
     self.saved_address = previous.saved_address if previous
   end
 
+  # Stops bids being placed on closed auctions.
   def auction_must_be_running
     return if auction.blank?
 
@@ -32,20 +34,19 @@ class AuctionBid < ApplicationRecord
     errors.add(:auction, "is no longer running") unless auction.running?
   end
 
+  # Requires every new bid to beat the current highest bid.
   def bid_must_beat_previous_bid
     return if auction.blank?
 
-    previous_cents = auction.current_bid_cents_value
-
-    if amount_cents.to_i <= previous_cents.to_i
-      errors.add(:amount_cents, "must be higher than the previous bid")
-    end
+    errors.add(:amount_cents, "must be higher than the previous bid") if amount_cents.to_i <= auction.current_bid_cents_value.to_i
   end
 
+  # Requires a saved delivery address for the first bid.
   def address_must_be_present
     errors.add(:saved_address, "must be selected for your first bid on this auction") if saved_address.blank?
   end
 
+  # Stops bidders using another user's saved address.
   def address_must_belong_to_bidder
     return if saved_address.blank? || bidder.blank?
     return if saved_address.user_id.to_i == bidder.id.to_i
@@ -53,7 +54,10 @@ class AuctionBid < ApplicationRecord
     errors.add(:saved_address, "must belong to the bidder")
   end
 
+  # Keeps the auction table bid count correct.
   def sync_auction_bid_count
     auction.update_columns(bids_count: auction.auction_bids.count)
+  rescue
+    nil
   end
 end

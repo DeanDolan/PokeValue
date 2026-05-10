@@ -1,76 +1,37 @@
-# app/controllers/admin/product_values_controller.rb
 module Admin
-  class ProductValuesController < ApplicationController
-    include Authentication
-
-    before_action :require_admin
-
+  class ProductValuesController < BaseController
+    # Updates one product value from an admin edit form.
     def update
-      sku = params[:sku].to_s
+      sku = params[:sku].to_s.strip
       raise ActiveRecord::RecordNotFound unless sku.match?(/\A[a-zA-Z0-9\-_]+(?:--[a-zA-Z0-9\-_]+)*\z/)
       raise ActiveRecord::RecordNotFound if sku.length > 220
 
-      raw = params[:value].to_s
-      value = begin
-        BigDecimal(raw)
-      rescue
-        nil
-      end
-      raise ActionController::BadRequest if value.nil?
-      raise ActionController::BadRequest if value < 0
-      raise ActionController::BadRequest if value > 1_000_000
-
-      name = params[:name].to_s.strip
-      name = "Product" if name.blank?
-
-      return_to = safe_return_to(params[:return_to])
+      product = nil
 
       Product.transaction do
         product = Product.lock.find_or_initialize_by(sku: sku)
-        product.name = name
+        old_value = product.value
+
+        product.name = params[:name].to_s.strip.presence || "Product"
+        product.value = decimal_param(params[:value], max: 1_000_000)
         product.set_name = params[:set_name].to_s.strip if product.respond_to?(:set_name=)
         product.era = params[:era].to_s.strip if product.respond_to?(:era=)
         product.product_type = params[:product_type_name].to_s.strip if product.respond_to?(:product_type=)
         product.image = params[:image_url].to_s.strip if product.respond_to?(:image=)
-        old = product.value
-        product.value = value
         product.save!
 
-        Product.refresh_holdings_for_product!(product)
+        Product.refresh_holdings_for_product!(product) if Product.respond_to?(:refresh_holdings_for_product!)
 
-        AdminAudit.create!(
-          user_id: current_user.id,
-          sku: sku,
-          old_value: old,
-          new_value: value,
-          ip: request.remote_ip,
-          user_agent: request.user_agent.to_s
+        AdminAudit.record_change!(
+          user: current_user,
+          product: product,
+          old_value: old_value,
+          new_value: product.value,
+          request: request
         )
       end
 
-      redirect_to(return_to || portfolio_path, notice: "Value updated.", status: :see_other)
-    end
-
-    private
-
-    def require_admin
-      ok =
-        if respond_to?(:admin_signed_in?)
-          admin_signed_in?
-        elsif respond_to?(:current_user) && current_user
-          current_user.respond_to?(:admin?) ? current_user.admin? : false
-        else
-          false
-        end
-      redirect_to(root_path, alert: "Not authorized.", status: :see_other) unless ok
-    end
-
-    def safe_return_to(path)
-      p = path.to_s
-      return nil if p.blank?
-      return nil unless p.start_with?("/")
-      return nil if p.start_with?("//")
-      p
+      redirect_to safe_return_to(params[:return_to], fallback: portfolio_path), notice: "Value updated.", status: :see_other
     end
   end
 end

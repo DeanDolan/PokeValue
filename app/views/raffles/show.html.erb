@@ -1,23 +1,38 @@
 <%
-# Main page permissions and state flags
+# I use this to check if the logged-in user is the person who created/hosted this raffle.
+# This is important because only the host should be able to run the raffle, assign tickets, verify payments, etc.
 is_host = current_user && @raffle.host_id.to_i == current_user.id.to_i
+
+# I use this to check if the raffle has already finished and has a winner.
 is_completed = @raffle.completed?
+
+# I use this to check if the raffle is still active, meaning tickets can still be bought or assigned.
 is_active = @raffle.active?
+
+# I use this so the page can automatically spin/reveal the winner if the URL has auto_spin=1 or reveal=1.
 auto_spin = params[:auto_spin].to_s == "1" || params[:reveal].to_s == "1"
+
+# I use this to check if the controller has given admin permission to manage raffles.
 admin_can_manage_raffles = defined?(@admin_can_manage_raffles) && @admin_can_manage_raffles
+
+# I use this to decide if the Delete Raffle button should be available.
+# The raffle can only be deleted by the host or by an admin.
 can_delete_raffle = current_user.present? && (is_host || admin_can_manage_raffles)
 
-# Stores the current user id so completed raffle reveal state can be unique per user
+# I store the current user's id so the winner reveal can be saved separately for each user in localStorage.
 current_user_id_for_reveal = current_user&.id.to_i
 
-# Controls whether completed raffle winner details should be hidden until the wheel reveal finishes
+# I use this to hide the completed raffle winner until the wheel reveal has happened.
 winner_reveal_required = is_completed && current_user.present?
+
+# I use this to decide if the Reveal Winner button should be shown.
 can_spin_reveal_winner = is_completed && current_user.present?
 
-# Limits long participant names inside wheel and ticket chips
+# I limit long names so they do not break the ticket chips or the wheel labels.
 max_name_length = 24
 
-# Converts sold tickets into compact wheel entries
+# I convert all sold tickets into a smaller format that JavaScript can use for the wheel.
+# Each ticket gets its number, shortened name, display label and user id.
 ticket_items = @tickets.sort_by(&:ticket_number).map do |ticket|
   short_name = ticket.display_name.to_s[0, max_name_length]
   {
@@ -28,7 +43,8 @@ ticket_items = @tickets.sort_by(&:ticket_number).map do |ticket|
   }
 end
 
-# Finds the current user's ticket numbers for the "Your Tickets" section
+# I find all ticket numbers that belong to the current user.
+# These are shown later in the "Your Tickets" section.
 user_ticket_numbers =
   if current_user
     @tickets.select { |ticket| ticket.user_id.to_i == current_user.id.to_i }.map(&:ticket_number).sort
@@ -36,48 +52,82 @@ user_ticket_numbers =
     []
   end
 
-# Core ticket and payment display data
+# I keep the available ticket numbers here so the user can pick exact numbers to buy.
 available_numbers = @available_numbers || []
+
+# I check if the current user has tickets and if all of their tickets are marked as paid.
 my_paid_all = @my_tickets.any? && @my_tickets.all?(&:paid?)
+
+# I store the winning person's display name.
+# Safe navigation is used because there may not be a winner yet.
 winning_name = @winning_ticket&.display_name.to_s
+
+# I store the winning ticket number.
 winning_number = @winning_ticket&.ticket_number.to_i
+
+# I check if the current user is an entrant in the raffle.
 entrant_viewer = current_user.present? && @tickets.any? { |ticket| ticket.user_id.to_i == current_user.id.to_i }
+
+# I get the current user's Revolut tag from their account.
 my_revolut_tag = current_user&.revolut_tag.to_s
+
+# I get the host's Revolut tag so entrants can reveal it when they need to pay.
 host_revolut_tag = @raffle.revolut_tag.to_s
+
+# These are the options the host can choose from when assigning tickets manually.
 assignment_reason_options = ["Mini Raffle", "Free Ticket(s)"]
 
-# Builds a simple non-overlapping star display from an average score.
+# I use this small helper to turn an average rating into star HTML.
+# It also stops the rating from going below 0 or above 5.
 stars = lambda do |avg|
   value = avg.to_f
   value = 0.0 if value < 0
   value = 5.0 if value > 5
 
+  # I round to the nearest 0.5 so I can show full stars and half stars.
   rounded = ((value * 2).round / 2.0)
   full = rounded.floor
   half = (rounded - full) >= 0.5
 
+  # I build the star HTML parts here.
   parts = []
   full.times { parts << '<span class="pv-rf-rating-star">★</span>' }
   parts << '<span class="pv-rf-rating-half">½</span>' if half
 
+  # html_safe is used because I am intentionally returning small HTML spans for the stars.
   %(<span class="pv-rf-rating-stars">#{parts.join}</span>).html_safe
 end
 
+# I use host_stats for the host's review average and review count.
+# If the controller does not pass it in, I fall back to 0 values.
 host_stats = defined?(@host_stats) && @host_stats ? @host_stats : { avg: 0.0, count: 0 }
+
+# I use this for the list of reviews shown on this raffle page.
 reviews = defined?(@reviews) && @reviews ? @reviews : []
+
+# I use this to check if the current user is allowed to give the host a review.
 can_give_review = defined?(@can_give_review) ? @can_give_review : false
+
+# I use this to stop the same raffle winner reviewing the host more than once.
 already_reviewed_host = defined?(@already_reviewed_host) ? @already_reviewed_host : false
+
+# I use this to check if the person viewing the page is the raffle winner.
 viewer_is_raffle_winner = defined?(@viewer_is_raffle_winner) ? @viewer_is_raffle_winner : false
+
+# I make the review form id unique to this raffle so the show/hide button targets the correct form.
 review_form_id = "raffle-give-review-form-#{@raffle.id}"
 %>
 
 <div class="container-fluid py-3">
   <style>
+    /* I use this as the main vertical layout for all cards on the page. */
     .rf-page-stack{
       display:flex;
       flex-direction:column;
       gap:16px;
     }
+
+    /* This is the reusable card styling used for each section of the raffle page. */
     .rf-card{
       background:#ffffff;
       border-radius:1rem;
@@ -85,22 +135,30 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       box-shadow:0 10px 25px rgba(15,23,42,0.08);
       padding:16px;
     }
+
+    /* Main raffle title styling. */
     .rf-title{
       margin:0;
       font-size:1.45rem;
       font-weight:700;
     }
+
+    /* Smaller grey text under the title for raffle type, host and created date. */
     .rf-sub{
       color:#6b7280;
       font-size:.88rem;
       margin-top:4px;
     }
+
+    /* This grid holds the five stat boxes at the top of the page. */
     .rf-stat-grid{
       display:grid;
       grid-template-columns:repeat(5,minmax(0,1fr));
       gap:10px;
       margin-top:14px;
     }
+
+    /* Each individual stat box. */
     .rf-stat{
       border:1px solid #e5e7eb;
       border-radius:12px;
@@ -108,22 +166,30 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       text-align:center;
       background:#fafafa;
     }
+
+    /* Small label inside each stat box. */
     .rf-stat-label{
       font-size:.72rem;
       color:#6b7280;
       margin-bottom:4px;
     }
+
+    /* Main value inside each stat box. */
     .rf-stat-value{
       font-size:1rem;
       font-weight:700;
       color:#111827;
     }
+
+    /* Grid layout for uploaded raffle images. */
     .rf-gallery{
       display:grid;
       grid-template-columns:repeat(2,minmax(0,1fr));
       gap:10px;
       margin-top:14px;
     }
+
+    /* Styling for the raffle images so they stay the same size and crop nicely. */
     .rf-gallery img{
       width:100%;
       height:220px;
@@ -131,15 +197,21 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-radius:12px;
       border:1px solid #e5e7eb;
     }
+
+    /* Lets the participant table scroll sideways if the screen is too small. */
     .rf-table-wrap{
       overflow-x:auto;
     }
+
+    /* Main participant table styling. */
     .rf-table{
       width:100%;
       border-collapse:collapse;
       min-width:1120px;
       font-size:.8rem;
     }
+
+    /* Table header cells. */
     .rf-table thead th{
       background:#f9fafb;
       font-weight:700;
@@ -150,6 +222,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-bottom:1px solid #e5e7eb;
       white-space:nowrap;
     }
+
+    /* Table body cells. */
     .rf-table tbody td{
       padding:9px 10px;
       border-bottom:1px solid #f1f5f9;
@@ -157,19 +231,29 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       vertical-align:middle;
       color:#111827;
     }
+
+    /* Highlights the row belonging to the current logged-in user. */
     .rf-row-self{
       background:#eff6ff;
     }
+
+    /* Makes the current user's name stand out in the participant table. */
     .rf-name-self{
       font-weight:700;
       color:#1d4ed8;
     }
+
+    /* Reusable muted grey text. */
     .rf-muted{
       color:#6b7280;
     }
+
+    /* Makes the host account link bold. */
     .rf-host-link{
       font-weight:800;
     }
+
+    /* Scrollable box that shows all ticket numbers already taken. */
     .rf-ticket-box{
       max-height:240px;
       overflow:auto;
@@ -178,6 +262,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:10px;
       background:#fafafa;
     }
+
+    /* The small pill/chip used for each ticket number. */
     .rf-number-chip{
       display:inline-flex;
       align-items:center;
@@ -192,27 +278,37 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       font-weight:700;
       color:#111827;
     }
+
+    /* Blue ticket chip used for tickets owned by the current user. */
     .rf-number-chip-self{
       background:#dbeafe;
       border-color:#93c5fd;
       color:#1d4ed8;
     }
+
+    /* Small help text under form fields. */
     .rf-form-note{
       color:#6b7280;
       font-size:.78rem;
       margin-top:4px;
     }
+
+    /* Layout for the ticket buying/assigning form. */
     .rf-purchase-grid{
       display:grid;
       grid-template-columns:1fr;
       gap:10px;
     }
+
+    /* Layout for the buy/assign buttons. */
     .rf-purchase-actions{
       display:flex;
       gap:8px;
       flex-wrap:wrap;
       align-items:center;
     }
+
+    /* Green box used when the raffle has a winner. */
     .rf-winner-box{
       border:1px solid #dcfce7;
       background:#f0fdf4;
@@ -221,6 +317,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:12px;
       font-weight:700;
     }
+
+    /* Red box used when the raffle ended without completion. */
     .rf-ended-box{
       border:1px solid #fee2e2;
       background:#fef2f2;
@@ -229,6 +327,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:12px;
       font-weight:700;
     }
+
+    /* Blacked out hidden text used before the winner is revealed. */
     .rf-blackout{
       display:inline-block;
       background:#111827;
@@ -238,6 +338,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       min-width:130px;
       user-select:none;
     }
+
+    /* Review card container. */
     .rf-review-card{
       background:#fff;
       border:1px solid #e5e7eb;
@@ -245,6 +347,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:12px;
       margin-bottom:10px;
     }
+
+    /* Top row of each review card. */
     .rf-review-top{
       display:flex;
       justify-content:space-between;
@@ -252,31 +356,43 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       align-items:flex-start;
       flex-wrap:wrap;
     }
+
+    /* Reviewer name styling. */
     .rf-review-name{
       font-weight:900;
       font-size:.9rem;
     }
+
+    /* Review stars row. */
     .rf-review-stars{
       display:flex;
       align-items:center;
       gap:6px;
       white-space:nowrap;
     }
+
+    /* Review comment body. */
     .rf-review-body{
       margin-top:6px;
       color:#111827;
       font-size:.9rem;
       white-space:pre-wrap;
     }
+
+    /* Review date text. */
     .rf-review-meta{
       color:#6b7280;
       font-size:.8rem;
     }
+
+    /* The give review form starts hidden and is shown when the Give Review button is clicked. */
     .rf-review-form-wrap{
       display:none;
       max-width:460px;
       margin:8px 0 14px;
     }
+
+    /* Wrapper for the visual star rating. */
     .pv-rf-rating-stars{
       display:inline-flex !important;
       align-items:center !important;
@@ -286,6 +402,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       vertical-align:middle !important;
       color:#d4a017 !important;
     }
+
+    /* Full star styling. */
     .pv-rf-rating-star{
       display:inline-block !important;
       position:static !important;
@@ -296,6 +414,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       line-height:1 !important;
       text-shadow:none !important;
     }
+
+    /* Half star styling. */
     .pv-rf-rating-half{
       display:inline-block !important;
       position:static !important;
@@ -308,10 +428,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       font-size:.8em !important;
       text-shadow:none !important;
     }
+
+    /* Main wheel card layout. */
     .rf-wheel-card{
       display:flex;
       flex-direction:column;
     }
+
+    /* Row above the wheel that contains the title and tool buttons. */
     .rf-wheel-controls{
       display:flex;
       align-items:center;
@@ -320,11 +444,15 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       flex-wrap:wrap;
       margin-bottom:12px;
     }
+
+    /* Holds wheel control buttons like focus winner and reset. */
     .rf-wheel-tools{
       display:flex;
       gap:8px;
       flex-wrap:wrap;
     }
+
+    /* The visible square area that contains the canvas wheel and overlays. */
     .rf-wheel-stage{
       position:relative;
       width:50%;
@@ -336,6 +464,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       background:#f8fafc;
       overflow:hidden;
     }
+
+    /* The main canvas where the wheel is drawn. */
     .rf-wheel-canvas{
       width:100%;
       height:100%;
@@ -343,9 +473,13 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       cursor:grab;
       background:#ffffff;
     }
+
+    /* Cursor changes while dragging the wheel around. */
     .rf-wheel-canvas.rf-dragging{
       cursor:grabbing;
     }
+
+    /* The fixed pointer arrow that decides which wheel slice is the winner. */
     .rf-wheel-pointer{
       position:absolute;
       top:10px;
@@ -359,6 +493,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       z-index:6;
       filter:drop-shadow(0 2px 3px rgba(0,0,0,0.25));
     }
+
+    /* Large countdown overlay before the wheel starts spinning. */
     .rf-wheel-countdown{
       position:absolute;
       inset:0;
@@ -371,6 +507,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       background:rgba(255,255,255,0.72);
       z-index:7;
     }
+
+    /* Area below the wheel for the reveal button and result text. */
     .rf-wheel-reveal{
       margin-top:12px;
       display:flex;
@@ -379,15 +517,21 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       align-items:center;
       text-align:center;
     }
+
+    /* Winner result text under the wheel. */
     .rf-wheel-result{
       font-weight:800;
       font-size:1.02rem;
       color:#111827;
     }
+
+    /* Makes the winning ticket number stand out. */
     .rf-wheel-result-number{
       color:#111827;
       font-weight:800;
     }
+
+    /* Overlay that appears on top of the wheel when the winner is revealed. */
     .rf-winner-overlay{
       position:absolute;
       inset:0;
@@ -397,6 +541,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       z-index:8;
       pointer-events:none;
     }
+
+    /* Dark box inside the winner overlay. */
     .rf-winner-overlay-box{
       background:rgba(17,24,39,0.92);
       color:#ffffff;
@@ -407,17 +553,23 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       min-width:300px;
       max-width:80%;
     }
+
+    /* Small title inside the winner overlay. */
     .rf-winner-overlay-title{
       font-size:1rem;
       margin-bottom:8px;
       opacity:.95;
     }
+
+    /* Main winner text inside the overlay. */
     .rf-winner-overlay-main{
       font-size:1.7rem;
       font-weight:800;
       line-height:1.2;
       word-break:break-word;
     }
+
+    /* Confetti canvas that sits above the wheel but does not block clicks. */
     .rf-confetti{
       position:absolute;
       inset:0;
@@ -426,10 +578,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       background:transparent !important;
       background-color:transparent !important;
     }
+
+    /* Makes sure the confetti canvas stays transparent. */
     #raffleConfetti{
       background:transparent !important;
       background-color:transparent !important;
     }
+
+    /* Box containing all available ticket number buttons. */
     .rf-ticket-select{
       width:100%;
       min-height:220px;
@@ -443,6 +599,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       gap:8px;
       align-content:flex-start;
     }
+
+    /* Each clickable ticket number option. */
     .rf-ticket-option{
       position:relative;
       display:inline-flex;
@@ -460,10 +618,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       user-select:none;
       transition:all .12s ease;
     }
+
+    /* Keeps the number text inside the ticket option matching the parent colour. */
     .rf-ticket-option span{
       color:inherit !important;
       background:transparent !important;
     }
+
+    /* Hover effect for ticket options. */
     .rf-ticket-option:hover{
       background:#000000 !important;
       background-color:#000000 !important;
@@ -471,21 +633,29 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       color:#ffffff !important;
       box-shadow:none !important;
     }
+
+    /* Keeps span text white when hovering over a ticket option. */
     .rf-ticket-option:hover span{
       color:#ffffff !important;
       background:transparent !important;
     }
+
+    /* Hides the actual checkbox because the label is being used as the visible button. */
     .rf-ticket-option input{
       position:absolute;
       opacity:0;
       pointer-events:none;
     }
+
+    /* Visual style when a ticket option has been selected. */
     .rf-ticket-option.is-selected{
       background:#ffffff;
       border-color:#000000;
       color:#000000;
       box-shadow:0 0 0 1px rgba(0,0,0,0.12) inset;
     }
+
+    /* Hover style for selected ticket options. */
     .rf-ticket-option.is-selected:hover{
       background:#000000 !important;
       background-color:#000000 !important;
@@ -493,10 +663,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       color:#ffffff !important;
       box-shadow:none !important;
     }
+
+    /* Keeps selected ticket text white on hover. */
     .rf-ticket-option.is-selected:hover span{
       color:#ffffff !important;
       background:transparent !important;
     }
+
+    /* Small circular icon buttons used around the wheel. */
     .rf-icon-btn{
       width:34px;
       height:34px;
@@ -513,10 +687,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       cursor:pointer;
       transition:all .12s ease;
     }
+
+    /* Hover style for the wheel icon buttons. */
     .rf-icon-btn:hover{
       background:#f3f4f6;
       border-color:#9ca3af;
     }
+
+    /* Full screen overlays used for run raffle confirmation and delete confirmation. */
     .rf-confirm-overlay,
     .rf-delete-confirm-overlay{
       position:fixed;
@@ -528,6 +706,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       z-index:99999;
       padding:16px;
     }
+
+    /* The confirmation popup boxes. */
     .rf-confirm-box,
     .rf-delete-confirm-box{
       width:100%;
@@ -539,12 +719,16 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:20px;
       text-align:center;
     }
+
+    /* Title text in the run raffle confirmation popup. */
     .rf-confirm-title{
       font-size:1.1rem;
       font-weight:800;
       color:#111827;
       margin-bottom:10px;
     }
+
+    /* Main confirmation text inside the popup. */
     .rf-confirm-text,
     .rf-delete-confirm-text{
       color:#000000;
@@ -553,6 +737,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       line-height:1.45;
       margin-bottom:18px;
     }
+
+    /* Button row inside confirmation popups. */
     .rf-confirm-actions,
     .rf-delete-confirm-actions{
       display:flex;
@@ -560,6 +746,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       justify-content:center;
       flex-wrap:wrap;
     }
+
+    /* Delete popup Yes and No buttons. */
     .rf-delete-confirm-yes,
     .rf-delete-confirm-no{
       min-width:86px;
@@ -570,14 +758,20 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border:1px solid #000000 !important;
       transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important;
     }
+
+    /* Yes button starts black. */
     .rf-delete-confirm-yes{
       background:#000000 !important;
       color:#ffffff !important;
     }
+
+    /* No button starts white. */
     .rf-delete-confirm-no{
       background:#ffffff !important;
       color:#000000 !important;
     }
+
+    /* Gold hover style for delete confirmation buttons. */
     .rf-delete-confirm-yes:hover,
     .rf-delete-confirm-yes:focus,
     .rf-delete-confirm-yes:active,
@@ -589,6 +783,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-color:#d4af37 !important;
       box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important;
     }
+
+    /* Card used for showing hidden/revealed Revolut tags. */
     .rf-tag-card{
       border:1px solid #e5e7eb;
       border-radius:12px;
@@ -598,6 +794,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       flex-direction:column;
       gap:10px;
     }
+
+    /* Small label above a Revolut tag. */
     .rf-tag-label{
       font-size:.78rem;
       color:#6b7280;
@@ -605,11 +803,15 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       text-transform:uppercase;
       letter-spacing:.04em;
     }
+
+    /* Visible Revolut tag value styling. */
     .rf-tag-value{
       font-size:1rem;
       font-weight:800;
       color:#111827;
     }
+
+    /* Hidden Revolut tag blackout styling. */
     .rf-tag-hidden{
       display:inline-block;
       background:#111827;
@@ -619,6 +821,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       min-width:170px;
       user-select:none;
     }
+
+    /* Blue badge for verified payment. */
     .rf-verified-badge{
       display:inline-flex;
       align-items:center;
@@ -632,6 +836,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       font-weight:800;
       white-space:nowrap;
     }
+
+    /* Green badge for paid tickets. */
     .rf-paid-badge{
       display:inline-flex;
       align-items:center;
@@ -645,6 +851,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       font-weight:800;
       white-space:nowrap;
     }
+
+    /* Dark mode styling for the delete confirmation popup box. */
     :root[data-pv-theme="dark"] .rf-delete-confirm-box,
     html[data-bs-theme="dark"] .rf-delete-confirm-box,
     body[data-bs-theme="dark"] .rf-delete-confirm-box,
@@ -659,6 +867,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       color:#d4af37 !important;
       border-color:#d4af37 !important;
     }
+
+    /* Dark mode styling for delete popup text. */
     :root[data-pv-theme="dark"] .rf-delete-confirm-text,
     html[data-bs-theme="dark"] .rf-delete-confirm-text,
     body[data-bs-theme="dark"] .rf-delete-confirm-text,
@@ -671,6 +881,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
     body:has(.navbar-dark) .rf-delete-confirm-text{
       color:#d4af37 !important;
     }
+
+    /* Dark mode base styling for delete popup buttons. */
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes,
     :root[data-pv-theme="dark"] .rf-delete-confirm-no,
     html[data-bs-theme="dark"] .rf-delete-confirm-yes,
@@ -695,6 +907,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       color:#d4af37 !important;
       border-color:#d4af37 !important;
     }
+
+    /* Dark mode hover/focus/active styling for delete popup buttons. */
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes:hover,
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes:focus,
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes:active,
@@ -760,20 +974,28 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-color:#d4af37 !important;
       box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important;
     }
+
+    /* Dark mode wheel stage styling. */
     :root[data-pv-theme="dark"] .rf-wheel-stage{
       background:#000000 !important;
       background-color:#000000 !important;
       border-color:#d4af37 !important;
     }
+
+    /* Dark mode wheel canvas background. */
     :root[data-pv-theme="dark"] .rf-wheel-canvas{
       background:#000000 !important;
       background-color:#000000 !important;
     }
+
+    /* Keeps confetti transparent in dark mode too. */
     :root[data-pv-theme="dark"] .rf-confetti,
     :root[data-pv-theme="dark"] #raffleConfetti{
       background:transparent !important;
       background-color:transparent !important;
     }
+
+    /* Dark mode wheel pointer styling. */
     :root[data-pv-theme="dark"] .rf-wheel-pointer{
       top:10px !important;
       left:50% !important;
@@ -789,28 +1011,40 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-radius:0 !important;
       filter:drop-shadow(0 2px 3px rgba(212,175,55,0.35)) !important;
     }
+
+    /* Makes sure no pseudo-element appears on the dark mode pointer. */
     :root[data-pv-theme="dark"] .rf-wheel-pointer::after{
       display:none !important;
       content:none !important;
     }
+
+    /* Dark mode countdown overlay styling. */
     :root[data-pv-theme="dark"] .rf-wheel-countdown{
       color:#d4af37 !important;
       background:rgba(42,42,42,0.84) !important;
       background-color:rgba(42,42,42,0.84) !important;
     }
+
+    /* Dark mode winner overlay box. */
     :root[data-pv-theme="dark"] .rf-winner-overlay-box{
       background:rgba(0,0,0,0.94) !important;
       color:#d4af37 !important;
       border:1px solid #d4af37 !important;
     }
+
+    /* Makes all text inside the dark mode winner overlay gold. */
     :root[data-pv-theme="dark"] .rf-winner-overlay-box *{
       color:#d4af37 !important;
     }
+
+    /* Dark mode ticket picker container. */
     :root[data-pv-theme="dark"] .rf-ticket-select{
       background:#000000 !important;
       background-color:#000000 !important;
       border-color:#d4af37 !important;
     }
+
+    /* Dark mode available ticket option base style. */
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option{
       background:#d4af37 !important;
       background-color:#d4af37 !important;
@@ -818,10 +1052,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       border-color:#d4af37 !important;
       box-shadow:none !important;
     }
+
+    /* Dark mode ticket option text. */
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option span{
       color:#000000 !important;
       background:transparent !important;
     }
+
+    /* Dark mode selected/hover/focus ticket option styling. */
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:not(.is-selected):hover,
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:hover,
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:focus,
@@ -837,6 +1075,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       box-shadow:none !important;
       filter:none !important;
     }
+
+    /* Dark mode selected/hover/focus ticket text styling. */
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:not(.is-selected):hover span,
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:hover span,
     :root[data-pv-theme="dark"] .rf-ticket-select .rf-ticket-option:focus span,
@@ -848,6 +1088,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       color:#d4af37 !important;
       background:transparent !important;
     }
+
+    /* Mobile/tablet layout changes. */
     @media (max-width: 992px){
       .rf-stat-grid{
         grid-template-columns:repeat(2,minmax(0,1fr));
@@ -860,34 +1102,49 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
   </style>
 
   <div class="rf-page-stack">
-    <%# Top raffle summary card %>
+    <%# This is the top card with the raffle title, host, status buttons and stats. %>
     <section class="rf-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
         <div>
+          <%# Shows the raffle title. %>
           <h1 class="rf-title"><%= @raffle.title %></h1>
+
+          <%# Shows small raffle details like type, host and created date. %>
           <div class="rf-sub">
+            <%# Shows either Mini Raffle or Raffle depending on the raffle kind. %>
             <%= @raffle.raffle_kind == "mini" ? "Mini Raffle" : "Raffle" %>
+
+            <%# If this is a mini raffle linked to a main raffle, show the main raffle title too. %>
             <% if @raffle.raffle_kind == "mini" && @raffle.main_raffle.present? %>
               · Main Raffle: <%= @raffle.main_raffle.title %>
             <% end %>
+
             · Hosted by
+
+            <%# If the viewer won the raffle, the host name can later turn into a clickable profile link after reveal. %>
             <% if viewer_is_raffle_winner %>
               <span id="raffleHostNamePlain"><%= @raffle.host.username %></span>
               <%= link_to @raffle.host.username, user_path(@raffle.host_id), class: "rf-host-link text-decoration-none", id: "raffleHostNameLink", style: "display:none;" %>
             <% else %>
               <%= @raffle.host.username %>
             <% end %>
+
+            <%# Shows how long ago the raffle was created. %>
             · Created <%= time_ago_in_words(@raffle.created_at) %> ago
           </div>
         </div>
 
+        <%# Buttons on the top right of the card. %>
         <div class="d-flex gap-2 flex-wrap">
+          <%# Takes the user back to the raffles index page. %>
           <%= link_to "Back", raffles_path, class: "btn btn-outline-secondary btn-sm" %>
 
+          <%# The host can only run the raffle if it is active and sold out. %>
           <% if is_host && is_active && @raffle.sold_out? %>
             <%= button_to "Run Raffle", run_raffle_raffle_path(@raffle), method: :post, class: "btn btn-success btn-sm", form: { class: "rf-run-raffle-form" } %>
           <% end %>
 
+          <%# The delete button only appears for the host or admin. %>
           <% if can_delete_raffle %>
             <%= button_to "Delete Raffle",
                   raffle_path(@raffle),
@@ -898,31 +1155,35 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         </div>
       </div>
 
-      <%# Summary statistics for the raffle %>
+      <%# These boxes summarise the raffle quickly. %>
       <div class="rf-stat-grid">
         <div class="rf-stat">
           <div class="rf-stat-label">Ticket Price</div>
           <div class="rf-stat-value"><%= number_to_currency(@raffle.ticket_price_eur, unit: "€") %></div>
         </div>
+
         <div class="rf-stat">
           <div class="rf-stat-label">Sold</div>
           <div class="rf-stat-value"><%= @raffle.sold_tickets_count %> / <%= @raffle.total_tickets %></div>
         </div>
+
         <div class="rf-stat">
           <div class="rf-stat-label">Tickets Left</div>
           <div class="rf-stat-value"><%= @raffle.tickets_left %></div>
         </div>
+
         <div class="rf-stat">
           <div class="rf-stat-label">Amount Paid</div>
           <div class="rf-stat-value"><%= number_to_currency(@paid_amount_cents.to_i / 100.0, unit: "€") %></div>
         </div>
+
         <div class="rf-stat">
           <div class="rf-stat-label">Status</div>
           <div class="rf-stat-value"><%= @raffle.status.capitalize %></div>
         </div>
       </div>
 
-      <%# Raffle image gallery %>
+      <%# Shows up to 4 uploaded raffle images if the raffle has photos attached. %>
       <% if @raffle.photos.attached? %>
         <div class="rf-gallery">
           <% @raffle.photos.first(4).each do |photo| %>
@@ -932,9 +1193,10 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       <% end %>
     </section>
 
-    <%# Participant payment and ticket table %>
+    <%# This card shows all raffle participants, their tickets, payment status and host actions. %>
     <section class="rf-card">
       <h2 class="h5 mb-3">Participants</h2>
+
       <div class="rf-table-wrap">
         <table class="rf-table">
           <thead>
@@ -942,13 +1204,18 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
               <th>Name</th>
               <th>Tickets</th>
               <th>Numbers</th>
+
+              <%# Only the host can see why tickets were assigned. %>
               <% if is_host %>
                 <th>Reason</th>
               <% end %>
+
               <th>Paid</th>
               <th>Verified</th>
               <th>Paid Amount</th>
               <th>Total Amount</th>
+
+              <%# Host sees Revolut tags and verify actions. Normal users only see a basic actions column while active. %>
               <% if is_host %>
                 <th>Revolut Tag</th>
                 <th>Actions</th>
@@ -957,19 +1224,25 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
               <% end %>
             </tr>
           </thead>
+
           <tbody>
+            <%# If there are participant rows, loop through and display each person. %>
             <% if @participant_rows.any? %>
               <% @participant_rows.each do |row| %>
+                <%# Checks if this row belongs to the logged-in user so I can highlight it. %>
                 <% is_self_row = current_user && row[:user_id].to_i == current_user.id.to_i %>
+
                 <tr class="<%= 'rf-row-self' if is_self_row %>">
                   <td class="<%= 'rf-name-self' if is_self_row %>"><%= row[:display_name] %></td>
                   <td><%= row[:ticket_count] %></td>
                   <td><%= row[:ticket_numbers].map { |n| "##{n}" }.join(", ") %></td>
 
+                  <%# Host-only reason column. %>
                   <% if is_host %>
                     <td><%= row[:assignment_reason].presence || "-" %></td>
                   <% end %>
 
+                  <%# Shows whether all of this participant's tickets are marked as paid. %>
                   <td>
                     <% if row[:paid_all] %>
                       <span class="rf-paid-badge">Paid</span>
@@ -977,6 +1250,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                       <span class="rf-muted">No</span>
                     <% end %>
                   </td>
+
+                  <%# Shows whether the host has verified the participant's payment. %>
                   <td>
                     <% if row[:verified_all] %>
                       <span class="rf-verified-badge">Verified</span>
@@ -984,11 +1259,17 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                       <span class="rf-muted">No</span>
                     <% end %>
                   </td>
+
+                  <%# Shows how much this participant has marked as paid. %>
                   <td><%= number_to_currency(row[:paid_amount_cents].to_i / 100.0, unit: "€") %></td>
+
+                  <%# Shows the participant's total amount owed. %>
                   <td><%= number_to_currency(row[:total_amount_cents].to_i / 100.0, unit: "€") %></td>
 
+                  <%# Host-only Revolut tag and verify controls. %>
                   <% if is_host %>
                     <td>
+                      <%# If the entrant has a Revolut tag, hide it until the host clicks Reveal. %>
                       <% if row[:revolut_tag].present? %>
                         <div class="rf-tag-label mb-1">Revolut Tag</div>
                         <div>
@@ -999,7 +1280,9 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                         <span class="rf-muted">None</span>
                       <% end %>
                     </td>
+
                     <td class="d-flex gap-2 justify-content-center flex-wrap">
+                      <%# Reveal button only appears if there is actually a Revolut tag to show. %>
                       <% if row[:revolut_tag].present? %>
                         <button
                           type="button"
@@ -1010,6 +1293,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                         </button>
                       <% end %>
 
+                      <%# Host can verify or unverify this participant's payment. %>
                       <%= button_to(row[:verified_all] ? "Unverify" : "Verify",
                             verify_payment_raffle_path(@raffle),
                             method: :post,
@@ -1017,6 +1301,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                             class: "btn btn-sm #{row[:verified_all] ? 'btn-outline-secondary' : 'btn-primary'}") %>
                     </td>
                   <% elsif is_active %>
+                    <%# Non-host users only get told to use the payment section below if it is their own row. %>
                     <td>
                       <% if is_self_row %>
                         <span class="rf-muted">Use the payment section below</span>
@@ -1028,6 +1313,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                 </tr>
               <% end %>
             <% else %>
+              <%# Empty state if nobody has joined the raffle yet. %>
               <tr>
                 <td colspan="<%= is_host ? 10 : (is_active ? 8 : 7) %>" class="rf-muted">No participants yet.</td>
               </tr>
@@ -1037,7 +1323,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       </div>
     </section>
 
-    <%# Shows every ticket already assigned or purchased %>
+    <%# This shows every ticket number already bought or assigned. %>
     <section class="rf-card">
       <h2 class="h5 mb-3">All Ticket Numbers</h2>
       <div class="rf-ticket-box">
@@ -1051,7 +1337,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       </div>
     </section>
 
-    <%# Ticket purchase or host ticket assignment form %>
+    <%# This section lets users buy tickets, or lets the host assign tickets manually. %>
     <% if current_user && is_active %>
       <section class="rf-card">
         <h2 class="h5 mb-3"><%= is_host ? "Assign Ticket(s)" : "Buy Ticket(s)" %></h2>
@@ -1059,6 +1345,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         <% if available_numbers.any? %>
           <%= form_with url: purchase_tickets_raffle_path(@raffle), method: :post, local: true do %>
             <div class="rf-purchase-grid">
+              <%# Host-only fields for assigning tickets to a name and giving a reason. %>
               <% if is_host %>
                 <div>
                   <label class="form-label">Assign Name</label>
@@ -1075,6 +1362,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                 </div>
               <% end %>
 
+              <%# Exact ticket number picker. %>
               <div>
                 <label class="form-label">Choose Ticket Numbers</label>
                 <div class="rf-ticket-select" id="availableTicketPicker">
@@ -1088,12 +1376,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                 <div class="rf-form-note">You can click individual numbers, drag across numbers, or mix both methods.</div>
               </div>
 
+              <%# Random quantity option if the user does not care which exact ticket numbers they get. %>
               <div>
                 <label class="form-label">Or Random Quantity</label>
                 <%= number_field_tag :random_quantity, nil, min: 1, max: @raffle.tickets_left, class: "form-control", placeholder: "e.g. 3" %>
                 <div class="rf-form-note">Optional. Leave blank if choosing exact numbers or buying all remaining tickets.</div>
               </div>
 
+              <%# Submit buttons for buying/assigning selected tickets or all remaining tickets. %>
               <div class="rf-purchase-actions">
                 <%= submit_tag((is_host ? "Assign Ticket(s)" : "Buy Ticket(s)"), class: "btn btn-primary btn-sm") %>
                 <%= button_tag((is_host ? "Assign All Available" : "Buy All Available"), type: "submit", name: "buy_all_available", value: "1", class: "btn btn-outline-primary btn-sm") %>
@@ -1106,16 +1396,19 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       </section>
     <% end %>
 
-    <%# Current user's ticket management and payment section %>
+    <%# This section appears if the logged-in user owns tickets in an active raffle. %>
     <% if current_user && user_ticket_numbers.any? && is_active %>
       <section class="rf-card">
         <h2 class="h5 mb-3">Your Tickets</h2>
+
+        <%# Shows the user's current ticket numbers. %>
         <div class="mb-3">
           <% user_ticket_numbers.each do |number| %>
             <span class="rf-number-chip rf-number-chip-self">#<%= number %></span>
           <% end %>
         </div>
 
+        <%# Lets the user return selected tickets before the raffle is completed. %>
         <%= form_with url: return_tickets_raffle_path(@raffle), method: :post, local: true do %>
           <div class="mb-3">
             <label class="form-label">Return Selected Tickets</label>
@@ -1129,10 +1422,12 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         <% end %>
       </section>
 
+      <%# The host does not need to pay themselves, so this only appears for entrants. %>
       <% unless is_host %>
         <section class="rf-card">
           <h2 class="h5 mb-3">Pay For Tickets</h2>
 
+          <%# Host Revolut tag is hidden until the entrant clicks Pay For Tickets. %>
           <div class="rf-tag-card mb-3">
             <div class="rf-tag-label">Host Revolut Tag</div>
             <div>
@@ -1144,6 +1439,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
             </div>
           </div>
 
+          <%# Lets the entrant mark all their tickets as paid or unpaid. %>
           <%= form_with url: toggle_paid_raffle_path(@raffle), method: :post, local: true do %>
             <div class="mb-3">
               <label class="form-label">Your Revolut Tag</label>
@@ -1165,20 +1461,24 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       <% end %>
     <% end %>
 
-    <%# Winner or incompleted status section %>
+    <%# This section shows the winner if the raffle is completed, or an ended message if it was not completed. %>
     <% if is_completed %>
       <section class="rf-card">
         <h2 class="h5 mb-3">Winner</h2>
         <div class="rf-winner-box">
           <% if winner_reveal_required %>
+            <%# Hidden winner state before reveal. %>
             <div id="winnerBoxMasked">
               Winner:
               <span class="rf-blackout">Hidden</span>
             </div>
+
+            <%# Actual winner details, hidden until JavaScript reveals it. %>
             <div id="winnerBoxRevealed" style="display:none;">
               Winner: #<%= winning_number %> - <%= winning_name %>
             </div>
           <% else %>
+            <%# If no reveal is required, show winner immediately. %>
             <div id="winnerBoxMasked" style="display:none;"></div>
             <div id="winnerBoxRevealed">
               Winner: #<%= winning_number %> - <%= winning_name %>
@@ -1195,16 +1495,19 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       </section>
     <% end %>
 
-    <%# Review section for the raffle host %>
+    <%# This section shows the host rating, reviews and possibly the Give Review form. %>
     <section class="rf-card">
       <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
         <div>
           <h2 class="h5 mb-1">Reviews</h2>
+
+          <%# Shows the host's average star rating and number of reviews. %>
           <div class="rf-muted" style="font-size:.85rem;">
             Host rating: <span title="<%= "#{host_stats[:avg].to_f.round(1)}/5 (#{host_stats[:count].to_i})" %>"><%= stars.call(host_stats[:avg]) %> (<%= host_stats[:count].to_i %>)</span>
           </div>
         </div>
 
+        <%# Shows the Give Review button only when the current user is allowed to review the host. %>
         <% if can_give_review %>
           <button
             type="button"
@@ -1215,6 +1518,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         <% end %>
       </div>
 
+      <%# Hidden review form that appears when Give Review is clicked. %>
       <% if can_give_review %>
         <div id="<%= review_form_id %>" class="rf-review-form-wrap">
           <%= form_with url: reviews_path, method: :post, local: true do %>
@@ -1239,6 +1543,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         <div class="rf-muted mb-2" style="font-size:.85rem;">You have already reviewed this host.</div>
       <% end %>
 
+      <%# Shows existing reviews if there are any. %>
       <% if reviews.present? && reviews.any? %>
         <% reviews.each do |review| %>
           <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
@@ -1271,21 +1576,26 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       <% end %>
     </section>
 
-    <%# Interactive raffle wheel %>
+    <%# This is the interactive wheel section. %>
     <section class="rf-card rf-wheel-card" id="raffleWheelCard">
       <div class="rf-wheel-controls">
         <h2 class="h5 mb-0">Wheel</h2>
+
+        <%# Wheel tool buttons. %>
         <div class="rf-wheel-tools">
           <button type="button" class="rf-icon-btn" id="focusWinnerButton" title="Show Winner Position" aria-label="Show Winner Position">◎</button>
           <button type="button" class="rf-icon-btn" id="wheelReset" title="Reset" aria-label="Reset">↺</button>
         </div>
       </div>
 
+      <%# This holds the wheel canvas, pointer, countdown, confetti and winner overlay. %>
       <div class="rf-wheel-stage" id="raffleWheelStage">
         <div class="rf-wheel-pointer"></div>
         <canvas id="raffleWheelCanvas" class="rf-wheel-canvas"></canvas>
         <div class="rf-wheel-countdown" id="raffleWheelCountdown"></div>
         <canvas id="raffleConfetti" class="rf-confetti"></canvas>
+
+        <%# Winner overlay shown after the wheel finishes spinning. %>
         <div class="rf-winner-overlay" id="raffleWinnerOverlay">
           <div class="rf-winner-overlay-box">
             <div class="rf-winner-overlay-title">Winner</div>
@@ -1294,6 +1604,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         </div>
       </div>
 
+      <%# Reveal button and winning ticket text below the wheel. %>
       <div class="rf-wheel-reveal">
         <% if can_spin_reveal_winner %>
           <button type="button" class="btn btn-primary btn-sm" id="revealWinnerButton">Reveal Winner</button>
@@ -1324,7 +1635,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
     </section>
   </div>
 
-  <%# Custom confirmation modal shown before the host runs the raffle %>
+  <%# This custom popup appears before the host actually runs the raffle. %>
   <div class="rf-confirm-overlay" id="runRaffleConfirm">
     <div class="rf-confirm-box">
       <div class="rf-confirm-title">Run Raffle</div>
@@ -1336,7 +1647,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
     </div>
   </div>
 
-  <%# Custom confirmation modal shown before deleting the raffle %>
+  <%# This custom popup appears before deleting a raffle. %>
   <div class="rf-delete-confirm-overlay" id="raffleDeleteConfirmOverlay" aria-hidden="true">
     <div class="rf-delete-confirm-box">
       <div class="rf-delete-confirm-text">Are you sure you want to delete this raffle?</div>
@@ -1349,6 +1660,10 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
 
   <script>
     ;(function () {
+      // I wrap everything in this function so the raffle page JavaScript does not leak variables into the global scope.
+
+      // This object brings Rails data into JavaScript.
+      // Most of the wheel and reveal logic uses this instead of trying to read the page again.
       const data = {
         raffleId: <%= @raffle.id %>,
         viewerUserId: <%= current_user_id_for_reveal.to_i %>,
@@ -1363,44 +1678,78 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         viewerIsRaffleWinner: <%= viewer_is_raffle_winner ? "true" : "false" %>
       }
 
+      // Main wheel canvas and its drawing context.
       const wheelCanvas = document.getElementById("raffleWheelCanvas")
       const wheelCtx = wheelCanvas.getContext("2d")
+
+      // Main wheel stage/container.
       const stage = document.getElementById("raffleWheelStage")
+
+      // Countdown overlay shown before the wheel starts spinning.
       const countdownEl = document.getElementById("raffleWheelCountdown")
+
+      // Reveal button and winner result elements.
       const revealButton = document.getElementById("revealWinnerButton")
       const winnerResultMasked = document.getElementById("winnerResultMasked")
       const winnerResultRevealed = document.getElementById("winnerResultRevealed")
       const winnerBoxMasked = document.getElementById("winnerBoxMasked")
       const winnerBoxRevealed = document.getElementById("winnerBoxRevealed")
+
+      // Host name elements. These are used so the winner can later click the host profile after reveal.
       const hostNamePlain = document.getElementById("raffleHostNamePlain")
       const hostNameLink = document.getElementById("raffleHostNameLink")
+
+      // Winner overlay shown on top of the wheel after the spin.
       const overlay = document.getElementById("raffleWinnerOverlay")
       const overlayText = document.getElementById("raffleWinnerOverlayText")
+
+      // Confetti canvas.
       const confettiCanvas = document.getElementById("raffleConfetti")
+
+      // Wheel tool buttons.
       const resetButton = document.getElementById("wheelReset")
       const focusWinnerButton = document.getElementById("focusWinnerButton")
+
+      // Wheel card used for scrolling to the wheel before the spin.
       const wheelCard = document.getElementById("raffleWheelCard")
+
+      // Run raffle confirmation popup elements.
       const confirmOverlay = document.getElementById("runRaffleConfirm")
       const confirmCancel = document.getElementById("runRaffleCancel")
       const confirmRun = document.getElementById("runRaffleConfirmBtn")
       const runForm = document.querySelector(".rf-run-raffle-form")
+
+      // Host Revolut tag reveal elements.
       const revealHostTagButton = document.getElementById("revealHostTagButton")
       const hostTagHidden = document.getElementById("host_tag_hidden")
       const hostTagValue = document.getElementById("host_tag_value")
+
+      // Delete confirmation popup elements.
       const deleteOverlay = document.getElementById("raffleDeleteConfirmOverlay")
       const deleteYes = document.getElementById("raffleDeleteConfirmYes")
       const deleteNo = document.getElementById("raffleDeleteConfirmNo")
+
+      // localStorage/sessionStorage keys.
+      // These include the raffle id and user id so each user has their own reveal state.
       const revealedKey = "raffle_revealed_" + data.raffleId + "_user_" + data.viewerUserId
       const quickRevealedKey = "raffle_quick_reveal_" + data.raffleId + "_user_" + data.viewerUserId
       const autoSpinKey = "raffle_auto_spin_done_" + data.raffleId + "_user_" + data.viewerUserId
 
+      // Audio variables for spin/win sounds.
       let audioContext = null
       let masterGain = null
+
+      // Used to remember which delete form is waiting for confirmation.
       let pendingDeleteForm = null
 
+      // Makes sure tickets is always an array.
       const tickets = Array.isArray(data.tickets) ? data.tickets : []
+
+      // Number of tickets on the wheel.
       const ticketCount = tickets.length
 
+      // I draw the wheel in a large "world" size and scale it down to the visible canvas.
+      // This makes zooming and panning easier.
       const world = {
         size: 30000,
         center: 15000,
@@ -1408,15 +1757,28 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         inner: 10800
       }
 
+      // This is the fixed pointer angle at the top of the wheel.
       const pointerAngle = -Math.PI / 2
+
+      // This calculates how much angle each ticket slice gets.
       const anglePer = ticketCount > 0 ? ((Math.PI * 2) / ticketCount) : (Math.PI * 2)
+
+      // Finds where the winning ticket is in the ticket array.
       let winningIndex = findWinningIndex()
+
+      // Calculates the final rotation needed so the winning ticket lands under the pointer.
       let desiredRotation = calculateDesiredRotation()
 
+      // Current wheel rotation.
       let currentRotation = 0
+
+      // Stops multiple spins happening at once.
       let spinning = false
+
+      // Stores a function that can stop the spin sound.
       let spinSoundStop = null
 
+      // This controls what part of the large wheel world is currently visible.
       const view = {
         x: 0,
         y: 0,
@@ -1424,12 +1786,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         h: world.size
       }
 
+      // Finds the index of the winning ticket in the tickets array.
       function findWinningIndex() {
         return tickets.findIndex(function (ticket) {
           return Number(ticket.number) === Number(data.winningNumber)
         })
       }
 
+      // Works out how far the wheel needs to rotate so the winning slice is under the top pointer.
       function calculateDesiredRotation() {
         if (winningIndex < 0) return 0
 
@@ -1437,15 +1801,19 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         return pointerAngle - winningSliceMiddle
       }
 
+      // Recalculates the winning index and desired rotation after the raffle is run by fetch.
       function refreshWinnerPosition() {
         winningIndex = findWinningIndex()
         desiredRotation = calculateDesiredRotation()
       }
 
+      // Checks if my custom page theme is currently dark mode.
       function isDarkTheme() {
         return document.documentElement.getAttribute("data-pv-theme") === "dark"
       }
 
+      // Resizes the wheel canvas and confetti canvas to match the visible stage size.
+      // devicePixelRatio is used so the canvas is not blurry on high-resolution screens.
       function resizeCanvases() {
         const rect = stage.getBoundingClientRect()
         const dpr = window.devicePixelRatio || 1
@@ -1465,12 +1833,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         renderWheel(currentRotation)
       }
 
+      // Applies the zoom/pan transform so the big wheel world fits into the visible canvas.
       function applyWorldTransform(ctx) {
         const sx = wheelCanvas.width / view.w
         const sy = wheelCanvas.height / view.h
         ctx.setTransform(sx, 0, 0, sy, -view.x * sx, -view.y * sy)
       }
 
+      // Resets zoom and pan back to the full wheel.
       function resetView() {
         view.x = 0
         view.y = 0
@@ -1479,6 +1849,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         renderWheel(currentRotation)
       }
 
+      // Stops the zoomed/panned view from going outside the wheel world.
       function clampView() {
         if (view.x < 0) view.x = 0
         if (view.y < 0) view.y = 0
@@ -1486,6 +1857,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         if (view.y + view.h > world.size) view.y = world.size - view.h
       }
 
+      // Zooms in or out around the mouse position.
       function zoomAt(factor, clientX, clientY) {
         const rect = stage.getBoundingClientRect()
         const px = rect.width ? ((clientX - rect.left) / rect.width) : 0.5
@@ -1505,6 +1877,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         renderWheel(currentRotation)
       }
 
+      // Zooms into the winning slice so it is easier to see where the winner is on the wheel.
       function focusWinnerSlice() {
         if (winningIndex < 0) return
 
@@ -1523,6 +1896,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         renderWheel(currentRotation)
       }
 
+      // Browsers often block audio until the user interacts with the page.
+      // This prepares/unlocks the audio context after a click or pointerdown.
       function ensureAudioUnlocked() {
         if (!window.AudioContext && !window.webkitAudioContext) return null
 
@@ -1549,6 +1924,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         return audioContext
       }
 
+      // Plays the wheel spinning sound.
+      // It uses the Web Audio API instead of needing an audio file.
       function playSpinSound() {
         const ctx = ensureAudioUnlocked()
         if (!ctx || !masterGain) return function () {}
@@ -1579,6 +1956,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         }
       }
 
+      // Plays a short winning sound after the wheel lands.
       function playWinSound() {
         const ctx = ensureAudioUnlocked()
         if (!ctx || !masterGain) return
@@ -1607,6 +1985,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Shows the host's account link after the winner reveal.
       function showHostAccountLink() {
         if (!data.viewerIsRaffleWinner) return
         if (!hostNamePlain || !hostNameLink) return
@@ -1615,6 +1994,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         hostNameLink.style.display = ""
       }
 
+      // Hides the host account link again before reveal.
       function hideHostAccountLink() {
         if (!data.viewerIsRaffleWinner) return
         if (!hostNamePlain || !hostNameLink) return
@@ -1623,6 +2003,8 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         hostNameLink.style.display = "none"
       }
 
+      // Reveals all winner information straight away.
+      // This is used after the spin finishes or when the user has already revealed before.
       function showWinnerInfoImmediate() {
         if (data.winnerRevealRequired) {
           localStorage.setItem(revealedKey, "1")
@@ -1638,6 +2020,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         if (winnerBoxRevealed) winnerBoxRevealed.style.display = ""
       }
 
+      // Hides winner information before the reveal spin happens.
       function hideWinnerInfo() {
         hideHostAccountLink()
 
@@ -1648,6 +2031,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         if (winnerBoxRevealed) winnerBoxRevealed.style.display = "none"
       }
 
+      // Shows a hidden Revolut tag temporarily, then hides it again after 10 seconds.
       function revealTemporarily(hiddenEl, valueEl) {
         if (!hiddenEl || !valueEl) return
 
@@ -1660,6 +2044,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         }, 10000)
       }
 
+      // Runs the confetti animation on the confetti canvas.
       function runConfetti() {
         const ctx = confettiCanvas.getContext("2d")
         const width = confettiCanvas.width
@@ -1667,6 +2052,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
 
         const pieces = []
 
+        // Creates all the confetti pieces with random movement, size, rotation and colour.
         for (let i = 0; i < 180; i += 1) {
           pieces.push({
             x: width / 2,
@@ -1683,6 +2069,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
 
         let frame = 0
 
+        // Draws and moves the confetti each animation frame.
         function step() {
           frame += 1
           ctx.clearRect(0, 0, width, height)
@@ -1702,6 +2089,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
             ctx.restore()
           })
 
+          // Removes dead confetti pieces so the animation can finish.
           for (let i = pieces.length - 1; i >= 0; i -= 1) {
             if (pieces[i].life <= 0 || pieces[i].y > height + 40) {
               pieces.splice(i, 1)
@@ -1719,6 +2107,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         playWinSound()
       }
 
+      // Shows the winner overlay on top of the wheel for 5 seconds.
       function showWinnerOverlay() {
         if (!overlay || !overlayText) return
 
@@ -1730,11 +2119,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         }, 5000)
       }
 
+      // Smoothly scrolls to the wheel before the spin starts.
       function scrollToWheel() {
         if (!wheelCard) return
         wheelCard.scrollIntoView({ behavior: "smooth", block: "start" })
       }
 
+      // Shows a countdown before spinning the wheel.
+      // It returns a Promise so the spin only starts after the countdown finishes.
       function beginCountdown(seconds) {
         return new Promise(function (resolve) {
           let remaining = seconds
@@ -1756,6 +2148,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Measures the text width for a wheel slice label.
       function measureLabelWidth(text, fontSize) {
         wheelCtx.save()
         wheelCtx.font = "900 " + fontSize + "px Arial"
@@ -1764,6 +2157,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         return width
       }
 
+      // Finds the biggest font size that fits inside the slice.
       function fitSliceFontSize(text, radialSpace, tangentialSpace) {
         const maxRadial = Math.max(120, radialSpace * 0.9)
         const maxTangential = Math.max(80, tangentialSpace * 0.82)
@@ -1787,7 +2181,9 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         return Math.max(12, best)
       }
 
+      // Draws the entire wheel on the canvas.
       function renderWheel(rotation) {
+        // Theme colours used by the wheel.
         const darkTheme = isDarkTheme()
         const backgroundColor = darkTheme ? "#000000" : "#ffffff"
         const emptyFillColor = darkTheme ? "#000000" : "#f8fafc"
@@ -1799,16 +2195,20 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         const centerStrokeColor = darkTheme ? "#d4af37" : "#ffffff"
         const centerTextColor = darkTheme ? "#d4af37" : "#ffffff"
 
+        // Clears the canvas before redrawing.
         wheelCtx.save()
         wheelCtx.setTransform(1, 0, 0, 1, 0, 0)
         wheelCtx.clearRect(0, 0, wheelCanvas.width, wheelCanvas.height)
         wheelCtx.restore()
 
+        // Applies zoom and pan transform.
         applyWorldTransform(wheelCtx)
 
+        // Draws the background.
         wheelCtx.fillStyle = backgroundColor
         wheelCtx.fillRect(0, 0, world.size, world.size)
 
+        // If there are no tickets, draw an empty wheel message.
         if (!ticketCount) {
           wheelCtx.beginPath()
           wheelCtx.arc(world.center, world.center, 7000, 0, Math.PI * 2)
@@ -1826,6 +2226,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           return
         }
 
+        // Colours used for wheel slices.
         const colors = darkTheme ? [
           "#d4af37"
         ] : [
@@ -1839,9 +2240,13 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           "#e5e7eb"
         ]
 
+        // Small gap between slices.
         const inset = Math.min(anglePer * 0.04, 0.04)
+
+        // Thickness of the ring where ticket slices are drawn.
         const bandThickness = world.outer - world.inner
 
+        // Draws each ticket slice and its label.
         tickets.forEach(function (ticket, index) {
           const start = (-Math.PI / 2) + (index * anglePer) + inset + rotation
           const end = (-Math.PI / 2) + ((index + 1) * anglePer) - inset + rotation
@@ -1852,6 +2257,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           const fontSize = fitSliceFontSize(ticket.label, radialSpace, tangentialSpace)
           const centerRadius = world.inner + (bandThickness * 0.5)
 
+          // Draws the slice shape as a ring segment.
           wheelCtx.beginPath()
           wheelCtx.moveTo(world.center + Math.cos(start) * world.inner, world.center + Math.sin(start) * world.inner)
           wheelCtx.arc(world.center, world.center, world.outer, start, end)
@@ -1865,6 +2271,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           wheelCtx.lineWidth = darkTheme ? 34 : 24
           wheelCtx.stroke()
 
+          // Clips the label so it stays inside the slice.
           wheelCtx.save()
           wheelCtx.beginPath()
           wheelCtx.moveTo(world.center + Math.cos(start) * world.inner, world.center + Math.sin(start) * world.inner)
@@ -1874,6 +2281,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           wheelCtx.closePath()
           wheelCtx.clip()
 
+          // Rotates and places the label inside the slice.
           wheelCtx.translate(world.center, world.center)
           wheelCtx.rotate(mid)
           wheelCtx.fillStyle = sliceTextColor
@@ -1887,6 +2295,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           wheelCtx.restore()
         })
 
+        // Draws the black centre circle.
         wheelCtx.beginPath()
         wheelCtx.arc(world.center, world.center, world.inner, 0, Math.PI * 2)
         wheelCtx.fillStyle = centerFillColor
@@ -1895,6 +2304,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         wheelCtx.lineWidth = 80
         wheelCtx.stroke()
 
+        // Draws the RAFFLE text in the centre.
         wheelCtx.fillStyle = centerTextColor
         wheelCtx.font = "800 1500px Arial"
         wheelCtx.textAlign = "center"
@@ -1902,10 +2312,12 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         wheelCtx.fillText("RAFFLE", world.center, world.center)
       }
 
+      // Easing function used so the wheel slows down smoothly instead of stopping suddenly.
       function easeOutCubic(t) {
         return 1 - Math.pow(1 - t, 3)
       }
 
+      // Spins the wheel to the winning ticket.
       function spinToWinner() {
         if (!data.completed || winningIndex < 0 || spinning) return
 
@@ -1924,6 +2336,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           const duration = 7000
           const startTime = performance.now()
 
+          // This animation loop rotates the wheel until it reaches the desired winner position.
           function animate(now) {
             const elapsed = now - startTime
             const progress = Math.min(1, elapsed / duration)
@@ -1951,9 +2364,11 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Sets up the page when the raffle is already completed.
       function initializeCompletedState() {
         const alreadyRevealed = localStorage.getItem(revealedKey) === "1" || localStorage.getItem(quickRevealedKey) === "1"
 
+        // If this user already revealed the winner before, show it straight away.
         if (alreadyRevealed && data.winnerRevealRequired) {
           currentRotation = desiredRotation
           renderWheel(currentRotation)
@@ -1967,6 +2382,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           }
         }
 
+        // If the page loaded with auto spin, remove the URL flag and spin once.
         if (data.autoSpin) {
           history.replaceState({}, document.title, window.location.pathname)
 
@@ -1980,11 +2396,13 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         }
       }
 
+      // Sets up the wheel when the raffle is still active.
       function initializeActiveState() {
         currentRotation = 0
         renderWheel(currentRotation)
       }
 
+      // Adds zoom, pan, reset and focus winner controls to the wheel.
       function wireZoomPan() {
         if (resetButton) {
           resetButton.addEventListener("click", function () {
@@ -1998,6 +2416,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           })
         }
 
+        // Mouse wheel zoom.
         wheelCanvas.addEventListener("wheel", function (event) {
           event.preventDefault()
 
@@ -2005,15 +2424,18 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           zoomAt(factor, event.clientX, event.clientY)
         }, { passive: false })
 
+        // Click zoom.
         wheelCanvas.addEventListener("click", function (event) {
           if (spinning) return
           zoomAt(0.65, event.clientX, event.clientY)
         })
 
+        // Drag/pan variables.
         let dragging = false
         let dragStart = null
         let dragOrigin = null
 
+        // Starts dragging.
         wheelCanvas.addEventListener("mousedown", function (event) {
           dragging = true
           wheelCanvas.classList.add("rf-dragging")
@@ -2021,6 +2443,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           dragOrigin = { x: view.x, y: view.y }
         })
 
+        // Moves the view while dragging.
         window.addEventListener("mousemove", function (event) {
           if (!dragging) return
 
@@ -2035,12 +2458,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           renderWheel(currentRotation)
         })
 
+        // Stops dragging.
         window.addEventListener("mouseup", function () {
           dragging = false
           wheelCanvas.classList.remove("rf-dragging")
         })
       }
 
+      // Adds click behaviour to the Reveal Winner button.
       function wireReveal() {
         if (!revealButton) return
 
@@ -2058,18 +2483,22 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Handles the custom "Run Raffle" confirmation popup and AJAX request.
       function wireRunConfirm() {
         if (!runForm || !confirmOverlay || !confirmCancel || !confirmRun) return
 
+        // Stops the form submitting immediately and shows my custom confirmation instead.
         runForm.addEventListener("submit", function (event) {
           event.preventDefault()
           confirmOverlay.style.display = "flex"
         })
 
+        // Cancels the run raffle popup.
         confirmCancel.addEventListener("click", function () {
           confirmOverlay.style.display = "none"
         })
 
+        // Runs the raffle after the host confirms.
         confirmRun.addEventListener("click", function () {
           ensureAudioUnlocked()
           confirmOverlay.style.display = "none"
@@ -2093,6 +2522,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
                 return
               }
 
+              // Updates the JavaScript state using the winner returned from the Rails controller.
               data.completed = true
               data.active = false
               data.autoSpin = true
@@ -2100,6 +2530,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
               data.winningNumber = json.winning_number
               data.winningName = json.winning_name
 
+              // Clears reveal state so the new winner can be revealed properly.
               localStorage.removeItem(revealedKey)
               localStorage.removeItem(quickRevealedKey)
               sessionStorage.removeItem(autoSpinKey)
@@ -2115,6 +2546,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
             })
         })
 
+        // Lets the user close the popup by clicking the dark background.
         confirmOverlay.addEventListener("click", function (event) {
           if (event.target === confirmOverlay) {
             confirmOverlay.style.display = "none"
@@ -2122,9 +2554,11 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Handles the custom delete confirmation popup.
       function wireDeleteConfirm() {
         if (!deleteOverlay || !deleteYes || !deleteNo) return
 
+        // Intercepts delete form submission before it reaches Rails.
         document.addEventListener("submit", function (event) {
           const form = event.target.closest(".rf-delete-confirm-form")
           if (!form) return
@@ -2136,12 +2570,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           deleteOverlay.setAttribute("aria-hidden", "false")
         })
 
+        // User clicked No, so cancel deletion.
         deleteNo.addEventListener("click", function () {
           pendingDeleteForm = null
           deleteOverlay.style.display = "none"
           deleteOverlay.setAttribute("aria-hidden", "true")
         })
 
+        // User clicked Yes, so submit the delete form for real.
         deleteYes.addEventListener("click", function () {
           if (!pendingDeleteForm) return
 
@@ -2159,6 +2595,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           }
         })
 
+        // Clicking the dark overlay also cancels the delete action.
         deleteOverlay.addEventListener("click", function (event) {
           if (event.target !== deleteOverlay) return
 
@@ -2168,6 +2605,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Adds reveal behaviour for host and entrant Revolut tags.
       function wireHostAndEntrantTagReveal() {
         if (revealHostTagButton && hostTagHidden && hostTagValue) {
           revealHostTagButton.addEventListener("click", function () {
@@ -2175,6 +2613,7 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           })
         }
 
+        // Adds reveal buttons for entrant tags in the participant table.
         document.querySelectorAll(".rf-reveal-entrant-tag-btn").forEach(function (button) {
           button.addEventListener("click", function () {
             const hiddenId = button.getAttribute("data-hidden-id")
@@ -2187,12 +2626,14 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         })
       }
 
+      // Handles the exact ticket number picker.
       function wireTicketPicker() {
         const picker = document.getElementById("availableTicketPicker")
         if (!picker) return
 
         let pointerDown = false
 
+        // Makes the visual selected style match whether the hidden checkbox is checked.
         function syncVisual(label) {
           const input = label.querySelector("input[type='checkbox']")
           if (!input) return
@@ -2204,17 +2645,20 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
           }
         }
 
+        // Adds click and drag-to-select behaviour to every ticket option.
         picker.querySelectorAll("[data-ticket-option]").forEach(function (label) {
           const input = label.querySelector("input[type='checkbox']")
 
           syncVisual(label)
 
+          // Clicking/tapping a ticket toggles it.
           label.addEventListener("mousedown", function () {
             pointerDown = true
             input.checked = !input.checked
             syncVisual(label)
           })
 
+          // Dragging over tickets selects them.
           label.addEventListener("mouseenter", function () {
             if (!pointerDown) return
 
@@ -2222,30 +2666,37 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
             syncVisual(label)
           })
 
+          // Prevents the browser's normal label click from double toggling the checkbox.
           label.addEventListener("click", function (event) {
             event.preventDefault()
           })
 
+          // Keeps the styling synced if the input changes another way.
           input.addEventListener("change", function () {
             syncVisual(label)
           })
         })
 
+        // Stops drag selection when the mouse is released.
         window.addEventListener("mouseup", function () {
           pointerDown = false
         })
       }
 
+      // Unlocks audio after the first click.
       document.addEventListener("click", function () {
         ensureAudioUnlocked()
       }, { once: true })
 
+      // Unlocks audio after the first pointer interaction.
       document.addEventListener("pointerdown", function () {
         ensureAudioUnlocked()
       }, { once: true })
 
+      // Resizes the canvas whenever the browser window changes size.
       window.addEventListener("resize", resizeCanvases)
 
+      // Watches for theme changes so the wheel redraws in the correct light/dark colours.
       const themeObserver = new MutationObserver(function () {
         renderWheel(currentRotation)
       })
@@ -2255,15 +2706,19 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         attributeFilter:["data-pv-theme"]
       })
 
+      // Connects all page interactions.
       wireZoomPan()
       wireReveal()
       wireRunConfirm()
       wireDeleteConfirm()
       wireHostAndEntrantTagReveal()
       wireTicketPicker()
+
+      // Sets up canvas size and default view.
       resizeCanvases()
       resetView()
 
+      // Decides whether the page should start in completed mode or active mode.
       if (data.completed) {
         initializeCompletedState()
       } else {

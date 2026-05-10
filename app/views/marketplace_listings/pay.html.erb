@@ -1,38 +1,22 @@
 <%#
 References:
 - Rails form helpers:
-  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+  https://guides.rubyonrails.org/form_helpers.html
 - Rails number helpers:
   https://api.rubyonrails.org/classes/ActionView/Helpers/NumberHelper.html
-- Bootstrap buttons and layout utilities:
+- Bootstrap buttons and flex utilities:
   https://getbootstrap.com/docs/5.3/components/buttons/
   https://getbootstrap.com/docs/5.3/utilities/flex/
-- MDN DOM events:
-  https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
 %>
 
 <%
-# Sets up the listing, accepted offer and seller payment details for the manual Revolut flow.
-l = @listing
+listing = @listing
 offer = @offer
-seller = l.respond_to?(:seller) ? l.seller : nil
-seller_name = seller&.respond_to?(:username) && seller.username.present? ? seller.username : "User ##{l.seller_id}"
-
-# Uses the controller-provided seller Revolut tag first, then safely falls back to the seller account.
-seller_revolut_tag =
-  if defined?(@seller_revolut_tag) && @seller_revolut_tag.present?
-    @seller_revolut_tag.to_s.strip
-  else
-    begin
-      seller&.revolut_tag.to_s.strip
-    rescue
-      ""
-    end
-  end
-
-offer_amount = offer ? (offer.offer_cents.to_i / 100.0) : 0.0
-offer_status = offer ? offer.status.to_s : ""
-can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "accepted"
+seller = listing.seller
+seller_name = marketplace_seller_name(seller, listing.seller_id)
+seller_revolut_tag = @seller_revolut_tag.to_s.strip
+offer_amount = offer.offer_cents.to_i / 100.0
+can_confirm_payment = seller_revolut_tag.present? && offer.accepted?
 %>
 
 <div class="container py-4">
@@ -41,7 +25,6 @@ can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "a
     .mpay-title{font-size:1.35rem;font-weight:900;margin:0 0 6px;color:#111827}
     .mpay-sub{font-size:.88rem;color:#6b7280;margin:0 0 16px}
     .mpay-line{font-size:.9rem;margin:7px 0}
-    .mpay-line strong{font-weight:800}
     .mpay-tag-box{border:1px solid #e5e7eb;border-radius:14px;background:#fafafa;padding:14px;margin:16px 0}
     .mpay-tag-label{font-size:.75rem;color:#6b7280;font-weight:900;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
     .mpay-tag-hidden{display:inline-block;background:#111827;color:#111827;border-radius:6px;padding:.22rem .7rem;min-width:170px;user-select:none}
@@ -55,7 +38,7 @@ can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "a
   </style>
 
   <div class="mb-3">
-    <%= link_to "← Back to Listing", marketplace_listing_path(l), class: "btn btn-link p-0" %>
+    <%= link_to "← Back to Listing", marketplace_listing_path(listing), class: "btn btn-link p-0" %>
   </div>
 
   <div class="mpay-card">
@@ -64,9 +47,8 @@ can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "a
 
     <div class="mpay-line"><strong>Seller:</strong> <%= seller_name %></div>
     <div class="mpay-line"><strong>Offer Amount:</strong> <%= number_to_currency(offer_amount, unit: "€") %></div>
-    <div class="mpay-line"><strong>Status:</strong> <%= offer_status.titleize %></div>
+    <div class="mpay-line"><strong>Status:</strong> <%= marketplace_offer_status_label(offer.status) %></div>
 
-    <%# Seller Revolut tag is hidden by default and revealed only when the buyer clicks Reveal. %>
     <div class="mpay-tag-box">
       <div class="mpay-tag-label">Seller Revolut Tag</div>
 
@@ -88,28 +70,26 @@ can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "a
       <% end %>
     </div>
 
-    <%# Buyer marks payment as sent after paying the seller outside the app. %>
     <% if can_confirm_payment %>
-      <%= form_with url: confirm_payment_marketplace_listing_path(l, offer_id: offer.id), method: :post, local: true, html: { class: "mpay-confirm-form", data: { confirm_title: "Confirm Payment", confirm_text: "Do you want to confirm that you sent this payment?" } } do %>
+      <%= form_with url: confirm_payment_marketplace_listing_path(listing, offer_id: offer.id), method: :post, local: true, html: { class: "mpay-confirm-form", data: { confirm_title: "Confirm Payment", confirm_text: "Do you want to confirm that you sent this payment?" } } do %>
         <div class="mpay-actions">
           <%= submit_tag "Confirm Pay", class: "btn btn-success btn-sm" %>
-          <%= link_to "Cancel", marketplace_listing_path(l), class: "btn btn-outline-secondary btn-sm" %>
+          <%= link_to "Cancel", marketplace_listing_path(listing), class: "btn btn-outline-secondary btn-sm" %>
         </div>
       <% end %>
-    <% elsif offer_status == "paid" %>
+    <% elsif offer.paid? %>
       <div class="mpay-actions">
         <span class="btn btn-outline-success btn-sm disabled">Payment Already Marked As Sent</span>
-        <%= link_to "Back to Listing", marketplace_listing_path(l), class: "btn btn-outline-secondary btn-sm" %>
+        <%= link_to "Back to Listing", marketplace_listing_path(listing), class: "btn btn-outline-secondary btn-sm" %>
       </div>
     <% else %>
       <div class="mpay-actions">
         <span class="btn btn-outline-secondary btn-sm disabled">Payment Cannot Be Confirmed</span>
-        <%= link_to "Back to Listing", marketplace_listing_path(l), class: "btn btn-outline-secondary btn-sm" %>
+        <%= link_to "Back to Listing", marketplace_listing_path(listing), class: "btn btn-outline-secondary btn-sm" %>
       </div>
     <% end %>
   </div>
 
-  <%# Custom confirmation overlay prevents accidental payment confirmation. %>
   <div class="mpay-confirm-overlay" id="mpayConfirmOverlay">
     <div class="mpay-confirm-box">
       <div class="mpay-confirm-title" id="mpayConfirmTitle">Confirm Payment</div>
@@ -124,87 +104,69 @@ can_confirm_payment = seller_revolut_tag.present? && offer && offer_status == "a
 
 <script>
   (() => {
-    function initMarketplacePayPage() {
-      const revealButton = document.getElementById("revealSellerTagButton")
-      const hiddenTag = document.getElementById("sellerTagHidden")
-      const valueTag = document.getElementById("sellerTagValue")
+    const revealButton = document.getElementById("revealSellerTagButton")
+    const hiddenTag = document.getElementById("sellerTagHidden")
+    const valueTag = document.getElementById("sellerTagValue")
 
-      if (revealButton && hiddenTag && valueTag && revealButton.dataset.bound !== "1") {
-        revealButton.dataset.bound = "1"
+    revealButton?.addEventListener("click", () => {
+      const showing = valueTag.style.display !== "none" && valueTag.style.display !== ""
 
-        revealButton.addEventListener("click", () => {
-          const visible = valueTag.style.display !== "none" && valueTag.style.display !== ""
+      hiddenTag.style.display = showing ? "inline-block" : "none"
+      valueTag.style.display = showing ? "none" : "inline-block"
+      revealButton.textContent = showing ? "Reveal" : "Hide"
+    })
 
-          if (visible) {
-            hiddenTag.style.display = "inline-block"
-            valueTag.style.display = "none"
-            revealButton.textContent = "Reveal"
-          } else {
-            hiddenTag.style.display = "none"
-            valueTag.style.display = "inline-block"
-            revealButton.textContent = "Hide"
-          }
-        })
+    let pendingForm = null
+    let confirmed = false
+
+    const overlay = document.getElementById("mpayConfirmOverlay")
+    const title = document.getElementById("mpayConfirmTitle")
+    const text = document.getElementById("mpayConfirmText")
+    const yes = document.getElementById("mpayConfirmYes")
+    const no = document.getElementById("mpayConfirmNo")
+
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest(".mpay-confirm-form")
+      if (!form) return
+
+      if (confirmed) {
+        confirmed = false
+        return
       }
 
-      let pendingForm = null
-      let confirmedForm = false
+      event.preventDefault()
+      pendingForm = form
 
-      const overlay = document.getElementById("mpayConfirmOverlay")
-      const titleEl = document.getElementById("mpayConfirmTitle")
-      const textEl = document.getElementById("mpayConfirmText")
-      const yesBtn = document.getElementById("mpayConfirmYes")
-      const noBtn = document.getElementById("mpayConfirmNo")
+      if (title) title.textContent = form.dataset.confirmTitle || "Confirm"
+      if (text) text.textContent = form.dataset.confirmText || "Do you want to continue?"
+      if (overlay) overlay.style.display = "flex"
+    })
 
-      if (document.body.dataset.mpaySubmitBound !== "1") {
-        document.body.dataset.mpaySubmitBound = "1"
+    yes?.addEventListener("click", () => {
+      if (!pendingForm) return
 
-        document.addEventListener("submit", (event) => {
-          const form = event.target.closest(".mpay-confirm-form")
-          if (!form) return
+      const form = pendingForm
+      pendingForm = null
+      confirmed = true
 
-          if (confirmedForm) {
-            confirmedForm = false
-            return
-          }
+      if (overlay) overlay.style.display = "none"
 
-          event.preventDefault()
-
-          pendingForm = form
-
-          if (titleEl) titleEl.textContent = form.dataset.confirmTitle || "Confirm"
-          if (textEl) textEl.textContent = form.dataset.confirmText || "Do you want to continue?"
-          if (overlay) overlay.style.display = "flex"
-        })
-
-        yesBtn?.addEventListener("click", () => {
-          if (!pendingForm) return
-
-          const form = pendingForm
-          pendingForm = null
-
-          if (overlay) overlay.style.display = "none"
-
-          confirmedForm = true
-          form.requestSubmit()
-        })
-
-        noBtn?.addEventListener("click", () => {
-          pendingForm = null
-
-          if (overlay) overlay.style.display = "none"
-        })
-
-        overlay?.addEventListener("click", (event) => {
-          if (event.target !== overlay) return
-
-          pendingForm = null
-          overlay.style.display = "none"
-        })
+      if (form.requestSubmit) {
+        form.requestSubmit()
+      } else {
+        form.submit()
       }
-    }
+    })
 
-    document.addEventListener("DOMContentLoaded", initMarketplacePayPage)
-    document.addEventListener("turbo:load", initMarketplacePayPage)
+    no?.addEventListener("click", () => {
+      pendingForm = null
+      if (overlay) overlay.style.display = "none"
+    })
+
+    overlay?.addEventListener("click", (event) => {
+      if (event.target !== overlay) return
+      pendingForm = null
+      overlay.style.display = "none"
+    })
   })()
 </script>

@@ -1,4 +1,4 @@
-<div class="container py-3 sets-layout">
+<div class="container py-3">
   <div class="row g-3">
     <%# Era filter sidebar %>
     <aside class="col-12 col-lg-3">
@@ -6,13 +6,13 @@
         <h3 class="h6 mb-3">Era</h3>
 
         <ul class="list-unstyled d-flex flex-column gap-2 mb-0" id="era-list">
-          <% @eras.each_with_index do |era, i| %>
+          <% @eras.each_with_index do |era, index| %>
             <li>
               <button
                 type="button"
-                class="btn w-100 text-start era-item <%= i.zero? ? 'active selected pv-tab-locked' : '' %>"
+                class="btn w-100 text-start era-item <%= index.zero? ? 'active selected pv-tab-locked' : 'btn-outline-secondary' %>"
                 data-era="<%= era %>"
-                aria-pressed="<%= i.zero? ? 'true' : 'false' %>">
+                aria-pressed="<%= index.zero? ? 'true' : 'false' %>">
                 <%= era %>
               </button>
             </li>
@@ -21,7 +21,7 @@
       </div>
     </aside>
 
-    <%# Main sets grid and search area %>
+    <%# Main set grid and search area %>
     <section class="col-12 col-lg-9">
       <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-3">
         <div class="d-flex align-items-center gap-3">
@@ -30,19 +30,20 @@
         </div>
 
         <div class="w-100" style="max-width:340px;">
-          <input id="sets-search" class="form-control" type="search" placeholder="Search sets...">
+          <input id="sets-search" class="form-control" type="search" placeholder="Search sets..." autocomplete="off">
         </div>
       </div>
 
-      <%# Each set card stores its era and name for the JavaScript filters below %>
+      <%# Each set card stores its era and name so JavaScript can filter without another request %>
       <div id="sets-grid" class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3">
-        <% @sets.each do |s| %>
-          <div class="col set-card" data-era="<%= s[:era] %>" data-name="<%= s[:name].downcase %>">
-            <%= link_to set_path(slug: s[:slug]), class: "text-decoration-none text-reset" do %>
+        <% @sets.each do |set| %>
+          <div class="col set-card" data-era="<%= set[:era] %>" data-name="<%= set[:name].downcase %>">
+            <%= link_to set_path(slug: set[:slug]), class: "text-decoration-none text-reset" do %>
               <div class="card h-100">
-                <%= image_tag s[:image_url], alt: s[:name], class: "card-img-top", style: "aspect-ratio:4/3;object-fit:cover;" %>
+                <%= image_tag set[:image_url], alt: set[:name], class: "card-img-top sets-card-img" %>
+
                 <div class="card-body py-2 text-center">
-                  <div class="fw-semibold small"><%= s[:name] %></div>
+                  <div class="fw-semibold small text-truncate"><%= set[:name] %></div>
                 </div>
               </div>
             <% end %>
@@ -58,208 +59,146 @@
 </div>
 
 <style>
+  .sets-card-img{aspect-ratio:4/3;object-fit:cover}
   .era-badge{max-height:56px;object-fit:contain}
   .era-badge.is-mega{max-height:96px}
   .era-badge.is-sv-small{max-height:44px}
   .era-badge.is-ss-smaller{max-height:36px}
-  #era-list .era-item{
-    border-radius:999px !important;
-    font-weight:800 !important;
-    transition:background-color .15s ease,color .15s ease,border-color .15s ease !important;
-  }
-  .border-dashed{border-style:dashed}
+  #era-list .era-item{border-radius:999px!important;font-weight:800!important}
+  .border-dashed{border-style:dashed!important}
 </style>
 
 <script>
   (() => {
-    const eraList = document.getElementById("era-list");
-    const grid = document.getElementById("sets-grid");
-    const empty = document.getElementById("sets-empty");
-    const search = document.getElementById("sets-search");
-    const badge = document.getElementById("era-badge");
-    const count = document.getElementById("result-count");
+    const eraList = document.getElementById("era-list")
+    const grid = document.getElementById("sets-grid")
+    const empty = document.getElementById("sets-empty")
+    const search = document.getElementById("sets-search")
+    const badge = document.getElementById("era-badge")
+    const count = document.getElementById("result-count")
 
-    if (!eraList || !grid) return;
+    if (!eraList || !grid) return
 
-    // Maps each era to its badge image
-    const eraToBadge = {
+    // Maps each era to its badge image.
+    const badges = {
       "Mega Evolution": "<%= @era_badges['Mega Evolution'] %>",
       "Scarlet & Violet": "<%= @era_badges['Scarlet & Violet'] %>",
       "Sword & Shield": "<%= @era_badges['Sword & Shield'] %>"
-    };
+    }
 
-    // Reads theme colour variables from the page
+    const firstEra = "<%= @eras.first %>"
+    const buttons = Array.from(eraList.querySelectorAll("[data-era]"))
+    const cards = Array.from(grid.querySelectorAll(".set-card"))
+
+    // Restores the last selected era and search text.
+    let activeEra = localStorage.getItem("setsActiveEra") || firstEra
+    let query = localStorage.getItem("setsSearch") || ""
+
+    if (!buttons.some((button) => button.dataset.era === activeEra)) activeEra = firstEra
+    if (search) search.value = query
+
+    // Reads one theme CSS variable.
     function cssVar(name) {
-      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     }
 
-    // Colours used for inactive era buttons
-    function normalColours() {
-      return {
-        bg: cssVar("--pv-button-bg") || "#ffffff",
-        text: cssVar("--pv-button-text") || "#000000",
-        border: cssVar("--pv-button-border") || "#000000"
-      };
+    // Applies theme colours directly so the active button stays correct in light and dark mode.
+    function paintButton(button, active) {
+      const bg = active ? cssVar("--pv-active-bg") : cssVar("--pv-button-bg")
+      const text = active ? cssVar("--pv-active-text") : cssVar("--pv-button-text")
+      const border = active ? cssVar("--pv-active-border") : cssVar("--pv-button-border")
+
+      button.style.setProperty("background", bg, "important")
+      button.style.setProperty("background-color", bg, "important")
+      button.style.setProperty("color", text, "important")
+      button.style.setProperty("border-color", border, "important")
+      button.style.setProperty("box-shadow", "none", "important")
     }
 
-    // Colours used for the selected era button
-    function lockedColours() {
-      return {
-        bg: cssVar("--pv-button-hover-bg") || cssVar("--pv-active-bg") || "#000000",
-        text: cssVar("--pv-button-hover-text") || cssVar("--pv-active-text") || "#ffffff",
-        border: cssVar("--pv-button-hover-border") || cssVar("--pv-active-border") || "#000000"
-      };
+    // Changes the badge height class for different era logos.
+    function badgeClass(era) {
+      if (era === "Mega Evolution") return "is-mega"
+      if (era === "Scarlet & Violet") return "is-sv-small"
+      if (era === "Sword & Shield") return "is-ss-smaller"
+      return ""
     }
 
-    // Forces button colours so the selected era keeps the correct theme styling
-    function forceButtonColour(button, colours) {
-      button.style.setProperty("background", colours.bg, "important");
-      button.style.setProperty("background-color", colours.bg, "important");
-      button.style.setProperty("color", colours.text, "important");
-      button.style.setProperty("border-color", colours.border, "important");
-      button.style.setProperty("box-shadow", "none", "important");
-    }
-
-    // Changes the era badge size depending on the selected era logo
-    function sizeClassForEra(era) {
-      if (era === "Mega Evolution") return "is-mega";
-      if (era === "Scarlet & Violet") return "is-sv-small";
-      if (era === "Sword & Shield") return "is-ss-smaller";
-      return "";
-    }
-
-    const firstEra = "<%= @eras.first %>";
-    const buttons = Array.from(eraList.querySelectorAll("button[data-era]"));
-    let storedEra = null;
-
-    // Restores the last selected era when the user returns to the page
-    try {
-      storedEra = window.localStorage.getItem("setsActiveEra");
-    } catch (_) {}
-
-    let activeEra = firstEra;
-
-    if (storedEra && buttons.some((button) => button.getAttribute("data-era") === storedEra)) {
-      activeEra = storedEra;
-    }
-
-    // Applies active and inactive styles to all era buttons
-    function applyEraButtonStyles() {
-      const normal = normalColours();
-      const locked = lockedColours();
-
+    // Updates active era buttons.
+    function syncButtons() {
       buttons.forEach((button) => {
-        const era = button.getAttribute("data-era");
-        const active = era === activeEra;
+        const active = button.dataset.era === activeEra
 
-        button.classList.remove("active", "selected", "pv-tab-locked", "btn-primary", "btn-outline-secondary");
+        button.classList.toggle("active", active)
+        button.classList.toggle("selected", active)
+        button.classList.toggle("pv-tab-locked", active)
+        button.classList.toggle("btn-outline-secondary", !active)
+        button.setAttribute("aria-pressed", active ? "true" : "false")
 
-        if (active) {
-          button.classList.add("active", "selected", "pv-tab-locked");
-          button.setAttribute("aria-pressed", "true");
-          forceButtonColour(button, locked);
-        } else {
-          button.classList.add("btn-outline-secondary");
-          button.setAttribute("aria-pressed", "false");
-          forceButtonColour(button, normal);
-        }
-      });
+        paintButton(button, active)
+      })
     }
 
-    // Updates the era logo image beside the search bar
-    function updateBadge() {
-      const src = eraToBadge[activeEra] || "";
+    // Updates the era badge image.
+    function syncBadge() {
+      if (!badge) return
 
-      if (src && badge) {
-        badge.src = src;
-        badge.alt = activeEra;
-      }
+      badge.src = badges[activeEra] || ""
+      badge.alt = activeEra
+      badge.classList.remove("is-mega", "is-sv-small", "is-ss-smaller")
 
-      if (badge) {
-        badge.classList.remove("is-mega", "is-sv-small", "is-ss-smaller");
-        const cls = sizeClassForEra(activeEra);
-        if (cls) badge.classList.add(cls);
-      }
+      const extraClass = badgeClass(activeEra)
+      if (extraClass) badge.classList.add(extraClass)
     }
 
-    let storedSearch = "";
-
-    // Restores the last search text when the user comes back to the sets page
-    try {
-      storedSearch = window.localStorage.getItem("setsSearch") || "";
-    } catch (_) {}
-
-    if (search) search.value = storedSearch;
-
-    // Filters set cards by selected era and search text
-    function apply() {
-      const q = (search && search.value ? search.value : "").trim().toLowerCase();
-      const cards = Array.from(grid.querySelectorAll(".set-card"));
-      let shown = 0;
+    // Filters set cards by era and search text.
+    function applyFilter() {
+      const text = (search ? search.value : "").trim().toLowerCase()
+      let shown = 0
 
       cards.forEach((card) => {
-        const era = card.getAttribute("data-era");
-        const name = card.getAttribute("data-name") || "";
-        const visible = era === activeEra && (!q || name.includes(q));
+        const visible = card.dataset.era === activeEra && (!text || card.dataset.name.includes(text))
 
-        card.classList.toggle("d-none", !visible);
-        if (visible) shown += 1;
-      });
+        card.classList.toggle("d-none", !visible)
+        if (visible) shown += 1
+      })
 
-      if (empty) empty.classList.toggle("d-none", shown > 0);
-      if (count) count.textContent = shown + (shown === 1 ? " set" : " sets");
+      if (empty) empty.classList.toggle("d-none", shown > 0)
+      if (count) count.textContent = shown + (shown === 1 ? " set" : " sets")
     }
 
-    // Handles era button hover and click behaviour
+    // Runs all visual updates together.
+    function render() {
+      syncButtons()
+      syncBadge()
+      applyFilter()
+    }
+
+    // Handles era button clicks.
     buttons.forEach((button) => {
-      button.addEventListener("mouseenter", () => {
-        forceButtonColour(button, lockedColours());
-      });
-
-      button.addEventListener("mouseleave", () => {
-        const era = button.getAttribute("data-era");
-        forceButtonColour(button, era === activeEra ? lockedColours() : normalColours());
-      });
-
       button.addEventListener("click", () => {
-        const newEra = button.getAttribute("data-era");
-        if (!newEra) return;
+        activeEra = button.dataset.era
+        localStorage.setItem("setsActiveEra", activeEra)
+        render()
+      })
 
-        activeEra = newEra;
+      button.addEventListener("mouseenter", () => paintButton(button, true))
+      button.addEventListener("mouseleave", () => paintButton(button, button.dataset.era === activeEra))
+    })
 
-        try {
-          window.localStorage.setItem("setsActiveEra", activeEra);
-        } catch (_) {}
-
-        applyEraButtonStyles();
-        updateBadge();
-        apply();
-      });
-    });
-
-    // Saves the search text and reapplies filtering as the user types
+    // Handles set search input.
     if (search) {
       search.addEventListener("input", () => {
-        try {
-          window.localStorage.setItem("setsSearch", search.value.trim());
-        } catch (_) {}
-
-        apply();
-      });
+        localStorage.setItem("setsSearch", search.value.trim())
+        applyFilter()
+      })
     }
 
-    // Reapplies button colours when the light/dark theme changes
-    const observer = new MutationObserver(() => {
-      applyEraButtonStyles();
-    });
-
-    observer.observe(document.documentElement, {
+    // Repaints buttons after the light/dark theme changes.
+    new MutationObserver(render).observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-pv-theme"]
-    });
+    })
 
-    applyEraButtonStyles();
-    updateBadge();
-    apply();
-  })();
+    render()
+  })()
 </script>

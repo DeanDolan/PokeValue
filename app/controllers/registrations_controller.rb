@@ -1,130 +1,21 @@
 class RegistrationsController < ApplicationController
-  # Shows the registration form
   def new
+    # Builds an empty user object for the full registration page.
     @user = User.new
   end
 
-  # Creates a new account and logs the user in when registration succeeds
   def create
+    # Reads and cleans the registration fields from the form.
     username = params[:username].to_s.strip
     revolut_tag = params[:revolut_tag].to_s.strip
     password = params[:password].to_s
     password_confirmation = params[:password_confirmation].to_s
 
-    if username.blank?
-      flash.now[:alert] = "Username is required."
-      render :new, status: :unprocessable_entity
-      return
-    end
+    # Stops invalid registration details before trying to create the account.
+    message = registration_error(username, revolut_tag, password, password_confirmation)
+    return render_invalid_registration(message) if message
 
-    if username.length < User::USERNAME_MIN || username.length > User::USERNAME_MAX
-      flash.now[:alert] = "Username must be 5-15 characters long."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless username.match?(/\A[A-Za-z0-9._-]+\z/)
-      flash.now[:alert] = "Username can only contain letters, numbers, dots, underscores or dashes."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if username.include?("@")
-      flash.now[:alert] = "Username must not be an email address."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if params[:country_code].blank?
-      flash.now[:alert] = "Country is required."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if revolut_tag.blank?
-      flash.now[:alert] = "Revolut Tag is required."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless revolut_tag.match?(/\A@?[A-Za-z0-9._-]{3,30}\z/)
-      flash.now[:alert] = "Revolut Tag must contain 3-30 letters, numbers, dots, underscores or dashes. Example: @dola123."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if password.blank?
-      flash.now[:alert] = "Password is required."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if password_confirmation.blank?
-      flash.now[:alert] = "Password confirmation is required."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if password != password_confirmation
-      flash.now[:alert] = "Passwords do not match."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if password.length < User::PASSWORD_MIN || password.length > User::PASSWORD_MAX
-      flash.now[:alert] = "Password must be 12-20 characters long."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless password.match?(/[A-Z]/)
-      flash.now[:alert] = "Password must include at least one uppercase letter."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless password.match?(/[a-z]/)
-      flash.now[:alert] = "Password must include at least one lowercase letter."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless password.match?(/\d/)
-      flash.now[:alert] = "Password must include at least one number."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless password.match?(/[^A-Za-z0-9]/)
-      flash.now[:alert] = "Password must include at least one symbol."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    if password.downcase.include?(username.downcase)
-      flash.now[:alert] = "Password cannot contain your username."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless registration_checkbox_accepted?(:account_safety_accepted)
-      flash.now[:alert] = "You must confirm that you understand the account safety notice before registering."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless registration_checkbox_accepted?(:revolut_tag_visibility_accepted)
-      flash.now[:alert] = "You must confirm that you understand your Revolut tag may be shown during payment-related actions."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
-    unless registration_checkbox_accepted?(:platform_terms_accepted)
-      flash.now[:alert] = "You must agree to the account safety notice, payment visibility notice, security notice and platform terms before registering."
-      render :new, status: :unprocessable_entity
-      return
-    end
-
+    # Creates the user with the same fields used by the original form.
     @user = User.new(
       username: username,
       country_code: params[:country_code],
@@ -134,7 +25,10 @@ class RegistrationsController < ApplicationController
     )
 
     if @user.save
-      session[:user_id] = @user.id
+      # Starts a fresh session for the new account.
+      uid = @user.id
+      reset_session
+      session[:user_id] = uid
 
       redirect_to portfolio_path,
                   notice: "Welcome, #{@user.username}! Your account has been created.",
@@ -147,8 +41,40 @@ class RegistrationsController < ApplicationController
 
   private
 
-  # Checks whether a required registration confirmation checkbox was accepted
-  def registration_checkbox_accepted?(key)
+  def registration_error(username, revolut_tag, password, password_confirmation)
+    # Keeps the same registration checks and messages, but keeps the controller smaller.
+    return "Username is required." if username.blank?
+    return "Username must be 5-15 characters long." if username.length < User::USERNAME_MIN || username.length > User::USERNAME_MAX
+    return "Username can only contain letters, numbers, dots, underscores or dashes." unless username.match?(/\A[A-Za-z0-9._-]+\z/)
+    return "Username must not be an email address." if username.include?("@")
+    return "Country is required." if params[:country_code].blank?
+    return "Revolut Tag is required." if revolut_tag.blank?
+    return "Revolut Tag must contain 3-30 letters, numbers, dots, underscores or dashes. Example: @dola123." unless revolut_tag.match?(/\A@?[A-Za-z0-9._-]{3,30}\z/)
+    return "Password is required." if password.blank?
+    return "Password confirmation is required." if password_confirmation.blank?
+    return "Passwords do not match." if password != password_confirmation
+    return "Password must be 12-20 characters long." if password.length < User::PASSWORD_MIN || password.length > User::PASSWORD_MAX
+    return "Password must include at least one uppercase letter." unless password.match?(/[A-Z]/)
+    return "Password must include at least one lowercase letter." unless password.match?(/[a-z]/)
+    return "Password must include at least one number." unless password.match?(/\d/)
+    return "Password must include at least one symbol." unless password.match?(/[^A-Za-z0-9]/)
+    return "Password cannot contain your username." if password.downcase.include?(username.downcase)
+    return "You must confirm that you understand the account safety notice before registering." unless accepted?(:account_safety_accepted)
+    return "You must confirm that you understand your Revolut tag may be shown during payment-related actions." unless accepted?(:revolut_tag_visibility_accepted)
+    return "You must agree to the account safety notice, payment visibility notice, security notice and platform terms before registering." unless accepted?(:platform_terms_accepted)
+
+    nil
+  end
+
+  def accepted?(key)
+    # Checkbox values submit as "1" when the user ticks them.
     params[key].to_s == "1"
+  end
+
+  def render_invalid_registration(message)
+    # Re-renders the registration page with the same alert behaviour as before.
+    @user = User.new
+    flash.now[:alert] = message
+    render :new, status: :unprocessable_entity
   end
 end

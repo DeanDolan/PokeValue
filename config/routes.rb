@@ -30,20 +30,16 @@ Rails.application.routes.draw do
       post :toggle_paid
       post :verify_payment
       post :run_raffle
-      post :end_raffle
     end
   end
   get "/raffle", to: redirect("/raffles")
 
   # Community and showcase routes
   get "/community", to: "pages#community", as: :community
-  get "/community/:channel", to: "pages#community", as: :community_channel
   get "/showcase", to: redirect("/community")
 
   # Account and public profile routes
   get "/account", to: "accounts#show", as: :account
-  get "/account/marketplace/refund/:id", to: "accounts#refund", as: :account_marketplace_refund
-  post "/account/marketplace/refund/:id", to: "accounts#process_refund", as: :account_marketplace_process_refund
   get "/users/:id", to: "users#show", as: :user
 
   # Login, logout and registration routes
@@ -71,7 +67,7 @@ Rails.application.routes.draw do
   # Saved delivery or marketplace address routes
   resources :saved_addresses, only: [ :create, :destroy ]
 
-  # Admin-only routes for product values, sets, raffles and logs
+  # Admin-only routes for product values, sets and raffles
   namespace :admin do
     resources :product_values, param: :sku, only: [ :update ]
 
@@ -92,8 +88,6 @@ Rails.application.routes.draw do
     end
 
     resources :raffles, only: [ :index, :destroy ]
-
-    get "/logs", to: "logs#index", as: :logs
   end
 
   # Community post, comment and reaction routes
@@ -120,8 +114,6 @@ Rails.application.routes.draw do
 
   resources :marketplace_listings, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     member do
-      get :checkout
-      post :buy
       post :cancel
       post :create_offer
       post :accept_offer
