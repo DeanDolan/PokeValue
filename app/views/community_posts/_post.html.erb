@@ -6,8 +6,6 @@ reaction_counts = community_reaction_counts(post)
 total_reactions = reaction_counts.values.sum
 current_reaction = current_user ? post.community_reactions.find { |reaction| reaction.user_id == current_user.id } : nil
 reactions_modal_id = "communityReactionsModal-#{post.id}"
-all_image_urls = post.images.map { |image| url_for(image) }
-shown_images = post.images.first([post.images.count, 4].min)
 can_manage = current_user && (current_user.id == post.user_id || current_user.admin?)
 %>
 
@@ -48,19 +46,6 @@ can_manage = current_user && (current_user.id == post.user_id || current_user.ad
         <div class="community-edit-actions">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-community-edit-cancel="<%= post.id %>">Cancel</button>
           <%= f.submit "Save", class: "btn btn-sm btn-dark" %>
-        </div>
-      <% end %>
-    </div>
-  <% end %>
-
-  <% if shown_images.any? %>
-    <div class="community-media-grid community-media-grid-<%= [shown_images.count, 4].min %>">
-      <% shown_images.each_with_index do |image, index| %>
-        <div class="community-media-item community-media-item-<%= index + 1 %>">
-          <button type="button" class="community-media-button" data-community-image-viewer="true" data-image-index="<%= index %>" data-image-urls="<%= all_image_urls.join('||') %>" data-bs-toggle="modal" data-bs-target="#communityImageViewerModal">
-            <%= image_tag image, class: "community-media-image", alt: "Post image" %>
-            <% if index == 3 && post.images.count > 4 %><div class="community-media-more">+<%= post.images.count - 4 %></div><% end %>
-          </button>
         </div>
       <% end %>
     </div>

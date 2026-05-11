@@ -41,7 +41,7 @@ class CommunityPostsController < ApplicationController
   end
 
   def community_post_params
-    params.require(:community_post).permit(:channel, :body, images: [])
+    params.require(:community_post).permit(:channel, :body)
   end
 
   def community_post_update_params

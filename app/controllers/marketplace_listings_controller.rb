@@ -47,14 +47,10 @@ class MarketplaceListingsController < ApplicationController
     quantity = params[:quantity].to_i
     return render_new_with_error("Quantity must be at least 1.") if quantity <= 0
 
-    uploads = uploaded_photos
-    photo_error = validate_photo_uploads(uploads)
-    return render_new_with_error(photo_error) if photo_error
-
     if catalogue_mode?
-      create_catalogue_listing!(price_cents, quantity, uploads)
+      create_catalogue_listing!(price_cents, quantity)
     else
-      create_holding_listing!(price_cents, quantity, uploads)
+      create_holding_listing!(price_cents, quantity)
     end
 
     redirect_to marketplace_path, notice: "Listing created.", status: :see_other
@@ -74,7 +70,7 @@ class MarketplaceListingsController < ApplicationController
     redirect_to marketplace_listing_path(@listing), alert: e.message, status: :see_other
   end
 
-  # Updates price, quantity, condition and optional extra images.
+  # Updates price, quantity and condition.
   def update
     ensure_listing_can_be_edited!
 
@@ -87,10 +83,6 @@ class MarketplaceListingsController < ApplicationController
     condition = params[:condition].to_s.strip
     raise MarketplaceError, "Condition is required." if condition.blank?
 
-    uploads = uploaded_photos
-    photo_error = validate_photo_uploads(uploads, @listing)
-    raise MarketplaceError, photo_error if photo_error
-
     ActiveRecord::Base.transaction do
       listing = MarketplaceListing.lock.find(@listing.id)
       update_holding_listed_quantity!(listing, quantity)
@@ -100,8 +92,6 @@ class MarketplaceListingsController < ApplicationController
         quantity: quantity,
         condition: condition
       )
-
-      uploads.each { |file| listing.photos.attach(file) }
     end
 
     redirect_to marketplace_listing_path(@listing), notice: "Listing updated.", status: :see_other
@@ -427,28 +417,8 @@ class MarketplaceListingsController < ApplicationController
     0
   end
 
-  # Gets uploaded listing photos from the form.
-  def uploaded_photos
-    Array(params[:photos]).compact.reject { |file| file.respond_to?(:blank?) && file.blank? }
-  end
-
-  # Validates image count and content type before Active Storage attaches files.
-  def validate_photo_uploads(uploads, listing = nil)
-    return nil if uploads.blank?
-
-    current_count = listing&.photos&.attached? ? listing.photos.count : 0
-    return "You can upload up to 4 images." if current_count + uploads.length > 4
-
-    uploads.each do |file|
-      next if %w[image/png image/jpeg image/jpg].include?(file.content_type.to_s)
-      return "Images must be JPG or PNG."
-    end
-
-    nil
-  end
-
   # Creates a listing directly from the product catalogue.
-  def create_catalogue_listing!(price_cents, quantity, uploads)
+  def create_catalogue_listing!(price_cents, quantity)
     set_slug = params[:catalog_set_slug].to_s.strip
     route_type = params[:catalog_route_type].to_s.strip
     condition = params[:catalog_condition].to_s.strip
@@ -459,7 +429,7 @@ class MarketplaceListingsController < ApplicationController
     meta = listing_meta_for_slug_type(set_slug, route_type)
 
     ActiveRecord::Base.transaction do
-      listing = MarketplaceListing.create!(
+      MarketplaceListing.create!(
         seller_id: current_user.id,
         holding_id: nil,
         product_sku: "#{set_slug}:#{route_type}",
@@ -473,13 +443,11 @@ class MarketplaceListingsController < ApplicationController
         quantity: quantity,
         status: "active"
       )
-
-      uploads.each { |file| listing.photos.attach(file) }
     end
   end
 
   # Creates a listing from a user's portfolio holding.
-  def create_holding_listing!(price_cents, quantity, uploads)
+  def create_holding_listing!(price_cents, quantity)
     holding = Holding.find_by(id: params[:holding_id])
     raise MarketplaceError, "Choose a holding." unless holding
     raise MarketplaceError, "That holding is not yours." unless holding.user_id.to_i == current_user.id.to_i
@@ -494,7 +462,7 @@ class MarketplaceListingsController < ApplicationController
 
       locked_holding.update!(listed_quantity: locked_holding.listed_quantity.to_i + quantity)
 
-      listing = MarketplaceListing.create!(
+      MarketplaceListing.create!(
         seller_id: current_user.id,
         holding_id: locked_holding.id,
         product_sku: meta[:sku],
@@ -508,8 +476,6 @@ class MarketplaceListingsController < ApplicationController
         quantity: quantity,
         status: "active"
       )
-
-      uploads.each { |file| listing.photos.attach(file) }
     end
   end
 

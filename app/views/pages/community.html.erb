@@ -7,12 +7,12 @@ second_row_channels = @community_channels.select { |_, value| second_row_channel
 
 <div class="community-page py-3">
   <style>
-    .community-page{max-width:920px;margin:0 auto}.community-card{background:#fff;border:1px solid #e5e7eb;border-radius:1.25rem;box-shadow:0 12px 30px rgba(15,23,42,.06)}.community-header{margin-bottom:1rem}.community-title{margin:0;font-size:1.7rem;line-height:1.05;font-weight:800}.community-subtitle{margin:.35rem 0 0;color:#6b7280;font-size:.95rem}.community-channel-groups{display:grid;gap:.45rem;margin-bottom:1.15rem}.community-channels-top{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:.35rem}.community-channels-bottom{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem}.community-page .community-channel-pill{display:flex!important;align-items:center!important;justify-content:center!important;min-width:0!important;min-height:30px!important;padding:.32rem .42rem!important;border-radius:999px!important;background:var(--pv-button-bg)!important;border:1px solid var(--pv-button-border)!important;color:var(--pv-button-text)!important;text-decoration:none!important;font-size:.7rem!important;font-weight:700!important;white-space:nowrap!important;line-height:1!important;box-shadow:none!important;filter:none!important;outline:0!important}.community-page .community-channel-pill:not(.active),.community-page .community-channel-pill:not(.active):hover,.community-page .community-channel-pill:not(.active):focus,.community-page .community-channel-pill:not(.active):active{background:var(--pv-button-bg)!important;border-color:var(--pv-button-border)!important;color:var(--pv-button-text)!important}.community-page .community-channel-pill.active,.community-page .community-channel-pill.active:hover,.community-page .community-channel-pill.active:focus,.community-page .community-channel-pill.active:active{background:var(--pv-active-bg)!important;border-color:var(--pv-active-border)!important;color:var(--pv-active-text)!important}:root[data-pv-theme="dark"] body .community-page .community-channel-pill{background:#000!important;border-color:#d4af37!important;color:#d4af37!important}:root[data-pv-theme="dark"] body .community-page .community-channel-pill.active{background:#d4af37!important;border-color:#d4af37!important;color:#000!important}:root[data-pv-theme="light"] body .community-page .community-channel-pill:not(.active){background:#fff!important;border-color:#000!important;color:#000!important}:root[data-pv-theme="light"] body .community-page .community-channel-pill.active{background:#000!important;border-color:#000!important;color:#fff!important}.community-create-card,.community-post-card{padding:1rem}.community-create-label{font-size:.8rem;font-weight:700;color:#4b5563;margin-bottom:.45rem}.community-create-textarea,.community-edit-textarea{width:100%;min-height:120px;border:1px solid #d1d5db;border-radius:1rem;padding:.9rem 1rem;font-size:.98rem;resize:vertical;outline:none;background:#fff;color:#111827}.community-create-textarea:focus,.community-edit-textarea:focus{border-color:#111827;box-shadow:0 0 0 3px rgba(17,24,39,.08)}.community-create-bottom{display:flex;gap:1rem;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-top:.9rem}.community-file-wrap{flex:1 1 320px}.community-file-control{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}.community-file-input{position:absolute;opacity:0;pointer-events:none;width:0;height:0}.community-file-trigger{display:inline-flex;align-items:center;justify-content:center;height:42px;padding:0 1rem;border:1px solid #d1d5db;border-radius:1rem;background:#fff;color:#111827;font-size:.9rem;font-weight:700;cursor:pointer}.community-file-trigger:hover{background:#f9fafb}.community-file-status,.community-hint,.community-empty,.community-login-copy p,.community-time,.community-comment-time,.community-login-note,.community-reactions-empty-filter{color:#6b7280}.community-file-status{font-size:.88rem}.community-hint{font-size:.78rem;margin-top:.4rem;line-height:1.35}.community-selected-files{display:none;margin-top:.8rem}.community-selected-files.active{display:block}.community-selected-files-top{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem}.community-selected-files-title{font-size:.8rem;font-weight:800;color:#374151}.community-selected-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:.55rem}.community-selected-item{position:relative;border:1px solid #e5e7eb;border-radius:1rem;overflow:hidden;background:#f8fafc;aspect-ratio:1/1}.community-selected-thumb{width:100%;height:100%;object-fit:cover;display:block}.community-selected-remove{position:absolute;top:.35rem;right:.35rem;width:28px;height:28px;border:none;border-radius:999px;background:rgba(17,24,39,.75);color:#fff;font-size:1rem;line-height:1}.community-post-action{display:flex;align-items:flex-start}.community-post-btn{width:150px;height:42px;min-width:150px;max-width:150px;border-radius:1rem;font-weight:800;padding:0 1.25rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 150px}.community-login-prompt{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.community-login-copy h2{margin:0 0 .25rem;font-size:1.1rem}.community-empty{padding:1.3rem;text-align:center}.community-feed{display:grid;gap:1rem}.community-post-head,.community-social-summary,.community-user-line,.community-post-actions,.community-reactions-row,.community-comment-social,.community-comment-reactions-row,.community-reactions-filter-row,.community-reaction-person-left,.community-reaction-kind{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}.community-post-head{align-items:flex-start;justify-content:space-between;gap:.75rem}.community-username,.community-comment-user,.community-reaction-person-name{font-weight:800;color:#111827}.community-flag{font-size:1rem;line-height:1}.community-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:.18rem .5rem;font-size:.72rem;font-weight:800}.community-badge-admin{background:rgba(220,53,69,.12);border:1px solid rgba(220,53,69,.35);color:#dc3545}.community-badge-default{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151}.community-time{font-size:.8rem;margin-top:.15rem}.community-post-actions{flex-wrap:nowrap}.community-edit-btn,.community-delete-btn{border-radius:999px}.community-post-body{margin-top:.8rem;color:#111827;font-size:.97rem;line-height:1.55;word-break:break-word}.community-post-body p:last-child,.community-comment-body p:last-child{margin-bottom:0}.community-edit-form-wrap{margin-top:.85rem;padding:.85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}.community-edit-textarea{min-height:110px;font-size:.95rem;padding:.8rem .9rem}.community-edit-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.7rem;flex-wrap:wrap}.community-media-grid{display:grid;gap:.5rem;margin-top:.9rem}.community-media-grid-1{grid-template-columns:1fr}.community-media-grid-2{grid-template-columns:repeat(2,1fr)}.community-media-grid-3{grid-template-columns:1.2fr .8fr;grid-template-rows:repeat(2,165px)}.community-media-grid-4{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,165px)}.community-media-grid-1 .community-media-item{height:340px}.community-media-grid-2 .community-media-item{height:220px}.community-media-grid-3 .community-media-item-1{grid-row:1/span 2;height:335px}.community-media-grid-3 .community-media-item:not(.community-media-item-1),.community-media-grid-4 .community-media-item{height:165px}.community-media-item{position:relative;overflow:hidden;border-radius:1rem;background:#f3f4f6}.community-media-button{display:block;width:100%;height:100%;padding:0;border:none;background:none;position:relative}.community-media-image{width:100%;height:100%;object-fit:cover;display:block}.community-media-more{position:absolute;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:2rem;font-weight:800}.community-social-summary{justify-content:flex-start;gap:.9rem;margin-top:.95rem;padding-top:.85rem;border-top:1px solid #f3f4f6}.community-social-link,.community-comment-summary-link{border:none;background:none;padding:0;color:#475569;font-weight:700}.community-social-link{font-size:.9rem}.community-comment-summary-link{font-size:.82rem}.community-social-link:hover,.community-comment-summary-link:hover{color:#111827}.community-social-emojis{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.community-social-emoji-pill{display:inline-flex;align-items:center;gap:.3rem;padding:.28rem .55rem;border-radius:999px;background:transparent;border:1px solid #e5e7eb;font-size:.84rem;font-weight:700;color:#111827}.community-reactions-row{gap:.45rem;margin-top:.85rem}.community-post-react-form,.community-comment-react-form{display:inline-block;margin:0}.community-react-btn,.community-comment-react-btn,.community-reactions-filter{border:1px solid #d1d5db;background:transparent;color:#111827;border-radius:999px;font-weight:700;display:inline-flex;align-items:center;box-shadow:none}.community-react-btn{position:relative;padding:.45rem .75rem;font-size:.84rem;gap:.35rem}.community-comment-react-btn{position:relative;padding:.28rem .5rem;font-size:.8rem;gap:.28rem}.community-react-btn.active,.community-comment-react-btn.active{background:transparent;color:#111827;border-color:#111827;box-shadow:none}.community-react-btn:hover::after,.community-comment-react-btn:hover::after{content:attr(data-post-reaction-label);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);background:#111827;color:#fff;padding:.32rem .55rem;border-radius:.55rem;font-size:.74rem;font-weight:700;line-height:1;white-space:nowrap;pointer-events:none;z-index:20}.community-comment-react-btn:hover::after{content:attr(data-comment-reaction-label);font-size:.72rem}.community-comment-compose{margin-top:.85rem}.community-comment-form{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}.community-comment-input{flex:1 1 260px;border-radius:999px}.community-comments-wrap{margin-top:.85rem;padding-top:.85rem;border-top:1px solid #f3f4f6;display:grid;gap:.75rem}.community-view-more-comments{margin-top:.15rem}.community-comment-thread.depth-1{margin-left:1.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}.community-comment-thread.depth-2{margin-left:2.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}.community-comment-card{padding:.7rem .8rem;background:#f8fafc;border:1px solid #e5e7eb;border-radius:1rem}.community-comment-line{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem}.community-comment-body{font-size:.9rem;color:#1f2937;line-height:1.45;word-break:break-word}.community-comment-social{gap:.8rem;margin-top:.5rem}.community-comment-reactions-row{gap:.4rem;margin-top:.55rem}.community-reply-form-wrap{margin-top:.65rem}.community-replies-wrap{display:grid;gap:.55rem;margin-top:.7rem}.community-login-note{margin-top:.7rem;font-size:.84rem}.community-reactions-filter-row{gap:.55rem;margin-bottom:.9rem}.community-reactions-filter{background:#fff;padding:.42rem .75rem;font-size:.84rem}.community-reactions-filter.active{background:#111827;color:#fff;border-color:#111827}.community-reaction-people{display:grid;gap:.55rem}.community-reaction-person{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem .85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}.community-reaction-kind{font-size:.9rem;font-weight:800;color:#111827}.community-reactions-empty-filter{display:none;padding:.4rem 0}.community-viewer-stage{position:relative;height:min(78vh,900px);overflow:hidden;background:#05070b;border-radius:1rem;touch-action:none;cursor:grab}.community-viewer-stage.dragging{cursor:grabbing}.community-viewer-image{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;will-change:transform;user-select:none;-webkit-user-drag:none}.community-viewer-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.85rem}.community-viewer-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.community-viewer-counter{color:#e5e7eb;font-weight:700}.community-viewer-btn{border-radius:999px}.community-viewer-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:4}.community-viewer-prev{left:.75rem}.community-viewer-next{right:.75rem}@media(max-width:900px){.community-channels-top,.community-channels-bottom{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:640px){.community-create-bottom{align-items:stretch}.community-post-action,.community-post-btn{width:100%}.community-post-btn{max-width:none;flex:1 1 auto}.community-viewer-stage{height:70vh}.community-channels-top,.community-channels-bottom{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.community-post-head{flex-direction:column}.community-post-actions{width:100%;justify-content:flex-start}.community-media-grid-2,.community-media-grid-4{grid-template-columns:1fr}.community-media-grid-3{grid-template-columns:1fr;grid-template-rows:none}.community-media-grid-3 .community-media-item-1{grid-row:auto;height:220px}.community-media-grid-1 .community-media-item,.community-media-grid-2 .community-media-item,.community-media-grid-3 .community-media-item,.community-media-grid-4 .community-media-item{height:220px}.community-comment-form{flex-direction:column;align-items:stretch}.community-reaction-person{align-items:flex-start;flex-direction:column}}
+    .community-page{max-width:920px;margin:0 auto}.community-card{background:#fff;border:1px solid #e5e7eb;border-radius:1.25rem;box-shadow:0 12px 30px rgba(15,23,42,.06)}.community-header{margin-bottom:1rem}.community-title{margin:0;font-size:1.7rem;line-height:1.05;font-weight:800}.community-subtitle{margin:.35rem 0 0;color:#6b7280;font-size:.95rem}.community-channel-groups{display:grid;gap:.45rem;margin-bottom:1.15rem}.community-channels-top{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:.35rem}.community-channels-bottom{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem}.community-page .community-channel-pill{display:flex!important;align-items:center!important;justify-content:center!important;min-width:0!important;min-height:30px!important;padding:.32rem .42rem!important;border-radius:999px!important;background:var(--pv-button-bg)!important;border:1px solid var(--pv-button-border)!important;color:var(--pv-button-text)!important;text-decoration:none!important;font-size:.7rem!important;font-weight:700!important;white-space:nowrap!important;line-height:1!important;box-shadow:none!important;filter:none!important;outline:0!important}.community-page .community-channel-pill:not(.active),.community-page .community-channel-pill:not(.active):hover,.community-page .community-channel-pill:not(.active):focus,.community-page .community-channel-pill:not(.active):active{background:var(--pv-button-bg)!important;border-color:var(--pv-button-border)!important;color:var(--pv-button-text)!important}.community-page .community-channel-pill.active,.community-page .community-channel-pill.active:hover,.community-page .community-channel-pill.active:focus,.community-page .community-channel-pill.active:active{background:var(--pv-active-bg)!important;border-color:var(--pv-active-border)!important;color:var(--pv-active-text)!important}:root[data-pv-theme="dark"] body .community-page .community-channel-pill{background:#000!important;border-color:#d4af37!important;color:#d4af37!important}:root[data-pv-theme="dark"] body .community-page .community-channel-pill.active{background:#d4af37!important;border-color:#d4af37!important;color:#000!important}:root[data-pv-theme="light"] body .community-page .community-channel-pill:not(.active){background:#fff!important;border-color:#000!important;color:#000!important}:root[data-pv-theme="light"] body .community-page .community-channel-pill.active{background:#000!important;border-color:#000!important;color:#fff!important}.community-create-card,.community-post-card{padding:1rem}.community-create-label{font-size:.8rem;font-weight:700;color:#4b5563;margin-bottom:.45rem}.community-create-textarea,.community-edit-textarea{width:100%;min-height:120px;border:1px solid #d1d5db;border-radius:1rem;padding:.9rem 1rem;font-size:.98rem;resize:vertical;outline:none;background:#fff;color:#111827}.community-create-textarea:focus,.community-edit-textarea:focus{border-color:#111827;box-shadow:0 0 0 3px rgba(17,24,39,.08)}.community-create-bottom{display:flex;gap:1rem;justify-content:flex-end;align-items:flex-start;flex-wrap:wrap;margin-top:.9rem}.community-hint,.community-empty,.community-login-copy p,.community-time,.community-comment-time,.community-login-note,.community-reactions-empty-filter{color:#6b7280}.community-hint{font-size:.78rem;margin-top:.4rem;line-height:1.35}.community-post-action{display:flex;align-items:flex-start}.community-post-btn{width:150px;height:42px;min-width:150px;max-width:150px;border-radius:1rem;font-weight:800;padding:0 1.25rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 150px}.community-login-prompt{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.community-login-copy h2{margin:0 0 .25rem;font-size:1.1rem}.community-empty{padding:1.3rem;text-align:center}.community-feed{display:grid;gap:1rem}.community-post-head,.community-social-summary,.community-user-line,.community-post-actions,.community-reactions-row,.community-comment-social,.community-comment-reactions-row,.community-reactions-filter-row,.community-reaction-person-left,.community-reaction-kind{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}.community-post-head{align-items:flex-start;justify-content:space-between;gap:.75rem}.community-username,.community-comment-user,.community-reaction-person-name{font-weight:800;color:#111827}.community-flag{font-size:1rem;line-height:1}.community-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:.18rem .5rem;font-size:.72rem;font-weight:800}.community-badge-admin{background:rgba(220,53,69,.12);border:1px solid rgba(220,53,69,.35);color:#dc3545}.community-badge-default{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151}.community-time{font-size:.8rem;margin-top:.15rem}.community-post-actions{flex-wrap:nowrap}.community-edit-btn,.community-delete-btn{border-radius:999px}.community-post-body{margin-top:.8rem;color:#111827;font-size:.97rem;line-height:1.55;word-break:break-word}.community-post-body p:last-child,.community-comment-body p:last-child{margin-bottom:0}.community-edit-form-wrap{margin-top:.85rem;padding:.85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}.community-edit-textarea{min-height:110px;font-size:.95rem;padding:.8rem .9rem}.community-edit-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.7rem;flex-wrap:wrap}.community-social-summary{justify-content:flex-start;gap:.9rem;margin-top:.95rem;padding-top:.85rem;border-top:1px solid #f3f4f6}.community-social-link,.community-comment-summary-link{border:none;background:none;padding:0;color:#475569;font-weight:700}.community-social-link{font-size:.9rem}.community-comment-summary-link{font-size:.82rem}.community-social-link:hover,.community-comment-summary-link:hover{color:#111827}.community-social-emojis{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.community-social-emoji-pill{display:inline-flex;align-items:center;gap:.3rem;padding:.28rem .55rem;border-radius:999px;background:transparent;border:1px solid #e5e7eb;font-size:.84rem;font-weight:700;color:#111827}.community-reactions-row{gap:.45rem;margin-top:.85rem}.community-post-react-form,.community-comment-react-form{display:inline-block;margin:0}.community-react-btn,.community-comment-react-btn,.community-reactions-filter{border:1px solid #d1d5db;background:transparent;color:#111827;border-radius:999px;font-weight:700;display:inline-flex;align-items:center;box-shadow:none}.community-react-btn{position:relative;padding:.45rem .75rem;font-size:.84rem;gap:.35rem}.community-comment-react-btn{position:relative;padding:.28rem .5rem;font-size:.8rem;gap:.28rem}.community-react-btn.active,.community-comment-react-btn.active{background:transparent;color:#111827;border-color:#111827;box-shadow:none}.community-react-btn:hover::after,.community-comment-react-btn:hover::after{content:attr(data-post-reaction-label);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);background:#111827;color:#fff;padding:.32rem .55rem;border-radius:.55rem;font-size:.74rem;font-weight:700;line-height:1;white-space:nowrap;pointer-events:none;z-index:20}.community-comment-react-btn:hover::after{content:attr(data-comment-reaction-label);font-size:.72rem}.community-comment-compose{margin-top:.85rem}.community-comment-form{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}.community-comment-input{flex:1 1 260px;border-radius:999px}.community-comments-wrap{margin-top:.85rem;padding-top:.85rem;border-top:1px solid #f3f4f6;display:grid;gap:.75rem}.community-view-more-comments{margin-top:.15rem}.community-comment-thread.depth-1{margin-left:1.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}.community-comment-thread.depth-2{margin-left:2.25rem;padding-left:.9rem;border-left:2px solid #e5e7eb}.community-comment-card{padding:.7rem .8rem;background:#f8fafc;border:1px solid #e5e7eb;border-radius:1rem}.community-comment-line{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem}.community-comment-body{font-size:.9rem;color:#1f2937;line-height:1.45;word-break:break-word}.community-comment-social{gap:.8rem;margin-top:.5rem}.community-comment-reactions-row{gap:.4rem;margin-top:.55rem}.community-reply-form-wrap{margin-top:.65rem}.community-replies-wrap{display:grid;gap:.55rem;margin-top:.7rem}.community-login-note{margin-top:.7rem;font-size:.84rem}.community-reactions-filter-row{gap:.55rem;margin-bottom:.9rem}.community-reactions-filter{background:#fff;padding:.42rem .75rem;font-size:.84rem}.community-reactions-filter.active{background:#111827;color:#fff;border-color:#111827}.community-reaction-people{display:grid;gap:.55rem}.community-reaction-person{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem .85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc}.community-reaction-kind{font-size:.9rem;font-weight:800;color:#111827}.community-reactions-empty-filter{display:none;padding:.4rem 0}@media(max-width:900px){.community-channels-top,.community-channels-bottom{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:640px){.community-create-bottom{align-items:stretch}.community-post-action,.community-post-btn{width:100%}.community-post-btn{max-width:none;flex:1 1 auto}.community-channels-top,.community-channels-bottom{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.community-post-head{flex-direction:column}.community-post-actions{width:100%;justify-content:flex-start}.community-comment-form{flex-direction:column;align-items:stretch}.community-reaction-person{align-items:flex-start;flex-direction:column}}
   </style>
 
   <div class="community-header">
     <h1 class="community-title">Community Channels</h1>
-    <p class="community-subtitle">Post in channels, share images, react, and comment on posts (without spamming).</p>
+    <p class="community-subtitle">Post in channels, react, and comment on posts without spamming.</p>
   </div>
 
   <div class="community-channel-groups">
@@ -33,27 +33,9 @@ second_row_channels = @community_channels.select { |_, value| second_row_channel
       <%= form_with model: @community_post, url: community_posts_path, local: true do |f| %>
         <%= f.hidden_field :channel, value: selected_channel_value %>
         <div class="community-create-label">Post in <%= CommunityPost.channel_label(selected_channel_value) %></div>
-        <%= f.text_area :body, class: "community-create-textarea", placeholder: "Write your post for #{CommunityPost.channel_label(selected_channel_value)}...", maxlength: CommunityPost::MAX_BODY_LENGTH, rows: 5 %>
+        <%= f.text_area :body, class: "community-create-textarea", placeholder: "Write your post for #{CommunityPost.channel_label(selected_channel_value)}...", maxlength: CommunityPost::MAX_BODY_LENGTH, rows: 5, required: true %>
 
         <div class="community-create-bottom">
-          <div class="community-file-wrap">
-            <div class="community-file-control">
-              <label for="community-post-images-input" class="community-file-trigger">Browse</label>
-              <span id="community-post-images-status" class="community-file-status">No images selected.</span>
-              <%= f.file_field :images, multiple: true, accept: "image/png,image/jpeg,image/jpg,image/webp,image/gif", class: "community-file-input", id: "community-post-images-input" %>
-            </div>
-
-            <div class="community-hint">You can keep selecting more images and they will be added. Up to 10 images. Max 2000 characters.</div>
-
-            <div id="community-selected-files" class="community-selected-files">
-              <div class="community-selected-files-top">
-                <div id="community-selected-files-title" class="community-selected-files-title"></div>
-                <button id="community-clear-selected-files" type="button" class="btn btn-sm btn-outline-secondary">Clear images</button>
-              </div>
-              <div id="community-selected-grid" class="community-selected-grid"></div>
-            </div>
-          </div>
-
           <div class="community-post-action">
             <%= f.submit "Post", class: "btn btn-dark community-post-btn" %>
           </div>
@@ -79,76 +61,12 @@ second_row_channels = @community_channels.select { |_, value| second_row_channel
   </section>
 </div>
 
-<div class="modal fade" id="communityImageViewerModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-fullscreen-sm-down modal-xl modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content bg-dark text-white border-0">
-      <div class="modal-header border-0 pb-0">
-        <div class="community-viewer-toolbar w-100">
-          <div id="community-image-viewer-counter" class="community-viewer-counter">1 / 1</div>
-          <div class="community-viewer-controls">
-            <button id="community-image-zoom-out" type="button" class="btn btn-outline-light btn-sm community-viewer-btn">-</button>
-            <button id="community-image-zoom-reset" type="button" class="btn btn-outline-light btn-sm community-viewer-btn">Reset</button>
-            <button id="community-image-zoom-in" type="button" class="btn btn-outline-light btn-sm community-viewer-btn">+</button>
-            <button type="button" class="btn btn-outline-light btn-sm community-viewer-btn" data-bs-dismiss="modal">Close</button>
-          </div>
-        </div>
-      </div>
-      <div class="modal-body pt-2">
-        <div id="community-image-viewer-stage" class="community-viewer-stage">
-          <button id="community-image-prev" type="button" class="btn btn-outline-light community-viewer-nav community-viewer-prev">‹</button>
-          <img id="community-image-viewer-image" class="community-viewer-image" src="" alt="Post image" draggable="false">
-          <button id="community-image-next" type="button" class="btn btn-outline-light community-viewer-nav community-viewer-next">›</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
   (function(){
-    function keyForFile(file){return [file.name,file.size,file.lastModified].join("__")}
     function escapeHtml(value){return String(value||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;")}
     function flagEmoji(countryCode){const code=(countryCode||"").toUpperCase();if(!/^[A-Z]{2}$/.test(code))return "";return code.replace(/./g,function(char){return String.fromCodePoint(127397+char.charCodeAt(0))})}
     function badgeHtml(badge){return '<span class="' + (badge==="Admin" ? "community-badge community-badge-admin" : "community-badge community-badge-default") + '">' + escapeHtml(badge) + '</span>'}
     function reactorRowHtml(reactor,emoji,label){const badges=(reactor.badges||[]).map(badgeHtml).join("");const flag=flagEmoji(reactor.country_code);return '<div class="community-reaction-person" data-kind="'+escapeHtml(reactor.kind)+'"><div class="community-reaction-person-left"><span class="community-reaction-person-name">'+escapeHtml(reactor.username)+'</span>'+(flag?'<span class="community-flag">'+flag+'</span>':'')+badges+'</div><div class="community-reaction-kind"><span>'+escapeHtml(emoji)+'</span><span>'+escapeHtml(label)+'</span></div></div>'}
-
-    function initCommunityCreateForm(){
-      const input=document.getElementById("community-post-images-input"),status=document.getElementById("community-post-images-status"),wrap=document.getElementById("community-selected-files"),title=document.getElementById("community-selected-files-title"),grid=document.getElementById("community-selected-grid"),clearButton=document.getElementById("community-clear-selected-files")
-      if(!input||!status||!wrap||!title||!grid||!clearButton||input.dataset.communityImagesReady==="true")return
-      input.dataset.communityImagesReady="true"
-      let storedFiles=[]
-      function syncInput(){const dt=new DataTransfer();storedFiles.forEach(function(file){dt.items.add(file)});input.files=dt.files}
-      function render(){
-        grid.innerHTML=""
-        if(storedFiles.length===0){wrap.classList.remove("active");title.textContent="";status.textContent="No images selected.";return}
-        wrap.classList.add("active")
-        title.textContent=storedFiles.length+" image"+(storedFiles.length===1?"":"s")+" selected"
-        status.textContent=title.textContent
-        storedFiles.forEach(function(file){
-          const item=document.createElement("div"),img=document.createElement("img"),remove=document.createElement("button"),key=keyForFile(file)
-          item.className="community-selected-item";item.dataset.fileKey=key
-          img.className="community-selected-thumb";img.alt=file.name;img.src=URL.createObjectURL(file)
-          remove.type="button";remove.className="community-selected-remove";remove.dataset.fileKey=key;remove.textContent="×"
-          item.appendChild(img);item.appendChild(remove);grid.appendChild(item)
-        })
-      }
-      input.addEventListener("change",function(){
-        const incoming=Array.from(input.files||[])
-        if(!incoming.length)return
-        const map=new Map(storedFiles.map(function(file){return [keyForFile(file),file]}))
-        incoming.forEach(function(file){map.set(keyForFile(file),file)})
-        storedFiles=Array.from(map.values()).slice(0,10)
-        syncInput();render()
-      })
-      grid.addEventListener("click",function(event){
-        const button=event.target.closest(".community-selected-remove")
-        if(!button)return
-        storedFiles=storedFiles.filter(function(file){return keyForFile(file)!==button.dataset.fileKey})
-        syncInput();render()
-      })
-      clearButton.addEventListener("click",function(){storedFiles=[];syncInput();render()})
-      render()
-    }
 
     function initReactionModals(){
       if(document.body.dataset.communityReactionModalsReady==="true")return
@@ -311,68 +229,10 @@ second_row_channels = @community_channels.select { |_, value| second_row_channel
       })
     }
 
-    function initImageViewer(){
-      const modalEl=document.getElementById("communityImageViewerModal"),stage=document.getElementById("community-image-viewer-stage"),image=document.getElementById("community-image-viewer-image"),counter=document.getElementById("community-image-viewer-counter"),prevButton=document.getElementById("community-image-prev"),nextButton=document.getElementById("community-image-next"),zoomInButton=document.getElementById("community-image-zoom-in"),zoomOutButton=document.getElementById("community-image-zoom-out"),zoomResetButton=document.getElementById("community-image-zoom-reset")
-      if(!modalEl||!stage||!image||!counter||!prevButton||!nextButton||!zoomInButton||!zoomOutButton||!zoomResetButton||modalEl.dataset.communityViewerReady==="true")return
-      modalEl.dataset.communityViewerReady="true"
-      let images=[],index=0,scale=1,translateX=0,translateY=0,dragging=false,lastPointerX=0,lastPointerY=0,pinchStartDistance=null,pinchStartScale=1
-      function clampScale(value){return Math.max(1,Math.min(6,value))}
-      function applyTransform(){
-        image.style.transform="translate("+translateX+"px, "+translateY+"px) translate(-50%, -50%) scale("+scale+")"
-        prevButton.style.display=images.length>1?"":"none"
-        nextButton.style.display=images.length>1?"":"none"
-        counter.textContent=images.length?(index+1)+" / "+images.length:"0 / 0"
-      }
-      function resetTransform(){scale=1;translateX=0;translateY=0;applyTransform()}
-      function renderImage(){if(!images.length)return;image.src=images[index];resetTransform()}
-      function openFromTrigger(trigger){
-        images=(trigger.dataset.imageUrls||"").split("||").filter(Boolean)
-        index=parseInt(trigger.dataset.imageIndex||"0",10)
-        if(Number.isNaN(index)||index<0)index=0
-        if(index>images.length-1)index=images.length-1
-        renderImage()
-      }
-      function zoomBy(step){scale=clampScale(scale+step);if(scale===1){translateX=0;translateY=0}applyTransform()}
-      function distanceBetweenTouches(a,b){const dx=a.clientX-b.clientX,dy=a.clientY-b.clientY;return Math.sqrt(dx*dx+dy*dy)}
-      document.addEventListener("click",function(event){const trigger=event.target.closest("[data-community-image-viewer]");if(trigger)openFromTrigger(trigger)},{passive:true})
-      prevButton.addEventListener("click",function(){if(index>0){index-=1;renderImage()}})
-      nextButton.addEventListener("click",function(){if(index<images.length-1){index+=1;renderImage()}})
-      zoomInButton.addEventListener("click",function(){zoomBy(.25)})
-      zoomOutButton.addEventListener("click",function(){zoomBy(-.25)})
-      zoomResetButton.addEventListener("click",resetTransform)
-      stage.addEventListener("wheel",function(event){event.preventDefault();zoomBy(event.deltaY<0?.2:-.2)},{passive:false})
-      stage.addEventListener("mousedown",function(event){if(scale<=1)return;dragging=true;stage.classList.add("dragging");lastPointerX=event.clientX;lastPointerY=event.clientY})
-      window.addEventListener("mousemove",function(event){if(!dragging||scale<=1)return;translateX+=event.clientX-lastPointerX;translateY+=event.clientY-lastPointerY;lastPointerX=event.clientX;lastPointerY=event.clientY;applyTransform()})
-      window.addEventListener("mouseup",function(){dragging=false;stage.classList.remove("dragging")})
-      stage.addEventListener("touchstart",function(event){
-        if(event.touches.length===1){lastPointerX=event.touches[0].clientX;lastPointerY=event.touches[0].clientY}
-        if(event.touches.length===2){pinchStartDistance=distanceBetweenTouches(event.touches[0],event.touches[1]);pinchStartScale=scale}
-      },{passive:true})
-      stage.addEventListener("touchmove",function(event){
-        if(event.touches.length===2){
-          event.preventDefault()
-          const newDistance=distanceBetweenTouches(event.touches[0],event.touches[1])
-          if(pinchStartDistance){scale=clampScale((newDistance/pinchStartDistance)*pinchStartScale);if(scale===1){translateX=0;translateY=0}applyTransform()}
-        }else if(event.touches.length===1&&scale>1){
-          event.preventDefault()
-          const touch=event.touches[0]
-          translateX+=touch.clientX-lastPointerX
-          translateY+=touch.clientY-lastPointerY
-          lastPointerX=touch.clientX
-          lastPointerY=touch.clientY
-          applyTransform()
-        }
-      },{passive:false})
-      stage.addEventListener("touchend",function(event){if(event.touches.length<2)pinchStartDistance=null;if(event.touches.length===1){lastPointerX=event.touches[0].clientX;lastPointerY=event.touches[0].clientY}},{passive:true})
-      modalEl.addEventListener("hidden.bs.modal",function(){images=[];index=0;image.src="";resetTransform()})
-    }
-
     function initCommunityPage(){
-      initCommunityCreateForm()
       initReactionModals()
       initAjaxReactionForms()
       initCommunityToggles()
-      initImageViewer()
     }
 
     document.addEventListener("turbo:load",initCommunityPage)

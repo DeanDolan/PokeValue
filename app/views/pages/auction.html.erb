@@ -2,8 +2,6 @@
 References:
 - Rails Action View helpers:
   https://guides.rubyonrails.org/action_view_helpers.html
-- Rails Active Storage display helpers:
-  https://guides.rubyonrails.org/active_storage_overview.html
 - Bootstrap tables, forms, buttons and modals:
   https://getbootstrap.com/docs/5.3/content/tables/
   https://getbootstrap.com/docs/5.3/forms/overview/
@@ -24,10 +22,10 @@ if defined?(Auction)
   end
 end
 
-# Loads auctions with seller, bids and images so the table does not repeatedly query them.
+# Loads auctions with seller and bids so the table does not repeatedly query them.
 all_auctions =
   begin
-    defined?(Auction) ? Auction.includes(:seller, :auction_bids, photos_attachments: :blob).order(created_at: :desc).to_a : []
+    defined?(Auction) ? Auction.includes(:seller, :auction_bids).order(created_at: :desc).to_a : []
   rescue
     []
   end
@@ -72,18 +70,17 @@ empty_label =
     .au-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.72rem}
     .au-table th,.au-table td{text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;padding:4px 3px;font-size:.64rem}
     .au-table th{background:#f9fafb;font-weight:900;color:#374151;white-space:nowrap}
-    .au-table th:nth-child(1),.au-table td:nth-child(1){width:8%}
+    .au-table th:nth-child(1),.au-table td:nth-child(1){width:9%}
     .au-table th:nth-child(2),.au-table td:nth-child(2){width:6%}
     .au-table th:nth-child(3),.au-table td:nth-child(3){width:8%}
-    .au-table th:nth-child(4),.au-table td:nth-child(4){width:5%}
-    .au-table th:nth-child(5),.au-table td:nth-child(5){width:6%}
-    .au-table th:nth-child(6),.au-table td:nth-child(6){width:21%}
-    .au-table th:nth-child(7),.au-table td:nth-child(7){width:11%}
-    .au-table th:nth-child(8),.au-table td:nth-child(8){width:4%}
-    .au-table th:nth-child(9),.au-table td:nth-child(9){width:8%}
-    .au-table th:nth-child(10),.au-table td:nth-child(10){width:7%}
-    .au-table th:nth-child(11),.au-table td:nth-child(11){width:9%}
-    .au-table th:nth-child(12),.au-table td:nth-child(12){width:7%}
+    .au-table th:nth-child(4),.au-table td:nth-child(4){width:6%}
+    .au-table th:nth-child(5),.au-table td:nth-child(5){width:24%}
+    .au-table th:nth-child(6),.au-table td:nth-child(6){width:11%}
+    .au-table th:nth-child(7),.au-table td:nth-child(7){width:5%}
+    .au-table th:nth-child(8),.au-table td:nth-child(8){width:9%}
+    .au-table th:nth-child(9),.au-table td:nth-child(9){width:7%}
+    .au-table th:nth-child(10),.au-table td:nth-child(10){width:9%}
+    .au-table th:nth-child(11),.au-table td:nth-child(11){width:6%}
     .au-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#6b7280;font-size:.8rem}
     .au-table-card{position:relative;overflow:visible}
     .au-link{font-weight:600;text-decoration:none}
@@ -99,12 +96,6 @@ empty_label =
     .pv-au-table-half{font-weight:900;font-size:.8em}
     .au-badges{display:flex;justify-content:center;align-items:center;gap:3px;flex-wrap:wrap}
     .au-badges img{height:14px;width:14px;object-fit:contain}
-    .au-image-cell{position:relative;overflow:visible}
-    .au-camera{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:#2563eb;color:#fff;font-size:.72rem;border:1px solid #1d4ed8}
-    .au-preview{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;display:none;width:min(760px,82vw);max-height:88vh;overflow:auto;padding:12px;background:#fff;border:1px solid #d1d5db;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
-    .au-image-cell:hover .au-preview,.au-image-cell:focus-within .au-preview{display:block}
-    .au-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .au-img-grid img{width:100%;height:180px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb}
     .au-confirm{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
     .au-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
     .au-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
@@ -248,7 +239,6 @@ empty_label =
             <th>Location</th>
             <th>Reviews</th>
             <th>Badges</th>
-            <th>Image(s)</th>
             <th>Description</th>
             <th>Condition</th>
             <th>Bids</th>
@@ -276,7 +266,6 @@ empty_label =
               reserve_label = auction.no_reserve? ? "No Reserve" : "Reserve"
               reserve_key = reserve_label.downcase
               length_label = auction_length_label(auction)
-              images = auction_images_for(auction)
               owner_can_end = current_user && auction.can_end_early_by?(current_user)
             %>
 
@@ -319,21 +308,6 @@ empty_label =
                     <span class="au-muted">None</span>
                   <% end %>
                 </div>
-              </td>
-
-              <td class="au-image-cell">
-                <% if images.any? %>
-                  <span class="au-camera" tabindex="0">📷</span>
-                  <div class="au-preview">
-                    <div class="au-img-grid">
-                      <% images.each do |image| %>
-                        <%= image_tag url_for(image), alt: "Auction image" %>
-                      <% end %>
-                    </div>
-                  </div>
-                <% else %>
-                  <span class="au-muted">N/A</span>
-                <% end %>
               </td>
 
               <td class="au-desc">

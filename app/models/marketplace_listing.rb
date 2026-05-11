@@ -8,9 +8,6 @@ class MarketplaceListing < ApplicationRecord
   # Offers belong to a listing and are removed if the listing is removed
   has_many :marketplace_offers, dependent: :destroy
 
-  # Allows up to four uploaded product images through Active Storage
-  has_many_attached :photos
-
   # Valid listing states used throughout the marketplace
   STATUSES = %w[active sold cancelled deleted].freeze
 
@@ -23,8 +20,6 @@ class MarketplaceListing < ApplicationRecord
   validates :route_type, presence: true
   validates :product_sku, presence: true
 
-  validate :photos_count_and_type
-
   # Current listings are active and still have quantity available
   scope :active, -> { where(status: "active").where("quantity > 0") }
 
@@ -34,24 +29,5 @@ class MarketplaceListing < ApplicationRecord
 
   def sold?
     status.to_s == "sold"
-  end
-
-  private
-
-  # Keeps listing uploads limited to four JPG/PNG images
-  def photos_count_and_type
-    return unless photos.attached?
-
-    if photos.count > 4
-      errors.add(:photos, "must be 4 images or fewer")
-    end
-
-    photos.each do |p|
-      ct = p.content_type.to_s
-      unless ct == "image/png" || ct == "image/jpeg" || ct == "image/jpg"
-        errors.add(:photos, "must be JPG or PNG")
-        break
-      end
-    end
   end
 end

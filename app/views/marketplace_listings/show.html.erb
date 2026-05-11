@@ -2,8 +2,6 @@
 References:
 - Rails Action View helpers:
   https://guides.rubyonrails.org/action_view_helpers.html
-- Rails Active Storage:
-  https://guides.rubyonrails.org/active_storage_overview.html
 - Bootstrap modals and buttons:
   https://getbootstrap.com/docs/5.3/components/modal/
   https://getbootstrap.com/docs/5.3/components/buttons/
@@ -14,7 +12,6 @@ listing = @listing
 seller = listing.seller
 seller_name = marketplace_seller_name(seller, listing.seller_id)
 stats = @seller_stats || { avg: 0.0, count: 0 }
-images = marketplace_listing_images(listing)
 era = marketplace_era(listing.set_slug)
 display_product = marketplace_display_product(listing)
 seller_badges = marketplace_badges_for(seller)
@@ -45,15 +42,12 @@ review_form_id = "ml-review-form-#{listing.id}"
   <style>
     .ml-wrap{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
     .ml-left{flex:1;min-width:320px}
-    .ml-right{width:420px;max-width:100%}
     .ml-block,.ml-section{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
     .ml-section{margin-top:14px}
     .ml-title{font-size:1.2rem;margin:0 0 6px}
     .ml-sub{color:#6b7280;font-size:.85rem;margin:0 0 14px}
     .ml-line{font-size:.88rem;margin:6px 0}
     .ml-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .ml-thumbgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-    .ml-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer}
     .ml-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
     .ml-badges img{height:22px;width:22px;object-fit:contain}
     .pv-rating-stars{display:inline-flex;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
@@ -303,22 +297,6 @@ review_form_id = "ml-review-form-#{listing.id}"
         <% end %>
       </div>
     </div>
-
-    <div class="ml-right">
-      <div class="ml-block">
-        <div class="fw-semibold mb-2">Product Image(s):</div>
-
-        <% if images.any? %>
-          <div class="ml-thumbgrid">
-            <% images.each_with_index do |image, index| %>
-              <%= image_tag url_for(image), class: "ml-thumb", alt: "Listing image #{index + 1}", data: { bs_toggle: "modal", bs_target: "#imgModal", full_src: url_for(image) } %>
-            <% end %>
-          </div>
-        <% else %>
-          <div class="text-muted">No images uploaded.</div>
-        <% end %>
-      </div>
-    </div>
   </div>
 
   <div class="ml-confirm-overlay" id="mlConfirmOverlay" aria-hidden="true">
@@ -333,30 +311,8 @@ review_form_id = "ml-review-form-#{listing.id}"
   </div>
 </div>
 
-<div class="modal fade" id="imgModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Image</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body d-flex justify-content-center">
-        <img id="imgModalEl" src="" alt="" style="max-width:100%;max-height:78vh;object-fit:contain;">
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
   (() => {
-    const modalImage = document.getElementById("imgModalEl")
-
-    document.addEventListener("click", (event) => {
-      const image = event.target.closest("img[data-full-src]")
-      if (image && modalImage) modalImage.src = image.dataset.fullSrc || ""
-    })
-
     document.querySelectorAll(".ml-reveal-tag-btn").forEach((button) => {
       button.addEventListener("click", () => {
         const hidden = document.getElementById(button.dataset.hiddenId)

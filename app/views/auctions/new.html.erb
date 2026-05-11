@@ -2,8 +2,6 @@
 References:
 - Rails form helpers:
   https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
-- Rails Active Storage file uploads:
-  https://guides.rubyonrails.org/active_storage_overview.html
 - Bootstrap forms and grid:
   https://getbootstrap.com/docs/5.3/forms/overview/
   https://getbootstrap.com/docs/5.3/layout/grid/
@@ -17,7 +15,6 @@ References:
     .au-new-title{font-size:1.2rem;margin:0 0 10px}
     .au-new-muted{color:#6b7280;font-size:.9rem}
     .au-new-label{font-size:.85rem}
-    .au-new-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .au-new-note{font-size:.78rem;color:#6b7280;line-height:1.35}
     .au-new-count{text-align:right;font-size:.78rem;color:#6b7280;margin-top:4px}
   </style>
@@ -25,15 +22,14 @@ References:
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <div class="au-new-title">Create Auction</div>
-      <div class="au-new-muted">Add the auction details, choose reserve status, and upload up to 4 images.</div>
+      <div class="au-new-muted">Add the auction details, choose reserve status, and choose the auction time length.</div>
     </div>
 
     <%= link_to "← Back to Auction", auction_path, class: "btn btn-outline-secondary btn-sm" %>
   </div>
 
   <div class="au-new-card">
-    <%# Multipart form allows up to four uploaded images. %>
-    <%= form_with url: auctions_path, method: :post, local: true, html: { multipart: true, id: "auction-form" } do %>
+    <%= form_with url: auctions_path, method: :post, local: true, html: { id: "auction-form" } do %>
       <div class="row g-2 mb-3">
         <div class="col-12">
           <label class="form-label mb-1 au-new-label" for="auction-description">Auction Description</label>
@@ -94,21 +90,6 @@ References:
       <div class="row g-2 mb-3">
         <div class="col-12">
           <div id="auction-reserve-note" class="au-new-note">Select a reserve status to continue.</div>
-        </div>
-      </div>
-
-      <div class="row g-2 mb-3">
-        <div class="col-12">
-          <label class="form-label mb-1 au-new-label">Images (up to 4)</label>
-
-          <div class="au-new-img-grid">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-            <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-          </div>
-
-          <div class="small text-muted mt-1">PNG/JPG only.</div>
         </div>
       </div>
 

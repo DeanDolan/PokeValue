@@ -52,24 +52,6 @@ host_revolut_tag = current_user&.revolut_tag.to_s
     .rf-full{
       grid-column:1 / -1;
     }
-    .rf-upload-grid{
-      display:grid;
-      grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:12px;
-    }
-    .rf-upload-box{
-      border:1px solid #e5e7eb;
-      border-radius:12px;
-      padding:12px;
-      background:#fafafa;
-    }
-    .rf-upload-label{
-      display:block;
-      font-size:.82rem;
-      font-weight:700;
-      color:#374151;
-      margin-bottom:8px;
-    }
     .rf-note{
       color:#6b7280;
       font-size:.8rem;
@@ -82,8 +64,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
       margin-top:18px;
     }
     @media (max-width: 768px){
-      .rf-grid,
-      .rf-upload-grid{
+      .rf-grid{
         grid-template-columns:1fr;
       }
     }
@@ -106,7 +87,7 @@ host_revolut_tag = current_user&.revolut_tag.to_s
     <% end %>
 
     <%# Main raffle creation form %>
-    <%= form_with model: @raffle, url: raffles_path, method: :post, local: true, html: { multipart: true } do |f| %>
+    <%= form_with model: @raffle, url: raffles_path, method: :post, local: true do |f| %>
       <div class="rf-grid">
         <div class="rf-full">
           <label class="form-label">Title</label>
@@ -160,30 +141,6 @@ host_revolut_tag = current_user&.revolut_tag.to_s
                 readonly: true,
                 placeholder: "@yourtag" %>
           <div class="rf-note">This Revolut Tag is taken from your account and cannot be changed here.</div>
-        </div>
-
-        <%# Four upload inputs match the four-image limit in the model/controller %>
-        <div class="rf-full">
-          <label class="form-label">Upload Images</label>
-          <div class="rf-upload-grid">
-            <div class="rf-upload-box">
-              <label class="rf-upload-label">Image 1</label>
-              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
-            </div>
-            <div class="rf-upload-box">
-              <label class="rf-upload-label">Image 2</label>
-              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
-            </div>
-            <div class="rf-upload-box">
-              <label class="rf-upload-label">Image 3</label>
-              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
-            </div>
-            <div class="rf-upload-box">
-              <label class="rf-upload-label">Image 4</label>
-              <%= file_field_tag "raffle[photos][]", accept: ".png,.jpg,.jpeg", class: "form-control" %>
-            </div>
-          </div>
-          <div class="rf-note">Up to 4 JPG or PNG images.</div>
         </div>
       </div>
 

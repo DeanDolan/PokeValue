@@ -275,21 +275,6 @@ end
     .rf-badge-active{color:#166534;border-color:#86efac;background:#f0fdf4;}
     .rf-badge-completed{color:#1d4ed8;border-color:#93c5fd;background:#eff6ff;}
     .rf-badge-incompleted{color:#991b1b;border-color:#fca5a5;background:#fef2f2;}
-    .rf-thumb-stack{
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      gap:4px;
-      flex-wrap:nowrap;
-      white-space:nowrap;
-    }
-    .rf-thumb-stack img{
-      width:28px;
-      height:28px;
-      object-fit:cover;
-      border-radius:7px;
-      border:1px solid #e5e7eb;
-    }
     .rf-link{
       text-decoration:none;
       font-weight:800;
@@ -724,7 +709,6 @@ end
               <th class="rf-col-compact">Location</th>
               <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
-              <th class="rf-col-compact">Images</th>
               <th class="rf-col-title">Title</th>
               <th class="rf-col-compact">Ticket Price</th>
               <th class="rf-col-compact">Sold</th>
@@ -759,17 +743,6 @@ end
                       <% end %>
                     </span>
                   </td>
-                  <td class="rf-col-compact">
-                    <div class="rf-thumb-stack">
-                      <% if raffle.photos.attached? %>
-                        <% raffle.photos.first(4).each do |photo| %>
-                          <%= image_tag url_for(photo), alt: "" %>
-                        <% end %>
-                      <% else %>
-                        <span>-</span>
-                      <% end %>
-                    </div>
-                  </td>
                   <td class="rf-col-title"><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
                   <td class="rf-col-compact"><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
                   <td class="rf-col-compact"><%= raffle.sold_tickets_count %> / <%= raffle.total_tickets %></td>
@@ -791,7 +764,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="12" class="rf-empty-state">No active raffles.</td></tr>
+              <tr><td colspan="11" class="rf-empty-state">No active raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -811,7 +784,6 @@ end
               <th class="rf-col-compact">Location</th>
               <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
-              <th class="rf-col-compact">Images</th>
               <th class="rf-col-title">Title</th>
               <th class="rf-col-compact">Main Raffle</th>
               <th class="rf-col-compact">Ticket Price</th>
@@ -847,17 +819,6 @@ end
                       <% end %>
                     </span>
                   </td>
-                  <td class="rf-col-compact">
-                    <div class="rf-thumb-stack">
-                      <% if raffle.photos.attached? %>
-                        <% raffle.photos.first(4).each do |photo| %>
-                          <%= image_tag url_for(photo), alt: "" %>
-                        <% end %>
-                      <% else %>
-                        <span>-</span>
-                      <% end %>
-                    </div>
-                  </td>
                   <td class="rf-col-title"><%= link_to raffle.title, raffle_path(raffle), class: "rf-link" %></td>
                   <td class="rf-col-compact"><%= raffle.main_raffle&.title.presence || "-" %></td>
                   <td class="rf-col-compact"><%= number_to_currency(raffle.ticket_price_eur, unit: "€") %></td>
@@ -880,7 +841,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="13" class="rf-empty-state">No active mini raffles.</td></tr>
+              <tr><td colspan="12" class="rf-empty-state">No active mini raffles.</td></tr>
             <% end %>
           </tbody>
         </table>

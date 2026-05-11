@@ -56,8 +56,6 @@ class RafflesController < ApplicationController
       status: "active"
     )
 
-    attach_photos(@raffle, raffle_params[:photos])
-
     if @raffle.save
       redirect_to raffle_path(@raffle), notice: "Raffle created successfully."
     else
@@ -367,7 +365,7 @@ class RafflesController < ApplicationController
   end
 
   def raffle_params
-    params.require(:raffle).permit(:title, :raffle_kind, :main_raffle_id, :total_tickets, photos: [])
+    params.require(:raffle).permit(:title, :raffle_kind, :main_raffle_id, :total_tickets)
   end
 
   def ticket_price_param
@@ -428,15 +426,6 @@ class RafflesController < ApplicationController
     attrs[:winner_user_id] = nil if Raffle.column_names.include?("winner_user_id")
 
     raffle.update_columns(attrs)
-  end
-
-  def attach_photos(record, photos)
-    return unless record.respond_to?(:photos)
-    return unless record.photos.respond_to?(:attach)
-
-    Array(photos).reject(&:blank?).first(4).each do |photo|
-      record.photos.attach(photo)
-    end
   end
 
   def money_to_cents(value)

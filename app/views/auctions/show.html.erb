@@ -2,10 +2,8 @@
 References:
 - Rails Action View helpers:
   https://guides.rubyonrails.org/action_view_helpers.html
-- Rails Active Storage display helpers:
-  https://guides.rubyonrails.org/active_storage_overview.html
 - Rails form helpers:
-  https://api.rubyonrails.org/classes/ActionView/Helpers/FormHelper.html
+  https://api.rubyonrails.org/classes/ActionView/FormHelper.html
 - Bootstrap modals and buttons:
   https://getbootstrap.com/docs/5.3/components/modal/
   https://getbootstrap.com/docs/5.3/components/buttons/
@@ -28,7 +26,6 @@ reserve_label = auction.no_reserve? ? "No Reserve" : "Reserve"
 status_label = auction_status_label(auction)
 status_badge_class = auction_status_badge_class(auction)
 status_key = auction.status.to_s
-images = auction_images_for(auction)
 
 winning_bidder = auction.winning_bidder
 current_user_id = current_user&.id.to_i
@@ -62,7 +59,6 @@ remaining_text =
   <style>
     .au-show{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
     .au-left{flex:1;min-width:320px}
-    .au-right{width:420px;max-width:100%}
     .au-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08)}
     .au-section{margin-top:14px}
     .au-title{font-size:1.2rem;margin:0 0 6px}
@@ -72,9 +68,6 @@ remaining_text =
     .au-desc{white-space:pre-wrap;word-break:break-word}
     .au-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .au-btn{padding:6px 10px;font-size:.85rem}
-    .au-thumbs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-    .au-thumb{width:100%;height:160px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;cursor:pointer;transition:transform .12s ease}
-    .au-thumb:hover{transform:scale(1.03)}
     .au-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
     .au-badges img{height:22px;width:22px;object-fit:contain}
     .au-pay{margin-top:12px;border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#f9fafb}
@@ -298,40 +291,6 @@ remaining_text =
         <% end %>
       </div>
     </div>
-
-    <div class="au-right">
-      <div class="au-card" id="auctionImagesCard">
-        <div class="fw-semibold mb-2">Auction Image(s):</div>
-
-        <% if images.any? %>
-          <div class="au-thumbs">
-            <% images.each_with_index do |image, index| %>
-              <%= image_tag url_for(image),
-                            class: "au-thumb",
-                            alt: "Auction image #{index + 1}",
-                            data: { bs_toggle: "modal", bs_target: "#auctionImageModal", full_src: url_for(image) } %>
-            <% end %>
-          </div>
-        <% else %>
-          <div class="text-muted">No images uploaded.</div>
-        <% end %>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="auctionImageModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Image</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body d-flex justify-content-center">
-        <img id="auctionImageModalEl" src="" alt="" style="max-width:100%;max-height:78vh;object-fit:contain;">
-      </div>
-    </div>
   </div>
 </div>
 
@@ -364,7 +323,6 @@ remaining_text =
     }
 
     function initAuctionShow() {
-      const imageModal = document.getElementById("auctionImageModalEl")
       const timer = document.getElementById("auctionShowTimer")
       const status = document.getElementById("auctionShowStatus")
       const confirmModal = document.getElementById("auctionConfirmModal")
@@ -373,9 +331,6 @@ remaining_text =
       const confirmNo = document.getElementById("auctionConfirmNo")
 
       document.addEventListener("click", (event) => {
-        const image = event.target.closest("img[data-bs-target='#auctionImageModal']")
-        if (imageModal && image) imageModal.src = image.dataset.fullSrc || ""
-
         const reveal = event.target.closest("[data-reveal-tag='true']")
         if (reveal) {
           const tag = reveal.parentElement?.querySelector("[data-secret-tag]")
@@ -469,21 +424,10 @@ remaining_text =
         timer.textContent = formatRemaining(left)
       }
 
-      function syncCardHeights() {
-        const info = document.getElementById("auctionInfoCard")
-        const images = document.getElementById("auctionImagesCard")
-        if (!info || !images) return
-
-        images.style.minHeight = ""
-        if (window.innerWidth >= 992) images.style.minHeight = `${info.offsetHeight}px`
-      }
-
       updateTimer()
-      syncCardHeights()
 
       if (window.auctionShowTimerId) clearInterval(window.auctionShowTimerId)
       window.auctionShowTimerId = setInterval(updateTimer, 1000)
-      window.addEventListener("resize", syncCardHeights)
     }
 
     document.addEventListener("DOMContentLoaded", initAuctionShow)

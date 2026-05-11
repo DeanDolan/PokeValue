@@ -6,7 +6,7 @@ class AuctionsController < ApplicationController
     redirect_to(root_path, alert: "Please log in.") unless current_user
   end
 
-  # Creates an auction with description, condition, reserve details, duration and images.
+  # Creates an auction with description, condition, reserve details and duration.
   def create
     return redirect_to(root_path, alert: "Please log in.") unless current_user
 
@@ -14,15 +14,11 @@ class AuctionsController < ApplicationController
     reserve_status = params[:reserve_status].to_s.strip
     description = params[:auction_description].to_s.strip
     condition = params[:condition].to_s.strip
-    uploads = clean_uploads(params[:photos])
 
     return redirect_to(new_auction_path, alert: "Choose an auction time length.") unless duration
     return redirect_to(new_auction_path, alert: "Choose reserve status.") unless Auction::RESERVE_STATUSES.include?(reserve_status)
     return redirect_to(new_auction_path, alert: "Auction description is required.") if description.blank?
     return redirect_to(new_auction_path, alert: "Condition is required.") if condition.blank?
-
-    upload_error = upload_error_for(uploads)
-    return redirect_to(new_auction_path, alert: upload_error) if upload_error.present?
 
     reserve_cents = reserve_status == "Reserve" ? money_to_cents(params[:reserve_price]) : nil
     return redirect_to(new_auction_path, alert: "Reserve price must be greater than 0.") if reserve_status == "Reserve" && reserve_cents.to_i <= 0
@@ -40,7 +36,6 @@ class AuctionsController < ApplicationController
     )
 
     if auction.save
-      uploads.each { |file| auction.photos.attach(file) }
       redirect_to(auction_listing_path(auction), notice: "Auction created.")
     else
       redirect_to(new_auction_path, alert: auction.errors.full_messages.to_sentence.presence || "Could not create auction.")
@@ -181,25 +176,6 @@ class AuctionsController < ApplicationController
     (BigDecimal(value.to_s.strip.tr(",", ".")) * 100).to_i
   rescue
     0
-  end
-
-  # Removes empty file inputs from the upload list.
-  def clean_uploads(files)
-    Array(files).compact.reject { |file| file.respond_to?(:blank?) && file.blank? }
-  end
-
-  # Validates uploaded auction photos before saving.
-  def upload_error_for(uploads)
-    return "You can upload up to 4 images." if uploads.length > 4
-
-    uploads.each do |file|
-      content_type = file.content_type.to_s
-      next if content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
-
-      return "Images must be .jpg or .png."
-    end
-
-    nil
   end
 
   # Gets seller review average and count.

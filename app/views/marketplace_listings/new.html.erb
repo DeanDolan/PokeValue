@@ -1,8 +1,7 @@
 <%#
 References:
-- Rails form helpers and file uploads:
+- Rails form helpers:
   https://guides.rubyonrails.org/form_helpers.html
-  https://guides.rubyonrails.org/active_storage_overview.html
 - Bootstrap forms and dropdowns:
   https://getbootstrap.com/docs/5.3/forms/overview/
   https://getbootstrap.com/docs/5.3/components/dropdowns/
@@ -40,7 +39,6 @@ selected_holding_option = selected_holding ? marketplace_holding_option(selected
     .ml-hold-item img{width:34px;height:34px;object-fit:contain}
     .ml-hold-title{font-weight:600;font-size:.9rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .ml-hold-sub{font-size:.78rem;color:#6b7280;line-height:1.2}
-    .ml-img-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   </style>
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
@@ -53,7 +51,7 @@ selected_holding_option = selected_holding ? marketplace_holding_option(selected
   </div>
 
   <div class="ml-wrap">
-    <%= form_with url: marketplace_listings_path, method: :post, local: true, html: { multipart: true, id: "ml-form" } do %>
+    <%= form_with url: marketplace_listings_path, method: :post, local: true, html: { id: "ml-form" } do %>
       <input type="hidden" name="mode" id="ml-mode" value="<%= selected_mode %>">
 
       <div class="d-flex gap-3 flex-wrap mb-3">
@@ -139,7 +137,7 @@ selected_holding_option = selected_holding ? marketplace_holding_option(selected
         </div>
       </div>
 
-      <div class="row g-2 mb-2 align-items-end">
+      <div class="row g-2 mb-3 align-items-end">
         <div class="col-12 col-lg-3">
           <label class="form-label mb-1 ml-rowlabel">Quantity</label>
           <%= number_field_tag :quantity, selected_quantity, min: 1, step: 1, class: "form-control" %>
@@ -159,19 +157,6 @@ selected_holding_option = selected_holding ? marketplace_holding_option(selected
             <% end %>
           </select>
         </div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label mb-1 ml-rowlabel">Images (up to 4)</label>
-
-        <div class="ml-img-grid">
-          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-          <input class="form-control" type="file" name="photos[]" accept="image/png,image/jpeg">
-        </div>
-
-        <div class="small text-muted mt-1">PNG/JPG only.</div>
       </div>
 
       <div class="d-flex gap-2 justify-content-end flex-wrap">

@@ -2,7 +2,6 @@ class Auction < ApplicationRecord
   belongs_to :seller, class_name: "User"
 
   has_many :auction_bids, dependent: :destroy
-  has_many_attached :photos
 
   # Main lifecycle states for an auction.
   STATUSES = %w[running ended payment_pending paid sold].freeze
@@ -39,8 +38,6 @@ class Auction < ApplicationRecord
   validates :reserve_cents, numericality: { greater_than: 0 }, if: -> {
     reserve? && has_attribute?(:reserve_cents) && self[:reserve_cents].present?
   }
-
-  validate :photos_count_and_type
 
   before_validation :normalize_fields
 
@@ -334,20 +331,5 @@ class Auction < ApplicationRecord
     return if filtered.empty?
 
     update_columns(filtered)
-  end
-
-  # Validates uploaded auction images.
-  def photos_count_and_type
-    return unless photos.attached?
-
-    errors.add(:photos, "must be 4 images or fewer") if photos.count > 4
-
-    photos.each do |photo|
-      content_type = photo.content_type.to_s
-      next if content_type == "image/png" || content_type == "image/jpeg" || content_type == "image/jpg"
-
-      errors.add(:photos, "must be JPG or PNG")
-      break
-    end
   end
 end
