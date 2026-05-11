@@ -1,0 +1,33 @@
+{
+  "feature_cols": [
+    "lag_1",
+    "lag_3",
+    "lag_6",
+    "lag_12",
+    "roll_3_mean",
+    "roll_6_mean",
+    "roll_12_mean",
+    "roll_6_std",
+    "roll_12_std",
+    "month_of_year",
+    "year",
+    "months_since_release",
+    "Set Name",
+    "Product Name",
+    "Product Category",
+    "Era"
+  ],
+  "cat_features": [
+    "Set Name",
+    "Product Name",
+    "Product Category",
+    "Era"
+  ],
+  "cat_feature_indices": [
+    12,
+    13,
+    14,
+    15
+  ],
+  "training_rows": 952
+}
