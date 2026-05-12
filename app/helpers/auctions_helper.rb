@@ -80,38 +80,6 @@ module AuctionsHelper
     auction_admin_user?(user) ? [ "badges/adminbadge.png" ] : []
   end
 
-  # Builds a simple star rating display.
-  def auction_star_rating(avg, prefix: "pv-au")
-    value = avg.to_f.clamp(0.0, 5.0)
-    rounded = ((value * 2).round / 2.0)
-    full = rounded.floor
-    half = (rounded - full) >= 0.5
-
-    parts = []
-    full.times { parts << content_tag(:span, "★", class: "#{prefix}-star") }
-    parts << content_tag(:span, "½", class: "#{prefix}-half") if half
-
-    content_tag(:span, safe_join(parts), class: "#{prefix}-stars")
-  end
-
-  # Gets average review score and review count for visible sellers.
-  def auction_review_stats_for_ids(seller_ids)
-    ids = Array(seller_ids).compact.uniq
-    return {} if ids.empty? || !defined?(Review)
-
-    averages = Review.where(seller_id: ids).group(:seller_id).average(:rating)
-    counts = Review.where(seller_id: ids).group(:seller_id).count
-
-    ids.each_with_object({}) do |id, hash|
-      hash[id] = {
-        avg: averages[id].to_f,
-        count: counts[id].to_i
-      }
-    end
-  rescue
-    {}
-  end
-
   # Checks if an auction is in a payment state but still needs action.
   def auction_payment_waiting_status?(status)
     AUCTION_PAYMENT_WAITING_STATUSES.include?(status.to_s.downcase)

@@ -42,14 +42,10 @@ class AuctionsController < ApplicationController
     end
   end
 
-  # Shows one auction, seller stats, reviews and payment state.
+  # Shows one auction with seller, bidding and payment state.
   def show
     @auction = Auction.includes(:seller, auction_bids: [ :bidder, :saved_address ]).find(params[:id])
     @auction.refresh_status_and_settle!
-
-    @seller_stats = seller_stats_for(@auction.seller_id)
-    @reviews = reviews_for(@auction.seller_id)
-    @can_give_review = can_give_review?(@auction)
   end
 
   # Opens the bid form.
@@ -176,39 +172,6 @@ class AuctionsController < ApplicationController
     (BigDecimal(value.to_s.strip.tr(",", ".")) * 100).to_i
   rescue
     0
-  end
-
-  # Gets seller review average and count.
-  def seller_stats_for(seller_id)
-    return { avg: 0.0, count: 0 } unless defined?(Review)
-
-    {
-      avg: Review.where(seller_id: seller_id).average(:rating).to_f,
-      count: Review.where(seller_id: seller_id).count
-    }
-  rescue
-    { avg: 0.0, count: 0 }
-  end
-
-  # Loads seller reviews for display on the auction show page.
-  def reviews_for(seller_id)
-    return [] unless defined?(Review)
-
-    Review.where(seller_id: seller_id).includes(:reviewer).order(created_at: :desc).to_a
-  rescue
-    []
-  end
-
-  # Allows the winning bidder to review the seller once.
-  def can_give_review?(auction)
-    return false unless current_user && defined?(Review)
-    return false unless auction.status.to_s == "sold"
-    return false unless auction.winning_bidder_id.to_i == current_user.id.to_i
-    return false if auction.seller_id.to_i == current_user.id.to_i
-
-    !Review.where(seller_id: auction.seller_id, reviewer_id: current_user.id).exists?
-  rescue
-    false
   end
 
   # Gets the current user's latest bid on this auction.

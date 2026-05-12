@@ -77,45 +77,12 @@ host_revolut_tag = @raffle.revolut_tag.to_s
 # These are the options the host can choose from when assigning tickets manually.
 assignment_reason_options = ["Mini Raffle", "Free Ticket(s)"]
 
-# I use this small helper to turn an average rating into star HTML.
-# It also stops the rating from going below 0 or above 5.
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  # I round to the nearest 0.5 so I can show full stars and half stars.
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  # I build the star HTML parts here.
-  parts = []
-  full.times { parts << '<span class="pv-rf-rating-star">★</span>' }
-  parts << '<span class="pv-rf-rating-half">½</span>' if half
-
-  # html_safe is used because I am intentionally returning small HTML spans for the stars.
-  %(<span class="pv-rf-rating-stars">#{parts.join}</span>).html_safe
-end
-
-# I use host_stats for the host's review average and review count.
-# If the controller does not pass it in, I fall back to 0 values.
-host_stats = defined?(@host_stats) && @host_stats ? @host_stats : { avg: 0.0, count: 0 }
-
-# I use this for the list of reviews shown on this raffle page.
-reviews = defined?(@reviews) && @reviews ? @reviews : []
-
-# I use this to check if the current user is allowed to give the host a review.
-can_give_review = defined?(@can_give_review) ? @can_give_review : false
-
-# I use this to stop the same raffle winner reviewing the host more than once.
-already_reviewed_host = defined?(@already_reviewed_host) ? @already_reviewed_host : false
-
 # I use this to check if the person viewing the page is the raffle winner.
-viewer_is_raffle_winner = defined?(@viewer_is_raffle_winner) ? @viewer_is_raffle_winner : false
-
-# I make the review form id unique to this raffle so the show/hide button targets the correct form.
-review_form_id = "raffle-give-review-form-#{@raffle.id}"
+viewer_is_raffle_winner =
+  current_user.present? &&
+  is_completed &&
+  @raffle.winner_user_id.to_i == current_user.id.to_i &&
+  @raffle.host_id.to_i != current_user.id.to_i
 %>
 
 <div class="container-fluid py-3">
@@ -337,96 +304,6 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
       padding:.15rem .45rem;
       min-width:130px;
       user-select:none;
-    }
-
-    /* Review card container. */
-    .rf-review-card{
-      background:#fff;
-      border:1px solid #e5e7eb;
-      border-radius:14px;
-      padding:12px;
-      margin-bottom:10px;
-    }
-
-    /* Top row of each review card. */
-    .rf-review-top{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      align-items:flex-start;
-      flex-wrap:wrap;
-    }
-
-    /* Reviewer name styling. */
-    .rf-review-name{
-      font-weight:900;
-      font-size:.9rem;
-    }
-
-    /* Review stars row. */
-    .rf-review-stars{
-      display:flex;
-      align-items:center;
-      gap:6px;
-      white-space:nowrap;
-    }
-
-    /* Review comment body. */
-    .rf-review-body{
-      margin-top:6px;
-      color:#111827;
-      font-size:.9rem;
-      white-space:pre-wrap;
-    }
-
-    /* Review date text. */
-    .rf-review-meta{
-      color:#6b7280;
-      font-size:.8rem;
-    }
-
-    /* The give review form starts hidden and is shown when the Give Review button is clicked. */
-    .rf-review-form-wrap{
-      display:none;
-      max-width:460px;
-      margin:8px 0 14px;
-    }
-
-    /* Wrapper for the visual star rating. */
-    .pv-rf-rating-stars{
-      display:inline-flex !important;
-      align-items:center !important;
-      gap:1px !important;
-      white-space:nowrap !important;
-      line-height:1 !important;
-      vertical-align:middle !important;
-      color:#d4a017 !important;
-    }
-
-    /* Full star styling. */
-    .pv-rf-rating-star{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      text-shadow:none !important;
-    }
-
-    /* Half star styling. */
-    .pv-rf-rating-half{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      font-weight:900 !important;
-      font-size:.8em !important;
-      text-shadow:none !important;
     }
 
     /* Main wheel card layout. */
@@ -1494,87 +1371,6 @@ review_form_id = "raffle-give-review-form-#{@raffle.id}"
         </div>
       </section>
     <% end %>
-
-    <%# This section shows the host rating, reviews and possibly the Give Review form. %>
-    <section class="rf-card">
-      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-        <div>
-          <h2 class="h5 mb-1">Reviews</h2>
-
-          <%# Shows the host's average star rating and number of reviews. %>
-          <div class="rf-muted" style="font-size:.85rem;">
-            Host rating: <span title="<%= "#{host_stats[:avg].to_f.round(1)}/5 (#{host_stats[:count].to_i})" %>"><%= stars.call(host_stats[:avg]) %> (<%= host_stats[:count].to_i %>)</span>
-          </div>
-        </div>
-
-        <%# Shows the Give Review button only when the current user is allowed to review the host. %>
-        <% if can_give_review %>
-          <button
-            type="button"
-            class="btn btn-outline-primary btn-sm"
-            onclick="var wrap=document.getElementById('<%= review_form_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
-            Give Review
-          </button>
-        <% end %>
-      </div>
-
-      <%# Hidden review form that appears when Give Review is clicked. %>
-      <% if can_give_review %>
-        <div id="<%= review_form_id %>" class="rf-review-form-wrap">
-          <%= form_with url: reviews_path, method: :post, local: true do %>
-            <%= hidden_field_tag "review[seller_id]", @raffle.host_id %>
-
-            <div class="mb-2">
-              <label class="form-label mb-1" style="font-size:.75rem;">Rating (0 to 5)</label>
-              <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
-            </div>
-
-            <div class="mb-2">
-              <label class="form-label mb-1" style="font-size:.75rem;">Comment</label>
-              <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
-            </div>
-
-            <div class="d-flex justify-content-end">
-              <%= submit_tag "Submit Review", class: "btn btn-primary btn-sm" %>
-            </div>
-          <% end %>
-        </div>
-      <% elsif viewer_is_raffle_winner && already_reviewed_host %>
-        <div class="rf-muted mb-2" style="font-size:.85rem;">You have already reviewed this host.</div>
-      <% end %>
-
-      <%# Shows existing reviews if there are any. %>
-      <% if reviews.present? && reviews.any? %>
-        <% reviews.each do |review| %>
-          <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
-          <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{review.reviewer_id}" %>
-
-          <div class="rf-review-card">
-            <div class="rf-review-top">
-              <div>
-                <div class="rf-review-name"><%= reviewer_name %></div>
-                <div class="rf-review-stars">
-                  <%= stars.call(review.respond_to?(:rating) ? review.rating : 0) %>
-                  <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong>
-                </div>
-              </div>
-
-              <div class="rf-review-meta"><%= review.respond_to?(:created_at) && review.created_at ? review.created_at.strftime("%d %b %Y") : "" %></div>
-            </div>
-
-            <% body = (review.respond_to?(:comment) ? review.comment : "").to_s %>
-
-            <% if body.present? %>
-              <div class="rf-review-body"><%= body %></div>
-            <% else %>
-              <div class="rf-review-body text-muted">No comment left.</div>
-            <% end %>
-          </div>
-        <% end %>
-      <% else %>
-        <div class="rf-muted">No reviews yet.</div>
-      <% end %>
-    </section>
 
     <%# This is the interactive wheel section. %>
     <section class="rf-card rf-wheel-card" id="raffleWheelCard">

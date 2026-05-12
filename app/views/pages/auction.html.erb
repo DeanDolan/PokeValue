@@ -37,10 +37,6 @@ view_tab = "current" unless %w[current ended sold].include?(view_tab)
 # Filters auctions into the selected tab.
 auctions = all_auctions.select { |auction| auction_status_key(auction) == (view_tab == "current" ? "running" : view_tab) }
 
-# Pulls seller review stats for the visible auctions.
-seller_ids = auctions.map(&:seller_id).compact.uniq
-review_stats = auction_review_stats_for_ids(seller_ids)
-
 auction_logged_in = current_user.present?
 auction_admin_can_delete = auction_admin_user?(current_user)
 
@@ -70,17 +66,16 @@ empty_label =
     .au-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.72rem}
     .au-table th,.au-table td{text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;padding:4px 3px;font-size:.64rem}
     .au-table th{background:#f9fafb;font-weight:900;color:#374151;white-space:nowrap}
-    .au-table th:nth-child(1),.au-table td:nth-child(1){width:9%}
-    .au-table th:nth-child(2),.au-table td:nth-child(2){width:6%}
-    .au-table th:nth-child(3),.au-table td:nth-child(3){width:8%}
-    .au-table th:nth-child(4),.au-table td:nth-child(4){width:6%}
-    .au-table th:nth-child(5),.au-table td:nth-child(5){width:24%}
-    .au-table th:nth-child(6),.au-table td:nth-child(6){width:11%}
-    .au-table th:nth-child(7),.au-table td:nth-child(7){width:5%}
-    .au-table th:nth-child(8),.au-table td:nth-child(8){width:9%}
-    .au-table th:nth-child(9),.au-table td:nth-child(9){width:7%}
-    .au-table th:nth-child(10),.au-table td:nth-child(10){width:9%}
-    .au-table th:nth-child(11),.au-table td:nth-child(11){width:6%}
+    .au-table th:nth-child(1),.au-table td:nth-child(1){width:10%}
+    .au-table th:nth-child(2),.au-table td:nth-child(2){width:7%}
+    .au-table th:nth-child(3),.au-table td:nth-child(3){width:7%}
+    .au-table th:nth-child(4),.au-table td:nth-child(4){width:27%}
+    .au-table th:nth-child(5),.au-table td:nth-child(5){width:12%}
+    .au-table th:nth-child(6),.au-table td:nth-child(6){width:6%}
+    .au-table th:nth-child(7),.au-table td:nth-child(7){width:10%}
+    .au-table th:nth-child(8),.au-table td:nth-child(8){width:7%}
+    .au-table th:nth-child(9),.au-table td:nth-child(9){width:9%}
+    .au-table th:nth-child(10),.au-table td:nth-child(10){width:5%}
     .au-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#6b7280;font-size:.8rem}
     .au-table-card{position:relative;overflow:visible}
     .au-link{font-weight:600;text-decoration:none}
@@ -91,9 +86,6 @@ empty_label =
     .au-actions .btn{font-size:.52rem;padding:.1rem .2rem;line-height:1}
     .au-actions form{margin:0}
     .au-time{white-space:nowrap;font-variant-numeric:tabular-nums}
-    .pv-au-table-stars{display:inline-flex;align-items:center;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
-    .pv-au-table-star,.pv-au-table-half{display:inline-block;color:#d4a017;line-height:1}
-    .pv-au-table-half{font-weight:900;font-size:.8em}
     .au-badges{display:flex;justify-content:center;align-items:center;gap:3px;flex-wrap:wrap}
     .au-badges img{height:14px;width:14px;object-fit:contain}
     .au-confirm{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
@@ -237,7 +229,6 @@ empty_label =
           <tr>
             <th>Seller</th>
             <th>Location</th>
-            <th>Reviews</th>
             <th>Badges</th>
             <th>Description</th>
             <th>Condition</th>
@@ -256,7 +247,6 @@ empty_label =
               seller_id = auction.seller_id
               seller_name = seller&.username.to_s.presence || "User ##{seller_id}"
               country_code = seller&.country_code.to_s.upcase
-              stats = review_stats[seller_id] || { avg: 0.0, count: 0 }
               status_key = auction_status_key(auction)
               payment_waiting = auction_payment_waiting_status?(auction.status)
               end_timestamp = auction.ends_at.present? ? (auction.ends_at.to_f * 1000).to_i : 0
@@ -291,10 +281,6 @@ empty_label =
                 <% else %>
                   <span class="au-muted">-</span>
                 <% end %>
-              </td>
-
-              <td title="<%= "#{stats[:avg].round(1)}/5 (#{stats[:count]})" %>">
-                <%= auction_star_rating(stats[:avg], prefix: "pv-au-table") %> (<%= stats[:count] %>)
               </td>
 
               <td>

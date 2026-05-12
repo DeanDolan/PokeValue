@@ -11,7 +11,6 @@ References:
 listing = @listing
 seller = listing.seller
 seller_name = marketplace_seller_name(seller, listing.seller_id)
-stats = @seller_stats || { avg: 0.0, count: 0 }
 era = marketplace_era(listing.set_slug)
 display_product = marketplace_display_product(listing)
 seller_badges = marketplace_badges_for(seller)
@@ -20,22 +19,7 @@ is_seller = @is_seller
 can_offer = @can_offer
 my_offers = @my_offers || []
 seller_offers = @seller_offers || []
-reviews = @recent_reviews || []
 can_edit_listing = current_user && (is_seller || admin_can_delete) && listing.status.to_s == "active"
-confirmed_paid_buyer =
-  current_user &&
-  !is_seller &&
-  MarketplaceOffer.where(
-    marketplace_listing_id: listing.id,
-    seller_id: listing.seller_id,
-    buyer_id: current_user.id,
-    status: "confirmed_paid"
-  ).exists?
-already_reviewed_seller =
-  current_user &&
-  Review.where(seller_id: listing.seller_id, reviewer_id: current_user.id).exists?
-can_review_seller = confirmed_paid_buyer && !already_reviewed_seller
-review_form_id = "ml-review-form-#{listing.id}"
 %>
 
 <div id="marketplace-listing-show" class="container py-4">
@@ -50,13 +34,11 @@ review_form_id = "ml-review-form-#{listing.id}"
     .ml-actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .ml-badges{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
     .ml-badges img{height:22px;width:22px;object-fit:contain}
-    .pv-rating-stars{display:inline-flex;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
-    .pv-rating-star,.pv-rating-half{display:inline-block;color:#d4a017;line-height:1;font-weight:900}
     .ml-offer-grid{display:grid;grid-template-columns:1fr;gap:10px}
-    .ml-offer-card,.ml-review-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
-    .ml-offer-top,.ml-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
-    .ml-offer-name,.ml-review-name{font-weight:800;color:#111827;font-size:.9rem}
-    .ml-offer-meta,.ml-review-meta{color:#6b7280;font-size:.78rem}
+    .ml-offer-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
+    .ml-offer-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .ml-offer-name{font-weight:800;color:#111827;font-size:.9rem}
+    .ml-offer-meta{color:#6b7280;font-size:.78rem}
     .ml-offer-amount{font-weight:900;color:#111827}
     .ml-offer-status{display:inline-flex;border-radius:999px;padding:.22rem .55rem;font-size:.68rem;font-weight:900;border:1px solid #d1d5db;background:#fff;color:#111827}
     .ml-offer-pending{background:#fffbeb;border-color:#fcd34d;color:#92400e}
@@ -66,7 +48,6 @@ review_form_id = "ml-review-form-#{listing.id}"
     .ml-offer-rejected{background:#fef2f2;border-color:#fca5a5;color:#991b1b}
     .ml-tag-hidden{display:inline-block;background:#111827;color:#111827;border-radius:6px;padding:.15rem .55rem;min-width:120px;user-select:none}
     .ml-tag-value{font-weight:800;color:#111827}
-    .ml-review-body{margin-top:6px;color:#111827;font-size:.9rem;white-space:pre-wrap}
     .ml-confirm-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
     .ml-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
     .ml-confirm-title{font-size:1.05rem;font-weight:900;margin-bottom:8px}
@@ -90,7 +71,6 @@ review_form_id = "ml-review-form-#{listing.id}"
 
         <div class="ml-line"><strong>Seller:</strong> <%= link_to seller_name, user_path(listing.seller_id), class: "text-decoration-none" %></div>
         <div class="ml-line"><strong>Location:</strong> <span title="<%= country_name(listing.country_code) %>"><%= flag_emoji(listing.country_code) %></span></div>
-        <div class="ml-line"><strong>Reviews:</strong> <%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</div>
 
         <div class="ml-line">
           <strong>Badges:</strong>
@@ -235,67 +215,6 @@ review_form_id = "ml-review-form-#{listing.id}"
           <% end %>
         </div>
       <% end %>
-
-      <div class="ml-section">
-        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-          <h3 class="h6 m-0">Reviews</h3>
-
-          <% if can_review_seller %>
-            <button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('<%= review_form_id %>').classList.toggle('d-none')">
-              Give Review
-            </button>
-          <% end %>
-        </div>
-
-        <% if can_review_seller %>
-          <div class="ml-review-card mb-2">
-            <strong>Leave a Review</strong>
-
-            <div id="<%= review_form_id %>" class="mt-2 d-none">
-              <%= form_with url: reviews_path, method: :post, local: true do %>
-                <%= hidden_field_tag "review[seller_id]", listing.seller_id %>
-
-                <div class="mb-2">
-                  <label class="form-label mb-1 small">Rating (0 to 5)</label>
-                  <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
-                </div>
-
-                <div class="mb-2">
-                  <label class="form-label mb-1 small">Comment</label>
-                  <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
-                </div>
-
-                <div class="d-flex justify-content-end">
-                  <%= submit_tag "Submit Review", class: "btn btn-primary btn-sm" %>
-                </div>
-              <% end %>
-            </div>
-          </div>
-        <% elsif confirmed_paid_buyer && already_reviewed_seller %>
-          <div class="text-muted small mb-2">You have already reviewed this seller.</div>
-        <% end %>
-
-        <% if reviews.any? %>
-          <% reviews.each do |review| %>
-            <% reviewer_name = marketplace_seller_name(review.reviewer, review.reviewer_id) %>
-
-            <div class="ml-review-card mb-2">
-              <div class="ml-review-top">
-                <div>
-                  <div class="ml-review-name"><%= reviewer_name %></div>
-                  <div><%= marketplace_stars(review.rating) %> <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong></div>
-                </div>
-
-                <div class="ml-review-meta"><%= review.created_at.strftime("%d %b %Y") %></div>
-              </div>
-
-              <div class="ml-review-body"><%= review.comment.to_s.presence || "No comment left." %></div>
-            </div>
-          <% end %>
-        <% else %>
-          <div class="text-muted">No reviews yet.</div>
-        <% end %>
-      </div>
     </div>
   </div>
 

@@ -232,9 +232,6 @@ Rails.application.routes.draw do
   # Reviews are created after marketplace, auction or raffle interactions.
   resources :reviews, only: [ :create ]
 
-  # Funds routes are used when a user adds funds to their account balance.
-  resources :funds, only: [ :new, :create ]
-
   # These are the main marketplace listing routes.
   # index   -> show all marketplace listings
   # new     -> show create listing form

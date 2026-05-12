@@ -74,37 +74,6 @@ class RafflesController < ApplicationController
     @participant_rows = build_participant_rows(@tickets)
     @winning_ticket = @tickets.find { |t| t.ticket_number.to_i == @raffle.winner_number.to_i } if @raffle.completed?
     @paid_amount_cents = @tickets.select(&:paid?).sum(&:amount_paid_cents)
-
-    @host_stats =
-      if defined?(Review)
-        avg = Review.where(seller_id: @raffle.host_id).average(:rating).to_f
-        count = Review.where(seller_id: @raffle.host_id).count
-        { avg: avg, count: count }
-      else
-        { avg: 0.0, count: 0 }
-      end
-
-    @reviews =
-      if defined?(Review)
-        Review.where(seller_id: @raffle.host_id).includes(:reviewer).order(created_at: :desc).limit(10).to_a
-      else
-        []
-      end
-
-    @viewer_is_raffle_winner =
-      current_user.present? &&
-      @raffle.completed? &&
-      @raffle.winner_user_id.to_i == current_user.id.to_i &&
-      @raffle.host_id.to_i != current_user.id.to_i
-
-    @already_reviewed_host =
-      if defined?(Review) && current_user
-        Review.where(seller_id: @raffle.host_id, reviewer_id: current_user.id).exists?
-      else
-        false
-      end
-
-    @can_give_review = @viewer_is_raffle_winner && !@already_reviewed_host
   end
 
   def purchase_tickets

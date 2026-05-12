@@ -210,102 +210,6 @@ end
 is_admin =
   u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && !!u.admin))
 
-# Loads seller review statistics for the account header
-reviews_avg =
-  if defined?(Review) && u
-    Review.where(seller_id: u.id).average(:rating).to_f
-  else
-    0.0
-  end
-
-reviews_count =
-  if defined?(Review) && u
-    Review.where(seller_id: u.id).count
-  else
-    0
-  end
-
-all_reviews =
-  if defined?(Review) && u
-    Review.where(seller_id: u.id).includes(:reviewer).order(created_at: :desc).to_a
-  else
-    []
-  end
-
-# Builds a simple star display without overlapping stars.
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  parts = []
-  full.times { parts << '<span class="pv-acc-rating-star">★</span>' }
-  parts << '<span class="pv-acc-rating-half">½</span>' if half
-
-  %(<span class="pv-acc-rating-stars">#{parts.join}</span>).html_safe
-end
-
-marketplace_review_credit_count = 0
-auction_review_credit_count = 0
-raffle_review_credit_count = 0
-reviewer_review_count = 0
-
-# Allows reviews only when the viewer has completed a purchase, won an auction, or won a raffle from this seller
-if defined?(current_user) && current_user && !is_self && u
-  if defined?(MarketplaceOffer)
-    begin
-      marketplace_review_credit_count = MarketplaceOffer.where(seller_id: u.id, buyer_id: current_user.id, status: "confirmed_paid").count
-    rescue
-      marketplace_review_credit_count = 0
-    end
-  end
-
-  if defined?(Auction)
-    begin
-      auction_cols = Auction.column_names
-      if auction_cols.include?("seller_id") && auction_cols.include?("winning_bidder_id")
-        scope = Auction.where(seller_id: u.id, winning_bidder_id: current_user.id)
-        scope = scope.where(status: "sold") if auction_cols.include?("status")
-        auction_review_credit_count = scope.count
-      end
-    rescue
-      auction_review_credit_count = 0
-    end
-  end
-
-  if defined?(Raffle)
-    begin
-      raffle_cols = Raffle.column_names
-      if raffle_cols.include?("host_id") && raffle_cols.include?("winner_user_id")
-        scope = Raffle.where(host_id: u.id, winner_user_id: current_user.id)
-        scope = scope.where(status: "completed") if raffle_cols.include?("status")
-        raffle_review_credit_count = scope.count
-      end
-    rescue
-      raffle_review_credit_count = 0
-    end
-  end
-
-  if defined?(Review)
-    begin
-      reviewer_review_count = Review.where(seller_id: u.id, reviewer_id: current_user.id).count
-    rescue
-      reviewer_review_count = 0
-    end
-  end
-
-  review_credit_count = marketplace_review_credit_count + auction_review_credit_count + raffle_review_credit_count
-else
-  review_credit_count = 0
-end
-
-can_give_review = defined?(current_user) && current_user && !is_self && u && review_credit_count > 0 && reviewer_review_count == 0
-review_form_id = "acc-give-review-form-#{u&.id || 'user'}"
-
 # Loads the user's current marketplace listings
 current_listings =
   if defined?(@current_listings)
@@ -744,16 +648,6 @@ eu_countries = [
     .acc-address-grid{display:grid;gap:10px}
     .acc-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
     .acc-address-line{font-size:.82rem;line-height:1.25}
-    .pv-acc-rating-stars{display:inline-flex !important;align-items:center !important;gap:1px !important;white-space:nowrap !important;line-height:1 !important;vertical-align:middle !important;color:#d4a017 !important}
-    .pv-acc-rating-star{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;text-shadow:none !important}
-    .pv-acc-rating-half{display:inline-block !important;position:static !important;width:auto !important;height:auto !important;overflow:visible !important;color:#d4a017 !important;line-height:1 !important;font-weight:900 !important;font-size:.8em !important;text-shadow:none !important}
-    .acc-review-list{display:grid;gap:10px}
-    .acc-review-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
-    .acc-review-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
-    .acc-review-name{font-weight:900;font-size:.85rem}
-    .acc-review-date{font-size:.75rem;color:#6b7280}
-    .acc-review-rating{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.8rem}
-    .acc-review-comment{margin-top:8px;font-size:.85rem;color:#111827;white-space:pre-wrap}
   </style>
 
   <div id="account-work-area" class="acc-wrap">
@@ -780,44 +674,6 @@ eu_countries = [
                 <span class="text-muted">N/A</span>
               <% end %>
             </p>
-
-            <p class="d-flex align-items-center gap-2 flex-wrap">
-              <span class="badge bg-light text-dark border" title="<%= "#{reviews_avg.round(1)}/5 (#{reviews_count})" %>">
-                Reviews: <%= stars.call(reviews_avg) %> (<%= reviews_count %>)
-              </span>
-
-              <% if can_give_review %>
-                <button
-                  type="button"
-                  class="btn btn-outline-primary btn-sm"
-                  onclick="var wrap=document.getElementById('<%= review_form_id %>'); if(!wrap){return false;} wrap.style.display=(wrap.style.display==='none'||wrap.style.display==='')?'block':'none';">
-                  Give Review
-                </button>
-              <% end %>
-            </p>
-
-            <%# Review form only appears when the current user is allowed to review this seller %>
-            <% if can_give_review %>
-              <div id="<%= review_form_id %>" style="display:none;max-width:420px;">
-                <%= form_with url: reviews_path, method: :post, local: true do %>
-                  <%= hidden_field_tag "review[seller_id]", u.id %>
-
-                  <div class="mb-2">
-                    <label class="form-label mb-1" style="font-size:.75rem;">Rating (0 to 5)</label>
-                    <%= number_field_tag "review[rating]", "", min: 0, max: 5, step: 0.1, class: "form-control form-control-sm", required: true %>
-                  </div>
-
-                  <div class="mb-2">
-                    <label class="form-label mb-1" style="font-size:.75rem;">Comment</label>
-                    <%= text_area_tag "review[comment]", "", class: "form-control form-control-sm", rows: 3, maxlength: 1000 %>
-                  </div>
-
-                  <div class="d-flex justify-content-end">
-                    <%= submit_tag "Submit Review", class: "btn btn-primary btn-sm" %>
-                  </div>
-                <% end %>
-              </div>
-            <% end %>
           </div>
         </div>
       </div>
@@ -1336,39 +1192,6 @@ eu_countries = [
           <% end %>
         </div>
       <% end %>
-
-      <div class="acc-card">
-        <div class="subhead">Reviews</div>
-
-        <% if all_reviews.any? %>
-          <div class="acc-review-list">
-            <% all_reviews.each do |review| %>
-              <% reviewer = review.respond_to?(:reviewer) ? review.reviewer : nil %>
-              <% reviewer_name = reviewer && reviewer.respond_to?(:username) && reviewer.username.present? ? reviewer.username : "User ##{review.reviewer_id}" %>
-              <div class="acc-review-card">
-                <div class="acc-review-top">
-                  <div>
-                    <div class="acc-review-name"><%= reviewer_name %></div>
-                    <div class="acc-review-rating">
-                      <%= stars.call(review.rating.to_f) %>
-                      <strong><%= number_with_precision(review.rating.to_f, precision: 1) %>/5</strong>
-                    </div>
-                  </div>
-                  <div class="acc-review-date"><%= review.created_at ? review.created_at.strftime("%d %b %Y") : "" %></div>
-                </div>
-
-                <% if review.comment.to_s.strip.present? %>
-                  <div class="acc-review-comment"><%= review.comment %></div>
-                <% else %>
-                  <div class="acc-review-comment text-muted">No comment left.</div>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-        <% else %>
-          <div class="mp-empty">No reviews yet.</div>
-        <% end %>
-      </div>
     </div>
   </div>
 </div>

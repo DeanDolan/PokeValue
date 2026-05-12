@@ -109,10 +109,8 @@ class MarketplaceListingsController < ApplicationController
     render :edit, status: :unprocessable_entity
   end
 
-  # Shows one listing with seller reviews and offer information.
+  # Shows one listing with seller and offer information.
   def show
-    @seller_stats = seller_stats(@listing.seller_id)
-    @recent_reviews = recent_reviews(@listing.seller_id)
     @admin_can_delete = admin_user?
     @is_seller = current_user && current_user.id.to_i == @listing.seller_id.to_i
 
@@ -491,7 +489,7 @@ class MarketplaceListingsController < ApplicationController
     end
   end
 
-  # Loads active listings and seller review stats.
+  # Loads active listings.
   def load_current_listings
     scope = MarketplaceListing.active.includes(:seller)
     scope = apply_current_filters(scope)
@@ -499,7 +497,6 @@ class MarketplaceListingsController < ApplicationController
     @listings = scope.to_a
     @sold_rows = []
     @sold_listing_map = {}
-    @review_stats = review_stats_for(@listings.map(&:seller_id))
   end
 
   # Applies database filters to active listings.
@@ -558,7 +555,6 @@ class MarketplaceListingsController < ApplicationController
 
     @sold_rows = rows.first(500)
     @listings = []
-    @review_stats = review_stats_for(@sold_rows.map { |row| sold_row_seller_id(row) })
   end
 
   # Checks sold rows against the current filters.
@@ -599,38 +595,6 @@ class MarketplaceListingsController < ApplicationController
     else
       rows.sort_by { |row| -(sold_row_date(row)&.to_i || 0) }
     end
-  end
-
-  # Finds review averages for sellers shown in the table.
-  def review_stats_for(seller_ids)
-    ids = seller_ids.compact.uniq
-    return {} if ids.blank?
-
-    Review.where(seller_id: ids)
-          .group(:seller_id)
-          .pluck(:seller_id, Arel.sql("AVG(rating)"), Arel.sql("COUNT(*)"))
-          .each_with_object({}) do |(seller_id, avg, count), hash|
-            hash[seller_id] = { avg: avg.to_f, count: count.to_i }
-          end
-  rescue
-    {}
-  end
-
-  # Finds one seller's review summary.
-  def seller_stats(seller_id)
-    {
-      avg: Review.where(seller_id: seller_id).average(:rating).to_f,
-      count: Review.where(seller_id: seller_id).count
-    }
-  rescue
-    { avg: 0.0, count: 0 }
-  end
-
-  # Loads recent reviews for a seller.
-  def recent_reviews(seller_id)
-    Review.where(seller_id: seller_id).order(created_at: :desc).limit(10)
-  rescue
-    []
   end
 
   # Finds set slugs for an era.

@@ -34,8 +34,6 @@ listing_map = @sold_listing_map || {}
     .mp-tab-links{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
     .mp-tab-link{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;background:#fff}
     .mp-tab-link.active{border-color:#111827;font-weight:900}
-    .pv-rating-stars{display:inline-flex;gap:1px;white-space:nowrap;color:#d4a017;line-height:1}
-    .pv-rating-star,.pv-rating-half{display:inline-block;color:#d4a017;line-height:1;font-weight:900}
     .mp-confirm-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
     .mp-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
     .mp-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
@@ -198,7 +196,6 @@ listing_map = @sold_listing_map || {}
             <tr>
               <th>Seller</th>
               <th>Location</th>
-              <th>Reviews</th>
               <th>Badges</th>
               <th>Era</th>
               <th>Set</th>
@@ -214,12 +211,10 @@ listing_map = @sold_listing_map || {}
             <% if @listings.any? %>
               <% @listings.each do |listing| %>
                 <% seller = listing.seller %>
-                <% stats = @review_stats[listing.seller_id] || { avg: 0.0, count: 0 } %>
 
                 <tr>
                   <td><%= link_to marketplace_seller_name(seller, listing.seller_id), user_path(listing.seller_id), class: "text-decoration-none" %></td>
                   <td title="<%= country_name(listing.country_code) %>"><%= flag_emoji(listing.country_code) %></td>
-                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</td>
                   <td class="mp-badges">
                     <% marketplace_badges_for(seller).each do |badge| %>
                       <%= image_tag badge, alt: "" %>
@@ -248,7 +243,7 @@ listing_map = @sold_listing_map || {}
               <% end %>
             <% else %>
               <tr>
-                <td colspan="11" class="text-center text-muted py-4">No listings found.</td>
+                <td colspan="10" class="text-center text-muted py-4">No listings found.</td>
               </tr>
             <% end %>
           </tbody>
@@ -257,7 +252,6 @@ listing_map = @sold_listing_map || {}
             <tr>
               <th>Seller</th>
               <th>Location</th>
-              <th>Reviews</th>
               <th>Badges</th>
               <th>Era</th>
               <th>Set</th>
@@ -276,7 +270,6 @@ listing_map = @sold_listing_map || {}
                 <% listing = marketplace_sold_listing(row, listing_map) %>
                 <% seller_id = marketplace_sold_seller_id(row, listing_map) %>
                 <% seller = marketplace_sold_seller(row, listing_map) %>
-                <% stats = @review_stats[seller_id] || { avg: 0.0, count: 0 } %>
                 <% set_slug = marketplace_sold_set_slug(row, listing_map) %>
                 <% country = marketplace_sold_country(row, listing_map) %>
                 <% sale_date = marketplace_sold_date(row, listing_map) %>
@@ -290,7 +283,6 @@ listing_map = @sold_listing_map || {}
                     <% end %>
                   </td>
                   <td title="<%= country.present? ? country_name(country) : "" %>"><%= country.present? ? flag_emoji(country) : "-" %></td>
-                  <td title="<%= "#{stats[:avg].round(1)}/5" %>"><%= marketplace_stars(stats[:avg]) %> (<%= stats[:count] %>)</td>
                   <td class="mp-badges">
                     <% marketplace_badges_for(seller).each do |badge| %>
                       <%= image_tag badge, alt: "" %>
@@ -316,7 +308,7 @@ listing_map = @sold_listing_map || {}
               <% end %>
             <% else %>
               <tr>
-                <td colspan="12" class="text-center text-muted py-4">No sold listings found.</td>
+                <td colspan="11" class="text-center text-muted py-4">No sold listings found.</td>
               </tr>
             <% end %>
           </tbody>

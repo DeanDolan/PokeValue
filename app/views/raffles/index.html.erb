@@ -17,50 +17,6 @@ raffle_logged_in = current_user.present?
 # Checks whether the current viewer can delete raffles from the normal raffle pages
 admin_can_manage_raffles = defined?(@admin_can_manage_raffles) && @admin_can_manage_raffles
 
-# Loads review totals for raffle hosts so the Reviews column can match the marketplace and auction style
-all_raffles_for_host_stats = main_active + mini_active + completed + incompleted
-host_ids_for_stats = all_raffles_for_host_stats.map { |raffle| raffle.host_id.to_i }.reject(&:zero?).uniq
-
-review_counts_by_seller_id =
-  if defined?(Review) && host_ids_for_stats.any?
-    Review.where(seller_id: host_ids_for_stats).group(:seller_id).count
-  else
-    {}
-  end
-
-review_avgs_by_seller_id =
-  if defined?(Review) && host_ids_for_stats.any?
-    Review.where(seller_id: host_ids_for_stats).group(:seller_id).average(:rating)
-  else
-    {}
-  end
-
-stars = lambda do |avg|
-  value = avg.to_f
-  value = 0.0 if value < 0
-  value = 5.0 if value > 5
-
-  rounded = ((value * 2).round / 2.0)
-  full = rounded.floor
-  half = (rounded - full) >= 0.5
-
-  parts = []
-  full.times { parts << '<span class="pv-acc-rating-star">★</span>' }
-  parts << '<span class="pv-acc-rating-half">½</span>' if half
-
-  %(<span class="pv-acc-rating-stars">#{parts.join}</span>).html_safe
-end
-
-# Builds the compact review text shown in the Reviews column
-review_data_for = lambda do |user|
-  next { avg: 0.0, count: 0 } unless user
-
-  avg = review_avgs_by_seller_id[user.id].to_f
-  count = review_counts_by_seller_id[user.id].to_i
-
-  { avg: avg, count: count }
-end
-
 # Builds the compact location text shown in the Location column
 location_text_for = lambda do |user|
   next "-" unless user && user.respond_to?(:country_code)
@@ -308,45 +264,6 @@ end
       justify-content:center;
       font-size:.84rem;
       line-height:1;
-    }
-    .rf-review-cell{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:3px;
-      white-space:nowrap;
-      font-weight:700;
-    }
-    .pv-acc-rating-stars{
-      display:inline-flex !important;
-      align-items:center !important;
-      gap:1px !important;
-      white-space:nowrap !important;
-      line-height:1 !important;
-      vertical-align:middle !important;
-      color:#d4a017 !important;
-    }
-    .pv-acc-rating-star{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      text-shadow:none !important;
-    }
-    .pv-acc-rating-half{
-      display:inline-block !important;
-      position:static !important;
-      width:auto !important;
-      height:auto !important;
-      overflow:visible !important;
-      color:#d4a017 !important;
-      line-height:1 !important;
-      font-weight:900 !important;
-      font-size:.8em !important;
-      text-shadow:none !important;
     }
     .rf-badges-cell{
       display:inline-flex;
@@ -707,7 +624,6 @@ end
             <tr>
               <th class="rf-col-host">Host</th>
               <th class="rf-col-compact">Location</th>
-              <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
               <th class="rf-col-title">Title</th>
               <th class="rf-col-compact">Ticket Price</th>
@@ -722,17 +638,10 @@ end
             <% if main_active.any? %>
               <% main_active.each do |raffle| %>
                 <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
-                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
                   <td class="rf-col-host"><%= raffle.host.username %></td>
                   <td class="rf-col-compact">
                     <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
-                  </td>
-                  <td class="rf-col-compact">
-                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
-                      <%= stars.call(review_data[:avg]) %>
-                      (<%= review_data[:count] %>)
-                    </span>
                   </td>
                   <td class="rf-col-compact">
                     <span class="rf-badges-cell">
@@ -764,7 +673,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="11" class="rf-empty-state">No active raffles.</td></tr>
+              <tr><td colspan="10" class="rf-empty-state">No active raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -782,7 +691,6 @@ end
             <tr>
               <th class="rf-col-host">Host</th>
               <th class="rf-col-compact">Location</th>
-              <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
               <th class="rf-col-title">Title</th>
               <th class="rf-col-compact">Main Raffle</th>
@@ -798,17 +706,10 @@ end
             <% if mini_active.any? %>
               <% mini_active.each do |raffle| %>
                 <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
-                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
                   <td class="rf-col-host"><%= raffle.host.username %></td>
                   <td class="rf-col-compact">
                     <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
-                  </td>
-                  <td class="rf-col-compact">
-                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
-                      <%= stars.call(review_data[:avg]) %>
-                      (<%= review_data[:count] %>)
-                    </span>
                   </td>
                   <td class="rf-col-compact">
                     <span class="rf-badges-cell">
@@ -841,7 +742,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="12" class="rf-empty-state">No active mini raffles.</td></tr>
+              <tr><td colspan="11" class="rf-empty-state">No active mini raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -859,7 +760,6 @@ end
             <tr>
               <th class="rf-col-host">Host</th>
               <th class="rf-col-compact">Location</th>
-              <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
               <th class="rf-col-compact">Type</th>
               <th class="rf-col-title">Title</th>
@@ -888,7 +788,6 @@ end
                   # Stores reveal state per raffle and per user in localStorage
                   reveal_storage_key = "raffle_revealed_#{raffle.id}_user_#{current_user_id_for_reveal}"
                   can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles)
-                  review_data = review_data_for.call(raffle.host)
                 %>
                 <tr data-raffle-row-id="<%= raffle.id %>" data-reveal-key="<%= reveal_storage_key %>" data-entrant-hide="<%= entrant_can_hide ? '1' : '0' %>" data-viewer-winner="<%= viewer_won_this_raffle ? '1' : '0' %>">
                   <td class="rf-col-host">
@@ -901,12 +800,6 @@ end
                   </td>
                   <td class="rf-col-compact">
                     <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
-                  </td>
-                  <td class="rf-col-compact">
-                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
-                      <%= stars.call(review_data[:avg]) %>
-                      (<%= review_data[:count] %>)
-                    </span>
                   </td>
                   <td class="rf-col-compact">
                     <span class="rf-badges-cell">
@@ -947,7 +840,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="11" class="rf-empty-state">No completed raffles.</td></tr>
+              <tr><td colspan="10" class="rf-empty-state">No completed raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
@@ -965,7 +858,6 @@ end
             <tr>
               <th class="rf-col-host">Host</th>
               <th class="rf-col-compact">Location</th>
-              <th class="rf-col-compact">Reviews</th>
               <th class="rf-col-compact">Badges</th>
               <th class="rf-col-compact">Type</th>
               <th class="rf-col-title">Title</th>
@@ -980,17 +872,10 @@ end
             <% if incompleted.any? %>
               <% incompleted.each do |raffle| %>
                 <% can_delete_raffle = raffle_logged_in && (raffle.host_id.to_i == current_user_id_for_reveal || admin_can_manage_raffles) %>
-                <% review_data = review_data_for.call(raffle.host) %>
                 <tr>
                   <td class="rf-col-host"><%= raffle.host.username %></td>
                   <td class="rf-col-compact">
                     <span class="rf-location-cell" title="<%= location_title_for.call(raffle.host) %>"><%= location_text_for.call(raffle.host) %></span>
-                  </td>
-                  <td class="rf-col-compact">
-                    <span class="rf-review-cell" title="<%= "#{review_data[:avg].round(1)}/5 (#{review_data[:count]})" %>">
-                      <%= stars.call(review_data[:avg]) %>
-                      (<%= review_data[:count] %>)
-                    </span>
                   </td>
                   <td class="rf-col-compact">
                     <span class="rf-badges-cell">
@@ -1022,7 +907,7 @@ end
                 </tr>
               <% end %>
             <% else %>
-              <tr><td colspan="11" class="rf-empty-state">No incompleted raffles.</td></tr>
+              <tr><td colspan="10" class="rf-empty-state">No incompleted raffles.</td></tr>
             <% end %>
           </tbody>
         </table>
