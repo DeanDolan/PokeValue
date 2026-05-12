@@ -312,7 +312,7 @@ viewer_is_raffle_winner =
       flex-direction:column;
     }
 
-    /* Row above the wheel that contains the title and tool buttons. */
+    /* Row above the wheel that contains the title. */
     .rf-wheel-controls{
       display:flex;
       align-items:center;
@@ -320,13 +320,6 @@ viewer_is_raffle_winner =
       gap:10px;
       flex-wrap:wrap;
       margin-bottom:12px;
-    }
-
-    /* Holds wheel control buttons like focus winner and reset. */
-    .rf-wheel-tools{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
     }
 
     /* The visible square area that contains the canvas wheel and overlays. */
@@ -347,13 +340,7 @@ viewer_is_raffle_winner =
       width:100%;
       height:100%;
       display:block;
-      cursor:grab;
       background:#ffffff;
-    }
-
-    /* Cursor changes while dragging the wheel around. */
-    .rf-wheel-canvas.rf-dragging{
-      cursor:grabbing;
     }
 
     /* The fixed pointer arrow that decides which wheel slice is the winner. */
@@ -547,30 +534,6 @@ viewer_is_raffle_winner =
       background:transparent !important;
     }
 
-    /* Small circular icon buttons used around the wheel. */
-    .rf-icon-btn{
-      width:34px;
-      height:34px;
-      border-radius:999px;
-      border:1px solid #d1d5db;
-      background:#ffffff;
-      color:#111827;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      font-size:1.15rem;
-      font-weight:800;
-      line-height:1;
-      cursor:pointer;
-      transition:all .12s ease;
-    }
-
-    /* Hover style for the wheel icon buttons. */
-    .rf-icon-btn:hover{
-      background:#f3f4f6;
-      border-color:#9ca3af;
-    }
-
     /* Full screen overlays used for run raffle confirmation and delete confirmation. */
     .rf-confirm-overlay,
     .rf-delete-confirm-overlay{
@@ -730,56 +693,20 @@ viewer_is_raffle_winner =
     }
 
     /* Dark mode styling for the delete confirmation popup box. */
-    :root[data-pv-theme="dark"] .rf-delete-confirm-box,
-    html[data-bs-theme="dark"] .rf-delete-confirm-box,
-    body[data-bs-theme="dark"] .rf-delete-confirm-box,
-    html[data-theme="dark"] .rf-delete-confirm-box,
-    body[data-theme="dark"] .rf-delete-confirm-box,
-    html.dark .rf-delete-confirm-box,
-    body.dark .rf-delete-confirm-box,
-    html.dark-mode .rf-delete-confirm-box,
-    body.dark-mode .rf-delete-confirm-box,
-    body:has(.navbar-dark) .rf-delete-confirm-box{
+    :root[data-pv-theme="dark"] .rf-delete-confirm-box{
       background:#000000 !important;
       color:#d4af37 !important;
       border-color:#d4af37 !important;
     }
 
     /* Dark mode styling for delete popup text. */
-    :root[data-pv-theme="dark"] .rf-delete-confirm-text,
-    html[data-bs-theme="dark"] .rf-delete-confirm-text,
-    body[data-bs-theme="dark"] .rf-delete-confirm-text,
-    html[data-theme="dark"] .rf-delete-confirm-text,
-    body[data-theme="dark"] .rf-delete-confirm-text,
-    html.dark .rf-delete-confirm-text,
-    body.dark .rf-delete-confirm-text,
-    html.dark-mode .rf-delete-confirm-text,
-    body.dark-mode .rf-delete-confirm-text,
-    body:has(.navbar-dark) .rf-delete-confirm-text{
+    :root[data-pv-theme="dark"] .rf-delete-confirm-text{
       color:#d4af37 !important;
     }
 
     /* Dark mode base styling for delete popup buttons. */
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes,
-    :root[data-pv-theme="dark"] .rf-delete-confirm-no,
-    html[data-bs-theme="dark"] .rf-delete-confirm-yes,
-    html[data-bs-theme="dark"] .rf-delete-confirm-no,
-    body[data-bs-theme="dark"] .rf-delete-confirm-yes,
-    body[data-bs-theme="dark"] .rf-delete-confirm-no,
-    html[data-theme="dark"] .rf-delete-confirm-yes,
-    html[data-theme="dark"] .rf-delete-confirm-no,
-    body[data-theme="dark"] .rf-delete-confirm-yes,
-    body[data-theme="dark"] .rf-delete-confirm-no,
-    html.dark .rf-delete-confirm-yes,
-    html.dark .rf-delete-confirm-no,
-    body.dark .rf-delete-confirm-yes,
-    body.dark .rf-delete-confirm-no,
-    html.dark-mode .rf-delete-confirm-yes,
-    html.dark-mode .rf-delete-confirm-no,
-    body.dark-mode .rf-delete-confirm-yes,
-    body.dark-mode .rf-delete-confirm-no,
-    body:has(.navbar-dark) .rf-delete-confirm-yes,
-    body:has(.navbar-dark) .rf-delete-confirm-no{
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no{
       background:#000000 !important;
       color:#d4af37 !important;
       border-color:#d4af37 !important;
@@ -791,61 +718,7 @@ viewer_is_raffle_winner =
     :root[data-pv-theme="dark"] .rf-delete-confirm-yes:active,
     :root[data-pv-theme="dark"] .rf-delete-confirm-no:hover,
     :root[data-pv-theme="dark"] .rf-delete-confirm-no:focus,
-    :root[data-pv-theme="dark"] .rf-delete-confirm-no:active,
-    html[data-bs-theme="dark"] .rf-delete-confirm-yes:hover,
-    html[data-bs-theme="dark"] .rf-delete-confirm-yes:focus,
-    html[data-bs-theme="dark"] .rf-delete-confirm-yes:active,
-    html[data-bs-theme="dark"] .rf-delete-confirm-no:hover,
-    html[data-bs-theme="dark"] .rf-delete-confirm-no:focus,
-    html[data-bs-theme="dark"] .rf-delete-confirm-no:active,
-    body[data-bs-theme="dark"] .rf-delete-confirm-yes:hover,
-    body[data-bs-theme="dark"] .rf-delete-confirm-yes:focus,
-    body[data-bs-theme="dark"] .rf-delete-confirm-yes:active,
-    body[data-bs-theme="dark"] .rf-delete-confirm-no:hover,
-    body[data-bs-theme="dark"] .rf-delete-confirm-no:focus,
-    body[data-bs-theme="dark"] .rf-delete-confirm-no:active,
-    html[data-theme="dark"] .rf-delete-confirm-yes:hover,
-    html[data-theme="dark"] .rf-delete-confirm-yes:focus,
-    html[data-theme="dark"] .rf-delete-confirm-yes:active,
-    html[data-theme="dark"] .rf-delete-confirm-no:hover,
-    html[data-theme="dark"] .rf-delete-confirm-no:focus,
-    html[data-theme="dark"] .rf-delete-confirm-no:active,
-    body[data-theme="dark"] .rf-delete-confirm-yes:hover,
-    body[data-theme="dark"] .rf-delete-confirm-yes:focus,
-    body[data-theme="dark"] .rf-delete-confirm-yes:active,
-    body[data-theme="dark"] .rf-delete-confirm-no:hover,
-    body[data-theme="dark"] .rf-delete-confirm-no:focus,
-    body[data-theme="dark"] .rf-delete-confirm-no:active,
-    html.dark .rf-delete-confirm-yes:hover,
-    html.dark .rf-delete-confirm-yes:focus,
-    html.dark .rf-delete-confirm-yes:active,
-    html.dark .rf-delete-confirm-no:hover,
-    html.dark .rf-delete-confirm-no:focus,
-    html.dark .rf-delete-confirm-no:active,
-    body.dark .rf-delete-confirm-yes:hover,
-    body.dark .rf-delete-confirm-yes:focus,
-    body.dark .rf-delete-confirm-yes:active,
-    body.dark .rf-delete-confirm-no:hover,
-    body.dark .rf-delete-confirm-no:focus,
-    body.dark .rf-delete-confirm-no:active,
-    html.dark-mode .rf-delete-confirm-yes:hover,
-    html.dark-mode .rf-delete-confirm-yes:focus,
-    html.dark-mode .rf-delete-confirm-yes:active,
-    html.dark-mode .rf-delete-confirm-no:hover,
-    html.dark-mode .rf-delete-confirm-no:focus,
-    html.dark-mode .rf-delete-confirm-no:active,
-    body.dark-mode .rf-delete-confirm-yes:hover,
-    body.dark-mode .rf-delete-confirm-yes:focus,
-    body.dark-mode .rf-delete-confirm-yes:active,
-    body.dark-mode .rf-delete-confirm-no:hover,
-    body.dark-mode .rf-delete-confirm-no:focus,
-    body.dark-mode .rf-delete-confirm-no:active,
-    body:has(.navbar-dark) .rf-delete-confirm-yes:hover,
-    body:has(.navbar-dark) .rf-delete-confirm-yes:focus,
-    body:has(.navbar-dark) .rf-delete-confirm-yes:active,
-    body:has(.navbar-dark) .rf-delete-confirm-no:hover,
-    body:has(.navbar-dark) .rf-delete-confirm-no:focus,
-    body:has(.navbar-dark) .rf-delete-confirm-no:active{
+    :root[data-pv-theme="dark"] .rf-delete-confirm-no:active{
       background:#d4af37 !important;
       color:#000000 !important;
       border-color:#d4af37 !important;
@@ -1376,12 +1249,6 @@ viewer_is_raffle_winner =
     <section class="rf-card rf-wheel-card" id="raffleWheelCard">
       <div class="rf-wheel-controls">
         <h2 class="h5 mb-0">Wheel</h2>
-
-        <%# Wheel tool buttons. %>
-        <div class="rf-wheel-tools">
-          <button type="button" class="rf-icon-btn" id="focusWinnerButton" title="Show Winner Position" aria-label="Show Winner Position">◎</button>
-          <button type="button" class="rf-icon-btn" id="wheelReset" title="Reset" aria-label="Reset">↺</button>
-        </div>
       </div>
 
       <%# This holds the wheel canvas, pointer, countdown, confetti and winner overlay. %>
@@ -1502,10 +1369,6 @@ viewer_is_raffle_winner =
       // Confetti canvas.
       const confettiCanvas = document.getElementById("raffleConfetti")
 
-      // Wheel tool buttons.
-      const resetButton = document.getElementById("wheelReset")
-      const focusWinnerButton = document.getElementById("focusWinnerButton")
-
       // Wheel card used for scrolling to the wheel before the spin.
       const wheelCard = document.getElementById("raffleWheelCard")
 
@@ -1545,7 +1408,6 @@ viewer_is_raffle_winner =
       const ticketCount = tickets.length
 
       // I draw the wheel in a large "world" size and scale it down to the visible canvas.
-      // This makes zooming and panning easier.
       const world = {
         size: 30000,
         center: 15000,
@@ -1574,14 +1436,6 @@ viewer_is_raffle_winner =
       // Stores a function that can stop the spin sound.
       let spinSoundStop = null
 
-      // This controls what part of the large wheel world is currently visible.
-      const view = {
-        x: 0,
-        y: 0,
-        w: world.size,
-        h: world.size
-      }
-
       // Finds the index of the winning ticket in the tickets array.
       function findWinningIndex() {
         return tickets.findIndex(function (ticket) {
@@ -1601,11 +1455,6 @@ viewer_is_raffle_winner =
       function refreshWinnerPosition() {
         winningIndex = findWinningIndex()
         desiredRotation = calculateDesiredRotation()
-      }
-
-      // Checks if my custom page theme is currently dark mode.
-      function isDarkTheme() {
-        return document.documentElement.getAttribute("data-pv-theme") === "dark"
       }
 
       // Resizes the wheel canvas and confetti canvas to match the visible stage size.
@@ -1629,67 +1478,11 @@ viewer_is_raffle_winner =
         renderWheel(currentRotation)
       }
 
-      // Applies the zoom/pan transform so the big wheel world fits into the visible canvas.
+      // Applies the transform so the wheel world fits into the visible canvas.
       function applyWorldTransform(ctx) {
-        const sx = wheelCanvas.width / view.w
-        const sy = wheelCanvas.height / view.h
-        ctx.setTransform(sx, 0, 0, sy, -view.x * sx, -view.y * sy)
-      }
-
-      // Resets zoom and pan back to the full wheel.
-      function resetView() {
-        view.x = 0
-        view.y = 0
-        view.w = world.size
-        view.h = world.size
-        renderWheel(currentRotation)
-      }
-
-      // Stops the zoomed/panned view from going outside the wheel world.
-      function clampView() {
-        if (view.x < 0) view.x = 0
-        if (view.y < 0) view.y = 0
-        if (view.x + view.w > world.size) view.x = world.size - view.w
-        if (view.y + view.h > world.size) view.y = world.size - view.h
-      }
-
-      // Zooms in or out around the mouse position.
-      function zoomAt(factor, clientX, clientY) {
-        const rect = stage.getBoundingClientRect()
-        const px = rect.width ? ((clientX - rect.left) / rect.width) : 0.5
-        const py = rect.height ? ((clientY - rect.top) / rect.height) : 0.5
-
-        const worldX = view.x + (view.w * px)
-        const worldY = view.y + (view.h * py)
-
-        const nextW = Math.max(world.size * 0.02, Math.min(world.size, view.w * factor))
-        const nextH = Math.max(world.size * 0.02, Math.min(world.size, view.h * factor))
-
-        view.x = worldX - (nextW * px)
-        view.y = worldY - (nextH * py)
-        view.w = nextW
-        view.h = nextH
-        clampView()
-        renderWheel(currentRotation)
-      }
-
-      // Zooms into the winning slice so it is easier to see where the winner is on the wheel.
-      function focusWinnerSlice() {
-        if (winningIndex < 0) return
-
-        const mid = (-Math.PI / 2) + (winningIndex * anglePer) + (anglePer / 2) + currentRotation
-        const radius = world.inner + ((world.outer - world.inner) * 0.5)
-        const pointX = world.center + Math.cos(mid) * radius
-        const pointY = world.center + Math.sin(mid) * radius
-        const size = Math.max(world.size * 0.08, Math.min(world.size * 0.18, 3600))
-
-        view.w = size
-        view.h = size
-        view.x = pointX - (size / 2)
-        view.y = pointY - (size / 2)
-
-        clampView()
-        renderWheel(currentRotation)
+        const sx = wheelCanvas.width / world.size
+        const sy = wheelCanvas.height / world.size
+        ctx.setTransform(sx, 0, 0, sy, 0, 0)
       }
 
       // Browsers often block audio until the user interacts with the page.
@@ -1979,17 +1772,15 @@ viewer_is_raffle_winner =
 
       // Draws the entire wheel on the canvas.
       function renderWheel(rotation) {
-        // Theme colours used by the wheel.
-        const darkTheme = isDarkTheme()
-        const backgroundColor = darkTheme ? "#000000" : "#ffffff"
-        const emptyFillColor = darkTheme ? "#000000" : "#f8fafc"
-        const borderColor = darkTheme ? "#d4af37" : "#d1d5db"
-        const sliceStrokeColor = darkTheme ? "#000000" : "#ffffff"
+        const backgroundColor = "#000000"
+        const emptyFillColor = "#000000"
+        const borderColor = "#d4af37"
+        const sliceStrokeColor = "#000000"
         const sliceTextColor = "#000000"
-        const sliceTextStrokeColor = darkTheme ? "#000000" : "#ffffff"
+        const sliceTextStrokeColor = "#000000"
         const centerFillColor = "#000000"
-        const centerStrokeColor = darkTheme ? "#d4af37" : "#ffffff"
-        const centerTextColor = darkTheme ? "#d4af37" : "#ffffff"
+        const centerStrokeColor = "#d4af37"
+        const centerTextColor = "#d4af37"
 
         // Clears the canvas before redrawing.
         wheelCtx.save()
@@ -1997,7 +1788,6 @@ viewer_is_raffle_winner =
         wheelCtx.clearRect(0, 0, wheelCanvas.width, wheelCanvas.height)
         wheelCtx.restore()
 
-        // Applies zoom and pan transform.
         applyWorldTransform(wheelCtx)
 
         // Draws the background.
@@ -2014,7 +1804,7 @@ viewer_is_raffle_winner =
           wheelCtx.lineWidth = 60
           wheelCtx.stroke()
 
-          wheelCtx.fillStyle = darkTheme ? "#d4af37" : "#111827"
+          wheelCtx.fillStyle = "#d4af37"
           wheelCtx.font = "700 800px Arial"
           wheelCtx.textAlign = "center"
           wheelCtx.textBaseline = "middle"
@@ -2023,17 +1813,8 @@ viewer_is_raffle_winner =
         }
 
         // Colours used for wheel slices.
-        const colors = darkTheme ? [
+        const colors = [
           "#d4af37"
-        ] : [
-          "#dbeafe",
-          "#dcfce7",
-          "#fee2e2",
-          "#fef3c7",
-          "#ede9fe",
-          "#fce7f3",
-          "#cffafe",
-          "#e5e7eb"
         ]
 
         // Small gap between slices.
@@ -2064,7 +1845,7 @@ viewer_is_raffle_winner =
           wheelCtx.fillStyle = colors[index % colors.length]
           wheelCtx.fill()
           wheelCtx.strokeStyle = sliceStrokeColor
-          wheelCtx.lineWidth = darkTheme ? 34 : 24
+          wheelCtx.lineWidth = 34
           wheelCtx.stroke()
 
           // Clips the label so it stays inside the slice.
@@ -2118,7 +1899,6 @@ viewer_is_raffle_winner =
         if (!data.completed || winningIndex < 0 || spinning) return
 
         spinning = true
-        resetView()
         scrollToWheel()
         ensureAudioUnlocked()
         hideWinnerInfo()
@@ -2196,69 +1976,6 @@ viewer_is_raffle_winner =
       function initializeActiveState() {
         currentRotation = 0
         renderWheel(currentRotation)
-      }
-
-      // Adds zoom, pan, reset and focus winner controls to the wheel.
-      function wireZoomPan() {
-        if (resetButton) {
-          resetButton.addEventListener("click", function () {
-            resetView()
-          })
-        }
-
-        if (focusWinnerButton) {
-          focusWinnerButton.addEventListener("click", function () {
-            focusWinnerSlice()
-          })
-        }
-
-        // Mouse wheel zoom.
-        wheelCanvas.addEventListener("wheel", function (event) {
-          event.preventDefault()
-
-          const factor = event.deltaY < 0 ? 0.88 : 1.14
-          zoomAt(factor, event.clientX, event.clientY)
-        }, { passive: false })
-
-        // Click zoom.
-        wheelCanvas.addEventListener("click", function (event) {
-          if (spinning) return
-          zoomAt(0.65, event.clientX, event.clientY)
-        })
-
-        // Drag/pan variables.
-        let dragging = false
-        let dragStart = null
-        let dragOrigin = null
-
-        // Starts dragging.
-        wheelCanvas.addEventListener("mousedown", function (event) {
-          dragging = true
-          wheelCanvas.classList.add("rf-dragging")
-          dragStart = { x: event.clientX, y: event.clientY }
-          dragOrigin = { x: view.x, y: view.y }
-        })
-
-        // Moves the view while dragging.
-        window.addEventListener("mousemove", function (event) {
-          if (!dragging) return
-
-          const rect = stage.getBoundingClientRect()
-          const dx = ((event.clientX - dragStart.x) / rect.width) * view.w
-          const dy = ((event.clientY - dragStart.y) / rect.height) * view.h
-
-          view.x = dragOrigin.x - dx
-          view.y = dragOrigin.y - dy
-
-          clampView()
-          renderWheel(currentRotation)
-        })
-
-        // Stops dragging.
-        window.addEventListener("mouseup", function () {
-          dragging = false
-          wheelCanvas.classList.remove("rf-dragging")
-        })
       }
 
       // Adds click behaviour to the Reveal Winner button.
@@ -2492,27 +2209,15 @@ viewer_is_raffle_winner =
       // Resizes the canvas whenever the browser window changes size.
       window.addEventListener("resize", resizeCanvases)
 
-      // Watches for theme changes so the wheel redraws in the correct light/dark colours.
-      const themeObserver = new MutationObserver(function () {
-        renderWheel(currentRotation)
-      })
-
-      themeObserver.observe(document.documentElement, {
-        attributes:true,
-        attributeFilter:["data-pv-theme"]
-      })
-
       // Connects all page interactions.
-      wireZoomPan()
       wireReveal()
       wireRunConfirm()
       wireDeleteConfirm()
       wireHostAndEntrantTagReveal()
       wireTicketPicker()
 
-      // Sets up canvas size and default view.
+      // Sets up canvas size.
       resizeCanvases()
-      resetView()
 
       // Decides whether the page should start in completed mode or active mode.
       if (data.completed) {

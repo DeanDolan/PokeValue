@@ -80,7 +80,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_27_130000) do
     t.string "reserve_status", default: "No Reserve", null: false
     t.integer "seller_id", null: false
     t.datetime "settled_at"
-    t.integer "starting_bid_cents"
     t.string "status", default: "running", null: false
     t.datetime "updated_at", null: false
     t.text "winner_revolut_tag_encrypted"

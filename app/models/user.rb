@@ -31,7 +31,7 @@ class User < ApplicationRecord
 
   # Basic account validation rules
   validates :username,
-            presence: true,
+            presence: { message: "cant be blank" },
             uniqueness: { case_sensitive: false },
             length: { minimum: USERNAME_MIN, maximum: USERNAME_MAX },
             format: {
@@ -39,7 +39,7 @@ class User < ApplicationRecord
               message: "can only contain letters, numbers, dots, underscores or dashes"
             }
 
-  validates :country_code, presence: true
+  validates :country_code, presence: { message: "cant be blank" }
   validate :username_should_not_look_like_email
   validate :username_should_not_contain_spaces
   validate :revolut_tag_required_on_create, on: :create

@@ -1,70 +1,92 @@
 class SessionsController < ApplicationController
   def new
-    # Login is handled inside the shared login/register modal, so this page redirects back to the portfolio.
+    # Keeps any existing flash message when redirecting.
     flash.keep
+
+    # Sends users back to the portfolio because login is handled by the shared modal.
     redirect_to portfolio_path, status: :see_other
   end
 
   def create
-    # Reads the login fields from the form and removes extra spaces from the username.
+    # Gets the submitted username and removes extra spaces.
     username = params[:username].to_s.strip
+
+    # Gets the submitted password exactly as typed.
     password = params[:password].to_s
 
-    # Stops empty login forms before checking the database.
+    # Checks if username or password fields are empty before searching the database.
     message = login_field_error(username, password)
+
+    # Sends the user back with an error message if required fields are missing.
     return redirect_to_portfolio(alert: message) if message
 
     # Finds the user by username without caring about uppercase or lowercase letters.
     user = User.find_by("lower(username) = ?", username.downcase)
 
-    # Stops login if the account has been temporarily locked.
+    # Blocks login if the account is temporarily locked after too many failed attempts.
     return redirect_to_portfolio(alert: "Account locked. Try again later.") if user&.locked?
 
-    # Starts the session if the password is correct, otherwise records a failed login attempt.
+    # Logs the user in if the password is correct.
     if user&.authenticate(password)
       log_user_in(user)
     else
-      user&.register_failed_login! if user.respond_to?(:register_failed_login?)
+      # Records one failed login attempt if the username exists.
+      user&.register_failed_login! if user.respond_to?(:register_failed_login!)
+
+      # Sends the user back with a general invalid login message.
       redirect_to_portfolio(alert: "Invalid username or password.")
     end
   end
 
   def destroy
-    # Clears the session so the user is fully logged out.
+    # Clears all session data, which logs the user out.
     reset_session
+
+    # Sends the user back to the portfolio after logout.
     redirect_to portfolio_path, notice: "Logged out.", status: :see_other
   end
 
   private
 
   def login_field_error(username, password)
-    # Keeps the same user-friendly validation messages as before.
+    # Shows a specific message if both fields are empty.
     return "Username and password fields cannot be empty. Please complete both fields before logging in." if username.blank? && password.blank?
+
+    # Shows a specific message if only the username is empty.
     return "Username field cannot be empty." if username.blank?
+
+    # Shows a specific message if only the password is empty.
     return "Password field cannot be empty." if password.blank?
 
+    # Returns nil when both fields are filled in.
     nil
   end
 
   def log_user_in(user)
-    # Clears failed login tracking after a successful password check.
+    # Clears failed login attempts after a successful password check.
     user.reset_failed_logins! if user.respond_to?(:reset_failed_logins!)
 
-    # Saves the user ID before reset_session because reset_session clears all old session data.
+    # Saves the user ID before resetting the session.
     uid = user.id
 
-    # Resets the session after login to reduce session-fixation risk.
+    # Resets the session to help prevent session fixation attacks.
     reset_session
 
-    # Admin users must complete MFA before the full login session is created.
+    # Admin users must complete MFA before being fully logged in.
     if user.admin?
+      # Temporarily stores the admin user ID until MFA is completed.
       session[:pre_mfa_user_id] = uid
+
+      # Stores where the admin should be redirected after MFA.
       session[:post_auth_redirect] = portfolio_path
 
+      # Sends admin users to MFA verification or MFA setup.
       redirect_to(user.mfa_enabled? ? mfa_path : mfa_setup_path, status: :see_other)
     else
+      # Stores the normal logged-in user's ID in the session.
       session[:user_id] = uid
 
+      # Sends the user to the portfolio with a success message.
       redirect_to portfolio_path,
                   notice: "Logged in successfully!",
                   status: :see_other
@@ -72,7 +94,7 @@ class SessionsController < ApplicationController
   end
 
   def redirect_to_portfolio(options = {})
-    # Sends the browser back to the portfolio after login errors or normal redirects.
+    # Reusable helper for sending users back to the portfolio with flash messages.
     redirect_to portfolio_path, options.merge(status: :see_other)
   end
 end

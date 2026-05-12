@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html data-pv-theme="light">
+<html data-pv-theme="dark">
   <head>
     <title>PokeValueApp</title>
 
@@ -9,8 +9,8 @@
 
     <script>
       (function(){
-        var theme = localStorage.getItem("pokevalue_theme") || "light";
-        document.documentElement.setAttribute("data-pv-theme", theme);
+        document.documentElement.setAttribute("data-pv-theme", "dark");
+        localStorage.setItem("pokevalue_theme", "dark");
       })();
     </script>
 
@@ -1446,88 +1446,11 @@
       .modal-backdrop{
         background-color:#000000 !important;
       }
-
-      #pv-theme-toggle{
-        position:fixed;
-        left:8px;
-        right:auto;
-        bottom:8px;
-        z-index:99999;
-        border-radius:999px;
-        border:1px solid var(--pv-button-border) !important;
-        background:var(--pv-button-bg) !important;
-        color:var(--pv-button-text) !important;
-        box-shadow:0 4px 12px rgba(0,0,0,.14) !important;
-        font-weight:800;
-        font-size:.56rem;
-        padding:.18rem .34rem;
-        display:inline-flex;
-        align-items:center;
-        justify-content:center;
-        gap:.16rem;
-        cursor:pointer;
-        min-width:auto;
-        min-height:20px;
-        line-height:1;
-        outline:0 !important;
-      }
-
-      #pv-theme-toggle-icon{
-        font-size:.62rem;
-        line-height:1;
-      }
-
-      #pv-theme-toggle-text{
-        font-size:.56rem;
-        line-height:1;
-      }
-
-      #pv-theme-toggle span,
-      #pv-theme-toggle *{
-        color:inherit !important;
-        background:transparent !important;
-        border:0 !important;
-        box-shadow:none !important;
-      }
-
-      #pv-theme-toggle:hover{
-        background:var(--pv-button-hover-bg) !important;
-        color:var(--pv-button-hover-text) !important;
-        border:1px solid var(--pv-button-hover-border) !important;
-        box-shadow:0 4px 12px rgba(0,0,0,.14) !important;
-        filter:none !important;
-      }
-
-      #pv-theme-toggle:hover span,
-      #pv-theme-toggle:hover *{
-        color:inherit !important;
-        background:transparent !important;
-        border:0 !important;
-        box-shadow:none !important;
-      }
-
-      :root[data-pv-theme="dark"] #pv-theme-toggle{
-        border:1px solid #d4af37 !important;
-        background:#000000 !important;
-        color:#d4af37 !important;
-        box-shadow:none !important;
-      }
-
-      :root[data-pv-theme="dark"] #pv-theme-toggle:hover{
-        background:#d4af37 !important;
-        color:#000000 !important;
-        border:1px solid #d4af37 !important;
-      }
     </style>
   </head>
 
   <body>
     <%= render "shared/navbar" %>
-
-    <button type="button" id="pv-theme-toggle" aria-label="Toggle theme">
-      <span id="pv-theme-toggle-icon">☀</span>
-      <span id="pv-theme-toggle-text">Light Mode</span>
-    </button>
 
     <div class="container mt-3">
       <% flash.each do |type, msg| %>
@@ -1617,6 +1540,11 @@
 
     <script>
       (function(){
+        function forceDarkTheme(){
+          document.documentElement.setAttribute("data-pv-theme", "dark");
+          localStorage.setItem("pokevalue_theme", "dark");
+        }
+
         function cssVar(name){
           return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         }
@@ -1640,42 +1568,6 @@
             child.style.setProperty("background", "transparent", "important");
             child.style.setProperty("box-shadow", "none", "important");
             child.style.setProperty("filter", "none", "important");
-          });
-        }
-
-        function applyTheme(theme){
-          document.documentElement.setAttribute("data-pv-theme", theme);
-          localStorage.setItem("pokevalue_theme", theme);
-
-          const icon = document.getElementById("pv-theme-toggle-icon");
-          const text = document.getElementById("pv-theme-toggle-text");
-
-          if(icon){
-            icon.textContent = theme === "dark" ? "🌙" : "☀";
-          }
-
-          if(text){
-            text.textContent = theme === "dark" ? "Dark Mode" : "Light Mode";
-          }
-
-          setTimeout(function(){
-            initMarketplaceAuctionRaffleTabs();
-          }, 0);
-        }
-
-        function initThemeToggle(){
-          const button = document.getElementById("pv-theme-toggle");
-          const currentTheme = localStorage.getItem("pokevalue_theme") || document.documentElement.getAttribute("data-pv-theme") || "light";
-
-          applyTheme(currentTheme);
-
-          if(!button || button.dataset.bound === "1") return;
-          button.dataset.bound = "1";
-
-          button.addEventListener("click", function(){
-            const current = document.documentElement.getAttribute("data-pv-theme") || "light";
-            const next = current === "dark" ? "light" : "dark";
-            applyTheme(next);
           });
         }
 
@@ -1880,7 +1772,7 @@
         }
 
         function initAllThemeBehaviour(){
-          initThemeToggle();
+          forceDarkTheme();
           initMarketplaceAuctionRaffleTabs();
         }
 
@@ -1888,15 +1780,6 @@
         document.addEventListener("turbo:load", initAllThemeBehaviour);
         document.addEventListener("click", function(){
           setTimeout(initMarketplaceAuctionRaffleTabs, 0);
-        });
-
-        const observer = new MutationObserver(function(){
-          initMarketplaceAuctionRaffleTabs();
-        });
-
-        observer.observe(document.documentElement, {
-          attributes:true,
-          attributeFilter:["data-pv-theme"]
         });
       })();
     </script>
