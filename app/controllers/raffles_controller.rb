@@ -140,7 +140,7 @@ class RafflesController < ApplicationController
       if current_user.id == @raffle.host_id.to_i
         "Tickets assigned successfully."
       else
-        "Tickets purchased successfully. You do not need to pay for tickets until all tickets have been sold."
+        "Tickets acquired successfully. You do not need to pay for tickets until all tickets have been sold."
       end
 
     redirect_to raffle_path(@raffle), notice: message
