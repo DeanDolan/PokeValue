@@ -13,7 +13,7 @@ class RegistrationsController < ApplicationController
 
     # Stops invalid registration details before trying to create the account.
     message = registration_error(username, revolut_tag, password, password_confirmation)
-    return render_invalid_registration(message) if message
+    return redirect_invalid_registration(message) if message
 
     # Creates the user with the same fields used by the original form.
     @user = User.new(
@@ -34,8 +34,7 @@ class RegistrationsController < ApplicationController
                   notice: "Welcome, #{@user.username}! Your account has been created.",
                   status: :see_other
     else
-      flash.now[:alert] = @user.errors.full_messages.first || "Could not create account."
-      render :new, status: :unprocessable_entity
+      redirect_invalid_registration(@user.errors.full_messages.first || "Could not create account.")
     end
   end
 
@@ -59,22 +58,11 @@ class RegistrationsController < ApplicationController
     return "Password must include at least one number." unless password.match?(/\d/)
     return "Password must include at least one symbol." unless password.match?(/[^A-Za-z0-9]/)
     return "Password cannot contain your username." if password.downcase.include?(username.downcase)
-    return "You must confirm that you understand the account safety notice before registering." unless accepted?(:account_safety_accepted)
-    return "You must confirm that you understand your Revolut tag may be shown during payment-related actions." unless accepted?(:revolut_tag_visibility_accepted)
-    return "You must agree to the account safety notice, payment visibility notice, security notice and platform terms before registering." unless accepted?(:platform_terms_accepted)
 
     nil
   end
 
-  def accepted?(key)
-    # Checkbox values submit as "1" when the user ticks them.
-    params[key].to_s == "1"
-  end
-
-  def render_invalid_registration(message)
-    # Re-renders the registration page with the same alert behaviour as before.
-    @user = User.new
-    flash.now[:alert] = message
-    render :new, status: :unprocessable_entity
+  def redirect_invalid_registration(message)
+    redirect_back fallback_location: root_path, alert: message, status: :see_other
   end
 end

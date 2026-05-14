@@ -1,53 +1,3 @@
-<%
-  # Text shown inside the terms summary box.
-  terms_paragraphs = [
-    "PokeValue is a portfolio tracking, community and marketplace-style application. Users are responsible for the information they choose to provide.",
-    "Public or semi-public areas may display usernames, country, badges, reviews, listings, auctions, raffles, posts, comments, reactions and payment-related details where needed.",
-    "Users should not enter real names, private contact details, home addresses or sensitive personal information into usernames, passwords, posts, comments, listings, auctions, raffles or public profile areas.",
-    "PokeValue may use your registered Revolut tag during payment-related flows connected to marketplace listings, accepted offers, auctions and raffles."
-  ]
-
-  # Required registration checkboxes.
-  required_checks = [
-    [
-      :account_safety_accepted,
-      "account-safety-accepted",
-      "I understand that I should not use my real name in my username or password, and I should avoid adding personal details that are not required."
-    ],
-    [
-      :revolut_tag_visibility_accepted,
-      "revolut-tag-visibility-accepted",
-      "I understand that my registered Revolut tag may be automatically shown to buyers, winning bidders or raffle ticket buyers when payment is required."
-    ],
-    [
-      :platform_terms_accepted,
-      "platform-terms-accepted",
-      "I have read and agree to the account safety notice, payment visibility notice, security notice and platform terms shown on this page."
-    ]
-  ]
-
-  # Notice boxes shown under the registration terms.
-  notice_boxes = [
-    [
-      "register-payment-notice",
-      "Revolut Tag Visibility Notice",
-      [
-        "Your Revolut tag is collected during registration because it is used later for marketplace, auction and raffle payment flows.",
-        "When you create a listing, host an auction or host a raffle, the system may automatically display your registered Revolut tag to the buyer, winning bidder or raffle ticket buyer when payment is required.",
-        "Only register with a Revolut tag that you are comfortable being shown to other users during payment-related actions."
-      ]
-    ],
-    [
-      "register-security-notice",
-      "Security Notice",
-      [
-        "PokeValue uses password hashing, session management, admin MFA, account lockout rules and encrypted Revolut tag storage to reduce account and payment-detail risk.",
-        "No web application can guarantee complete protection from every possible security issue. Users should use a strong, unique password and avoid entering personal information that is not required."
-      ]
-    ]
-  ]
-%>
-
 <%= form_with url: register_path, method: :post, local: true, class: "register-form-card", html: { novalidate: true } do %>
   <%# Username field with the same length and character rules enforced again in the controller/model. %>
   <div class="mb-3">
@@ -67,7 +17,7 @@
       class: "form-select",
       data: { country_search: true } %>
     <div class="form-text">
-      Click the dropdown and type the country name to jump to it. Your country may be shown on your profile, listings, auctions and raffles to help users understand seller location.
+      Choose the country in which you are located.
     </div>
   </div>
 
@@ -94,32 +44,6 @@
     <label class="form-label">Confirm Password</label>
     <%= password_field_tag :password_confirmation, nil, class: "form-control", autocomplete: "new-password" %>
   </div>
-
-  <%# Required checkboxes make the user confirm the visible safety and payment warnings. %>
-  <% required_checks.each do |name, id, label_text| %>
-    <div class="form-check register-check mb-3">
-      <%= check_box_tag name, "1", params[name] == "1", class: "form-check-input", id: id %>
-      <label class="form-check-label" for="<%= id %>"><%= label_text %></label>
-    </div>
-  <% end %>
-
-  <%# Terms summary keeps the same visible registration information but avoids repeated paragraph markup. %>
-  <div class="register-terms-box mb-3">
-    <h2>Platform Terms Summary</h2>
-    <% terms_paragraphs.each_with_index do |text, index| %>
-      <p class="<%= "mb-0" if index == terms_paragraphs.length - 1 %>"><%= text %></p>
-    <% end %>
-  </div>
-
-  <%# Notice boxes show the same Revolut visibility and security warnings. %>
-  <% notice_boxes.each do |box_class, title, paragraphs| %>
-    <div class="register-notice <%= box_class %> <%= box_class == "register-security-notice" ? "mb-4" : "mb-3" %>">
-      <strong><%= title %></strong>
-      <% paragraphs.each_with_index do |text, index| %>
-        <p class="<%= "mb-0" if index == paragraphs.length - 1 %>"><%= text %></p>
-      <% end %>
-    </div>
-  <% end %>
 
   <%# Sends the completed registration form to RegistrationsController#create. %>
   <div class="d-grid">
