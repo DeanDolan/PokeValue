@@ -115,22 +115,6 @@
 
 <script>
   (function(){
-    function initDropdowns(){
-      if(!window.bootstrap || !window.bootstrap.Dropdown) return;
-
-      // Rebuilds Bootstrap dropdown instances after Turbo page loads
-      document.querySelectorAll('#mainNav .dropdown-toggle[data-bs-toggle="dropdown"]').forEach(function(el){
-        window.bootstrap.Dropdown.getOrCreateInstance(el);
-      });
-    }
-
-    document.addEventListener("turbo:load", initDropdowns);
-    document.addEventListener("DOMContentLoaded", initDropdowns);
-  })();
-</script>
-
-<script>
-  (function(){
     function initAuthModalTitles(){
       const authModal = document.getElementById("authModal");
       const authTitle = document.getElementById("authModalLabel");
@@ -139,7 +123,6 @@
       if(authModal.dataset.navbarAuthTitleBound === "1") return;
       authModal.dataset.navbarAuthTitleBound = "1";
 
-      // Changes the shared login modal title depending on which navbar button opened it
       authModal.addEventListener("show.bs.modal", function(event){
         const button = event.relatedTarget;
         const title = button ? button.getAttribute("data-auth-title") : "";
@@ -162,7 +145,6 @@
       if(input.dataset.pvSearchBound === "1") return;
       input.dataset.pvSearchBound = "1";
 
-      // Builds one dropdown result row
       function row(item) {
         return `
           <a class="dropdown-item py-2" href="${item.href}">
@@ -177,7 +159,6 @@
         `;
       }
 
-      // Groups search results under a section heading
       function section(title, items) {
         if (!items || items.length === 0) return "";
         return `
@@ -186,7 +167,6 @@
         `;
       }
 
-      // Renders search results or hides the dropdown if there are none
       function render(data) {
         const setsHtml = section("Sets", data.sets || []);
         const productsHtml = section("Products", data.products || []);
@@ -203,7 +183,6 @@
 
       let timer;
 
-      // Delays the search request slightly so it does not fetch on every single keystroke instantly
       input.addEventListener("input", function(e){
         const q = e.target.value.trim();
         clearTimeout(timer);
@@ -225,19 +204,16 @@
         }, 120);
       });
 
-      // Closes search results when the user clicks outside the search box
       document.addEventListener("click", function(e){
         if (!menu.contains(e.target) && e.target !== input) {
           menu.classList.remove("open");
         }
       });
 
-      // Closes the dropdown when Turbo starts navigating
       document.addEventListener("turbo:click", function(){
         menu.classList.remove("open");
       });
 
-      // Clears open search UI before Turbo caches the page
       document.addEventListener("turbo:before-cache", function(){
         menu.classList.remove("open");
       });

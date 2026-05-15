@@ -1,12 +1,4 @@
 class SessionsController < ApplicationController
-  def new
-    # Keeps any existing flash message when redirecting.
-    flash.keep
-
-    # Sends users back to the portfolio because login is handled by the shared modal.
-    redirect_to portfolio_path, status: :see_other
-  end
-
   def create
     # Gets the submitted username and removes extra spaces.
     username = params[:username].to_s.strip
@@ -66,16 +58,13 @@ class SessionsController < ApplicationController
     # Clears failed login attempts after a successful password check.
     user.reset_failed_logins! if user.respond_to?(:reset_failed_logins!)
 
-    # Saves the user ID before resetting the session.
-    uid = user.id
-
     # Resets the session to help prevent session fixation attacks.
     reset_session
 
     # Admin users must complete MFA before being fully logged in.
     if user.admin?
       # Temporarily stores the admin user ID until MFA is completed.
-      session[:pre_mfa_user_id] = uid
+      session[:pre_mfa_user_id] = user.id
 
       # Stores where the admin should be redirected after MFA.
       session[:post_auth_redirect] = portfolio_path
@@ -84,7 +73,7 @@ class SessionsController < ApplicationController
       redirect_to(user.mfa_enabled? ? mfa_path : mfa_setup_path, status: :see_other)
     else
       # Stores the normal logged-in user's ID in the session.
-      session[:user_id] = uid
+      session[:user_id] = user.id
 
       # Sends the user to the portfolio with a success message.
       redirect_to portfolio_path,

@@ -94,27 +94,15 @@ Rails.application.routes.draw do
     end
   end
 
-  # If someone types /raffle instead of /raffles, send them to the correct raffle page.
-  get "/raffle", to: redirect("/raffles")
-
   # This route shows the community page.
   # Users can create posts, comment and react with emojis.
   get "/community", to: "pages#community", as: :community
 
-  # Showcase was redirected to the community page.
-  # This keeps the old /showcase URL working without needing a separate page.
-  get "/showcase", to: redirect("/community")
-
-  # This route shows the logged-in user's own account page.
-  # It includes account details, funds, reviews, listings, auctions, watchlist and addresses.
+  # This route shows the logged-in user's own account page only.
   get "/account", to: "accounts#show", as: :account
 
-  # This route shows a public user profile page.
-  # It is used when clicking another user's username from marketplace, auction or raffle areas.
-  get "/users/:id", to: "users#show", as: :user
-
-  # This route shows the login form.
-  get "/login", to: "sessions#new", as: :login
+  # Keeps old seller/host username links from crashing, but blocks public user profile viewing.
+  get "/users/:id", to: redirect("/"), as: :user
 
   # This route submits the login form.
   # It checks the username/password and creates the user session if valid.
@@ -123,11 +111,8 @@ Rails.application.routes.draw do
   # This route logs the user out by destroying the current session.
   delete "/logout", to: "sessions#destroy", as: :logout
 
-  # This route shows the registration form.
-  get "/register", to: "registrations#new", as: :register
-
   # This route submits the registration form and creates a new user account.
-  post "/register", to: "registrations#create"
+  post "/register", to: "registrations#create", as: :register
 
   # This route returns the global search data as JSON.
   # The navbar search uses this to find sets and products.
@@ -228,9 +213,6 @@ Rails.application.routes.draw do
   # update  -> save edited holding
   # destroy -> remove holding from portfolio
   resources :holdings, only: [ :create, :edit, :update, :destroy ]
-
-  # Reviews are created after marketplace, auction or raffle interactions.
-  resources :reviews, only: [ :create ]
 
   # These are the main marketplace listing routes.
   # index   -> show all marketplace listings

@@ -5,17 +5,14 @@ class MfaController < ApplicationController
   # Shows the MFA code form after the admin has entered their password
   def new
     @user = mfa_user
-    return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
-    if @user.admin? && !@user.mfa_enabled?
-      redirect_to mfa_setup_path, status: :see_other
-      nil
-    end
+    return redirect_to(portfolio_path, alert: "Log in first.", status: :see_other) unless @user
+    redirect_to mfa_setup_path, status: :see_other if @user.admin? && !@user.mfa_enabled?
   end
 
   # Verifies the submitted authenticator code or recovery code and completes the admin login
   def create
     @user = mfa_user
-    return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
+    return redirect_to(portfolio_path, alert: "Log in first.", status: :see_other) unless @user
 
     if @user.mfa_locked?
       redirect_to mfa_path, alert: "MFA temporarily locked. Try again later.", status: :see_other
@@ -27,17 +24,16 @@ class MfaController < ApplicationController
     verified = @user.consume_mfa_recovery_code!(code) unless verified
 
     if verified
-      @user.reset_mfa_lock! if @user.respond_to?(:reset_mfa_lock!)
-      session[:admin_mfa_at] = Time.current.to_i
+      @user.reset_mfa_lock!
 
       if session[:pre_mfa_user_id].present?
-        uid = @user.id
         return_to = safe_return_to(session[:post_auth_redirect]) || portfolio_path
         reset_session
-        session[:user_id] = uid
+        session[:user_id] = @user.id
         session[:admin_mfa_at] = Time.current.to_i
         redirect_to return_to, notice: "Admin verified.", status: :see_other
       else
+        session[:admin_mfa_at] = Time.current.to_i
         redirect_back fallback_location: portfolio_path, notice: "MFA verified.", status: :see_other
       end
     else
@@ -45,24 +41,22 @@ class MfaController < ApplicationController
     end
   end
 
-  # Creates the MFA secret and shows the setup QR-code details
+  # Creates the MFA secret and shows the setup details
   def setup
     @user = mfa_user
-    return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
+    return redirect_to(portfolio_path, alert: "Log in first.", status: :see_other) unless @user
     @user.ensure_mfa_secret!
-    @otpauth_uri = @user.mfa_provisioning_uri
     @secret = @user.mfa_secret
   end
 
   # Enables MFA after the first valid authenticator code is entered
   def enable
     @user = mfa_user
-    return redirect_to(login_path, alert: "Log in first.", status: :see_other) unless @user
+    return redirect_to(portfolio_path, alert: "Log in first.", status: :see_other) unless @user
     code = params[:code].to_s.gsub(/\s+/, "")
     codes = @user.enable_mfa!(code)
 
     if codes
-      @otpauth_uri = @user.mfa_provisioning_uri
       @secret = @user.mfa_secret
       @recovery_codes = codes
       render :setup, status: :ok

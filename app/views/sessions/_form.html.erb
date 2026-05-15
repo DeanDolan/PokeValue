@@ -2,13 +2,13 @@
   <%# Username field used to find the account being logged into. %>
   <div class="mb-3">
     <label class="form-label">Username</label>
-    <%= text_field_tag :username, params[:username], class: "form-control", autocomplete: "username" %>
+    <%= text_field_tag :username, params[:username], class: "form-control", autocomplete: "off" %>
   </div>
 
-  <%# Password field uses current-password so browsers/password managers understand it is a login password. %>
+  <%# Password field used to check the account password. %>
   <div class="mb-3">
     <label class="form-label">Password</label>
-    <%= password_field_tag :password, nil, class: "form-control", autocomplete: "current-password" %>
+    <%= password_field_tag :password, nil, class: "form-control" %>
   </div>
 
   <%# Sends the username and password to SessionsController#create. %>

@@ -1,51 +1,52 @@
-<%= form_with url: register_path, method: :post, local: true, class: "register-form-card", html: { novalidate: true } do %>
-  <%# Username field with the same length and character rules enforced again in the controller/model. %>
+<%= form_with url: register_path, method: :post, local: true, class: "register-form-card", html: { autocomplete: "off" } do %>
+  <%# Username field submitted as params[:username]. %>
   <div class="mb-3">
     <label class="form-label">Username</label>
-    <%= text_field_tag :username, params[:username], class: "form-control", autocomplete: "username", autocapitalize: "none", spellcheck: false %>
+    <%= text_field_tag :username, nil, class: "form-control", autocomplete: "off" %>
     <div class="form-text">
       Username must be 5-15 characters. Do not use your real name. Use letters, numbers, dots, underscores or dashes only.
     </div>
   </div>
 
-  <%# Country dropdown uses the EU country list from ApplicationController. %>
+  <%# Country dropdown submitted as params[:country_code]. %>
   <div class="mb-3">
     <label class="form-label">Country</label>
+    <%# Loops through each country from countries_helper.rb, shows "country flag + country name"
+    <%# Only saves the country code %>
     <%= select_tag :country_code,
-      options_for_select(eu_countries.map { |c| ["#{c[:flag]} #{c[:name]}", c[:code]] }, params[:country_code]),
+      options_for_select(eu_countries.map { |c| ["#{c[:flag]} #{c[:name]}", c[:code]] }),
       include_blank: "Select country",
-      class: "form-select",
-      data: { country_search: true } %>
+      class: "form-select" %>
     <div class="form-text">
       Choose the country in which you are located.
     </div>
   </div>
 
-  <%# Revolut tag is collected once and reused later in payment-related flows. %>
+  <%# Revolut tag field submitted as params[:revolut_tag]. %>
   <div class="mb-3">
     <label class="form-label">Revolut Tag</label>
-    <%= text_field_tag :revolut_tag, params[:revolut_tag], class: "form-control", placeholder: "@yourtag", autocomplete: "off", autocapitalize: "none", spellcheck: false %>
+    <%= text_field_tag :revolut_tag, nil, class: "form-control", placeholder: "@yourtag", autocomplete: "off" %>
     <div class="form-text">
-      Your Revolut tag is encrypted in storage, but it may be automatically shown later to buyers, winning bidders or raffle ticket buyers when payment is required.
+      Your Revolut tag is encrypted in storage, but it will be shown later to buyers, winning bidders or raffle ticket buyers when payment is required.
     </div>
   </div>
 
-  <%# Password field uses new-password so password managers treat this as account creation. %>
+  <%# Password field submitted as params[:password]. %>
   <div class="mb-3">
     <label class="form-label">Password</label>
-    <%= password_field_tag :password, nil, class: "form-control", autocomplete: "new-password" %>
+    <%= password_field_tag :password, nil, class: "form-control", autocomplete: "off", data: { lpignore: "true", one_password_ignore: "true" } %>
     <div class="form-text">
       Password must be 12-20 characters and include uppercase, lowercase, number and symbol. Do not use your real name or username.
     </div>
   </div>
 
-  <%# Confirmation field helps catch mistyped passwords. %>
+  <%# Confirmation field submitted as params[:password_confirmation]. %>
   <div class="mb-3">
     <label class="form-label">Confirm Password</label>
-    <%= password_field_tag :password_confirmation, nil, class: "form-control", autocomplete: "new-password" %>
+    <%= password_field_tag :password_confirmation, nil, class: "form-control", autocomplete: "off", data: { lpignore: "true", one_password_ignore: "true" } %>
   </div>
 
-  <%# Sends the completed registration form to RegistrationsController#create. %>
+  <%# Submit button that triggers RegistrationsController#create. %>
   <div class="d-grid">
     <%= submit_tag "Register", class: "btn btn-success btn-lg" %>
   </div>

@@ -46,8 +46,7 @@
 }
 
 /* Headings inside the registration information cards */
-.register-info-card h2,
-.register-terms-box h2 {
+.register-info-card h2 {
   font-size: 1.05rem;
   font-weight: 800;
   margin-bottom: 10px;
@@ -55,8 +54,7 @@
 }
 
 /* Paragraphs inside the registration information cards */
-.register-info-card p,
-.register-terms-box p {
+.register-info-card p {
   color: #475569;
   line-height: 1.55;
 }
@@ -92,22 +90,6 @@
   border: 1px solid rgba(59, 130, 246, 0.28);
   background: #eff6ff;
   color: #1e3a8a;
-}
-
-/* Required checkbox area */
-.register-check {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  padding: 14px 14px 14px 42px;
-  background: #f8fafc;
-}
-
-/* Terms summary box under checkboxes */
-.register-terms-box {
-  border: 1px solid rgba(25, 135, 84, 0.22);
-  border-radius: 18px;
-  padding: 18px;
-  background: #f0fdf4;
 }
 
 /* Makes form help text easier to read */

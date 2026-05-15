@@ -21,7 +21,7 @@ gem "turbo-rails"
 # Stimulus JavaScript framework support.
 gem "stimulus-rails"
 
-# Adds secure password hashing with has_secure_password.
+# Adds secure password hashing with has_secure_password
 gem "bcrypt", "~> 3.1"
 
 # Time zone support for Windows.
@@ -38,15 +38,6 @@ gem "solid_cable"
 
 # Speeds up Rails boot time.
 gem "bootsnap", require: false
-
-# Deployment tool.
-gem "kamal", require: false
-
-# HTTP caching/compression support.
-gem "thruster", require: false
-
-# Image processing support for Active Storage.
-gem "image_processing", "~> 1.2"
 
 group :development, :test do
   # Debugging support during development and testing.

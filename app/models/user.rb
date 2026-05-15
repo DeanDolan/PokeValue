@@ -67,17 +67,6 @@ class User < ApplicationRecord
     end
   end
 
-  # Stores the recovery answer as a BCrypt digest instead of plain text
-  def recovery_answer=(plain)
-    self.recovery_answer_digest = BCrypt::Password.create(plain) if plain.present?
-  end
-
-  # Checks a submitted recovery answer against the saved digest
-  def recovery_answer_matches?(plain)
-    return false if recovery_answer_digest.blank? || plain.blank?
-    BCrypt::Password.new(recovery_answer_digest) == plain
-  end
-
   # Returns true while the login lockout window is still active
   def locked?
     locked_at.present? && locked_at > LOCK_WINDOW.ago
@@ -127,14 +116,6 @@ class User < ApplicationRecord
     else
       self.mfa_secret_encrypted = nil
     end
-  end
-
-  # Builds the QR-code URI used by Google Authenticator and similar apps
-  def mfa_provisioning_uri(issuer: "PokeValueApp")
-    s = mfa_secret
-    return nil if s.blank?
-    label = "#{issuer}:#{username}"
-    "otpauth://totp/#{CGI.escape(label)}?secret=#{s}&issuer=#{CGI.escape(issuer)}&algorithm=SHA1&digits=#{MFA_DIGITS}&period=#{MFA_STEP_SECONDS}"
   end
 
   # Verifies a submitted MFA code and prevents reusing an old time-step code

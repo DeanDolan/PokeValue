@@ -11,15 +11,7 @@
     <div class="card-body">
       <div class="mb-2 fw-semibold">Secret</div>
       <div class="font-monospace"><%= @secret %></div>
-      <div class="small text-muted mt-2">Add this secret to your authenticator as a TOTP account (6 digits, 30 seconds).</div>
-    </div>
-  </div>
-
-  <%# otpauth URI follows the Google Authenticator key URI format. %>
-  <div class="card mb-3">
-    <div class="card-body">
-      <div class="mb-2 fw-semibold">Provisioning URI</div>
-      <div class="small font-monospace" style="word-break: break-all;"><%= @otpauth_uri %></div>
+      <div class="small text-muted mt-2">Add this secret to your authenticator as a TOTP account with 6 digits that refreshes every 30 seconds.</div>
     </div>
   </div>
 
