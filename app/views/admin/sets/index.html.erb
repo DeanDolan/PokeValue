@@ -1,21 +1,7 @@
+<%= stylesheet_link_tag "admin_sets", "data-turbo-track": "reload" %>
+
 <%# Admin set value update page. %>
 <% groups = @groups || [] %>
-
-<style>
-  .admin-sets-table{width:100%;font-size:.78rem;border-collapse:collapse}
-  .admin-sets-table thead th,.admin-sets-table tbody td{vertical-align:middle;text-align:center;padding:.35rem .4rem;line-height:1.2}
-  .admin-sets-table thead th{font-size:.78rem;font-weight:700;white-space:nowrap}
-  .admin-sets-table .col-img{width:70px}
-  .admin-sets-table .col-name{width:220px}
-  .admin-sets-table .col-release{width:170px}
-  .admin-sets-table .col-cs{width:160px}
-  .admin-sets-table .col-total{width:170px}
-  .admin-sets-table .thumb{height:44px;width:auto;object-fit:contain}
-  .admin-sets-card{border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:16px}
-  .admin-sets-card .card-head{background:#f8fafc;padding:10px 12px;font-weight:700;text-align:center}
-  .admin-sets-card .card-body{padding:0}
-  .admin-sets-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 12px}
-</style>
 
 <div class="container py-3">
   <%# Sends all edited set totals, card counts and secret-card counts to the admin controller. %>

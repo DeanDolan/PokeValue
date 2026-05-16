@@ -1,0 +1,75 @@
+.equal-tile{
+  min-height:120px;
+  overflow:visible;
+}
+
+.tile-logo{
+  max-height:60px;
+  max-width:100%;
+  height:auto;
+  width:auto;
+  object-fit:contain;
+}
+
+.equal-tile .small.text-muted{
+  font-size:.70rem;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+.equal-tile .fw-semibold{
+  font-size:.80rem;
+  line-height:1.35;
+  margin-top:2px;
+  padding:0 3px;
+  text-align:center;
+}
+
+.product-card-img{
+  aspect-ratio:4/3;
+  object-fit:contain;
+  background:#ffffff;
+  padding:.5rem;
+}
+
+.urgency-tile.urgency-green{
+  background-color:#16a34a;
+  color:#ffffff;
+}
+
+.urgency-tile.urgency-orange{
+  background-color:#f97316;
+  color:#ffffff;
+}
+
+.urgency-tile.urgency-red{
+  background-color:#ef4444;
+  color:#ffffff;
+}
+
+.urgency-tile.urgency-dark-red{
+  background-color:#7f1d1d;
+  color:#ffffff;
+}
+
+.urgency-tile.urgency-black{
+  background-color:#000000;
+  color:#ffffff;
+}
+
+.urgency-tile.urgency-unknown{
+  background-color:#e5e7eb;
+  color:#111827;
+}
+
+.urgency-tile .small.text-muted{
+  color:inherit!important;
+  opacity:.85;
+}
+
+.urgency-tile .fw-semibold{
+  font-size:.72rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}

@@ -77,18 +77,13 @@
       <%# Global search input for finding sets and products from the navbar %>
       <div class="position-relative me-2 pv-search-wrap">
         <input id="global-search" class="form-control" type="search" placeholder="Search products and sets..." aria-label="Search" autocomplete="off">
-        <div id="global-search-results" class="dropdown-menu w-100 mt-1 p-0" aria-labelledby="global-search" style="max-height:420px; overflow:auto;"></div>
+        <div id="global-search-results" class="dropdown-menu w-100 mt-1 p-0" style="max-height:420px; overflow:auto;"></div>
       </div>
 
-      <%# My Account link opens the account page for logged-in users or the auth modal for guests %>
+      <%# My Account link opens the account page for logged-in users. Logged-out users go to account_path so the controller can show a flash message. %>
       <ul class="navbar-nav mb-2 mb-lg-0 me-2">
         <li class="nav-item">
-          <% if current_user %>
-            <%= link_to "My Account", account_path, class: ["nav-link", (current_page?(account_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %>
-          <% else %>
-            <%# Logged-out users see a login pop-up instead of being sent to the protected account page %>
-            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Log in to view account">My Account</a>
-          <% end %>
+          <%= link_to "My Account", account_path, class: ["nav-link", (current_page?(account_path) ? "fw-bold text-dark" : nil)].compact.join(" ") %>
         </li>
       </ul>
 
@@ -105,7 +100,7 @@
                 form: { class: "d-inline mb-0" } %>
         </div>
       <% else %>
-        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Welcome">
+        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#authModal">
           Login/Register
         </button>
       <% end %>
@@ -114,112 +109,72 @@
 </nav>
 
 <script>
-  (function(){
-    function initAuthModalTitles(){
-      const authModal = document.getElementById("authModal");
-      const authTitle = document.getElementById("authModalLabel");
+  (() => {
+    // Gets the search input from the navbar.
+    const input = document.getElementById("global-search")
 
-      if(!authModal || !authTitle) return;
-      if(authModal.dataset.navbarAuthTitleBound === "1") return;
-      authModal.dataset.navbarAuthTitleBound = "1";
+    // Gets the dropdown box where search results will be shown.
+    const menu = document.getElementById("global-search-results")
 
-      authModal.addEventListener("show.bs.modal", function(event){
-        const button = event.relatedTarget;
-        const title = button ? button.getAttribute("data-auth-title") : "";
-        authTitle.textContent = title || "Welcome";
-      });
+    // Stops the script if the search input or results dropdown does not exist.
+    if (!input || !menu) return
+
+    // Hides and clears the dropdown menu.
+    function closeSearchMenu() {
+      menu.innerHTML = ""
+      menu.classList.remove("open")
     }
 
-    document.addEventListener("turbo:load", initAuthModalTitles);
-    document.addEventListener("DOMContentLoaded", initAuthModalTitles);
-  })();
-</script>
+    // Makes sure the menu is hidden when the page first loads with no search text.
+    if (!input.value.trim()) closeSearchMenu()
 
-<script>
-  (function(){
-    function initGlobalSearch(){
-      const input = document.getElementById("global-search");
-      const menu = document.getElementById("global-search-results");
+    // Runs every time the user types into the search bar.
+    input.addEventListener("input", async () => {
+      // Gets the typed search text and removes extra spaces.
+      const query = input.value.trim()
 
-      if(!input || !menu) return;
-      if(input.dataset.pvSearchBound === "1") return;
-      input.dataset.pvSearchBound = "1";
+      // If the search box is empty, clear and hide the dropdown.
+      if (!query) {
+        closeSearchMenu()
+        return
+      }
 
-      function row(item) {
-        return `
-          <a class="dropdown-item py-2" href="${item.href}">
-            <div class="d-flex align-items-center">
-              <img src="${item.image_url}" alt="" style="width:48px;height:48px;object-fit:contain;margin-right:10px;">
-              <div class="flex-grow-1">
-                <div class="fw-semibold text-truncate">${item.label}</div>
-                <div class="text-muted small text-truncate">${item.subtitle}</div>
-              </div>
+      // Sends the typed search text to the Rails search_index route.
+      const response = await fetch("/search_index.json?q=" + encodeURIComponent(query))
+
+      // Converts the JSON response from Rails into JavaScript data.
+      const data = await response.json()
+
+      // Stops old search results from showing if the user has already cleared or changed the input.
+      if (input.value.trim() !== query) return
+
+      // Combines returned sets and products into one results list.
+      const results = [...(data.sets || []), ...(data.products || [])]
+
+      // If there are no results, clear and hide the dropdown.
+      if (results.length === 0) {
+        closeSearchMenu()
+        return
+      }
+
+      // Builds the HTML for each search result and puts it inside the dropdown.
+      menu.innerHTML = results.map((item) => `
+        <a class="dropdown-item py-2" href="${item.href}">
+          <div class="d-flex align-items-center">
+            <img src="${item.image_url}" alt="" style="width:48px;height:48px;object-fit:contain;margin-right:10px;">
+            <div class="flex-grow-1">
+              <div class="fw-semibold">${item.label}</div>
+              <div class="text-muted small">${item.subtitle}</div>
             </div>
-          </a>
-        `;
-      }
+          </div>
+        </a>
+      `).join("")
 
-      function section(title, items) {
-        if (!items || items.length === 0) return "";
-        return `
-          <div class="border-bottom px-3 py-2 fw-semibold text-muted small">${title}</div>
-          ${items.map(row).join("")}
-        `;
-      }
+      // Shows the dropdown.
+      menu.classList.add("open")
+    })
 
-      function render(data) {
-        const setsHtml = section("Sets", data.sets || []);
-        const productsHtml = section("Products", data.products || []);
-        const html = [setsHtml, productsHtml].filter(Boolean).join("");
-
-        if (html) {
-          menu.innerHTML = html;
-          menu.classList.add("open");
-        } else {
-          menu.classList.remove("open");
-          menu.innerHTML = "";
-        }
-      }
-
-      let timer;
-
-      input.addEventListener("input", function(e){
-        const q = e.target.value.trim();
-        clearTimeout(timer);
-
-        if (!q) {
-          menu.classList.remove("open");
-          menu.innerHTML = "";
-          return;
-        }
-
-        timer = setTimeout(async function(){
-          try {
-            const resp = await fetch("/search_index.json?q=" + encodeURIComponent(q));
-            if (!resp.ok) return;
-            const data = await resp.json();
-            render(data);
-          } catch(_) {
-          }
-        }, 120);
-      });
-
-      document.addEventListener("click", function(e){
-        if (!menu.contains(e.target) && e.target !== input) {
-          menu.classList.remove("open");
-        }
-      });
-
-      document.addEventListener("turbo:click", function(){
-        menu.classList.remove("open");
-      });
-
-      document.addEventListener("turbo:before-cache", function(){
-        menu.classList.remove("open");
-      });
-    }
-
-    document.addEventListener("turbo:load", initGlobalSearch);
-    document.addEventListener("DOMContentLoaded", initGlobalSearch);
-  })();
+    // Stops the search dropdown being remembered/open when you navigate away and come back
+    document.addEventListener("turbo:before-cache", closeSearchMenu)
+  })()
 </script>

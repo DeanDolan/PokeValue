@@ -1,3 +1,5 @@
+<%= stylesheet_link_tag "auctions/index", "data-turbo-track": "reload" %>
+
 <%#
 References:
 - Rails Action View helpers:
@@ -38,7 +40,6 @@ view_tab = "current" unless %w[current ended sold].include?(view_tab)
 auctions = all_auctions.select { |auction| auction_status_key(auction) == (view_tab == "current" ? "running" : view_tab) }
 
 auction_logged_in = current_user.present?
-auction_admin_can_delete = auction_admin_user?(current_user)
 
 empty_label =
   case view_tab
@@ -52,52 +53,6 @@ empty_label =
 %>
 
 <div class="container py-3">
-  <style>
-    .au-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 14px}
-    .au-title{margin:0;font-size:1.4rem;line-height:1.1}
-    .au-sub{margin:2px 0 0;font-size:.85rem;color:#6b7280}
-    .au-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-    .au-tabs a{font-size:.7rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #d1d5db;text-decoration:none;color:#111827;background:#fff}
-    .au-tabs a.active{border-color:#111827;font-weight:700}
-    .au-card{background:#fff;border:1px solid #d4d4d8;border-radius:1rem;box-shadow:0 10px 25px rgba(15,23,42,.08)}
-    .au-filters{padding:10px;margin-bottom:12px}
-    .au-label{font-size:.68rem;color:#4b5563;margin-bottom:2px}
-    .au-table-wrap{overflow-x:visible;min-height:220px}
-    .au-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.72rem}
-    .au-table th,.au-table td{text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;padding:4px 3px;font-size:.64rem}
-    .au-table th{background:#f9fafb;font-weight:900;color:#374151;white-space:nowrap}
-    .au-table th:nth-child(1),.au-table td:nth-child(1){width:10%}
-    .au-table th:nth-child(2),.au-table td:nth-child(2){width:7%}
-    .au-table th:nth-child(3),.au-table td:nth-child(3){width:7%}
-    .au-table th:nth-child(4),.au-table td:nth-child(4){width:27%}
-    .au-table th:nth-child(5),.au-table td:nth-child(5){width:12%}
-    .au-table th:nth-child(6),.au-table td:nth-child(6){width:6%}
-    .au-table th:nth-child(7),.au-table td:nth-child(7){width:10%}
-    .au-table th:nth-child(8),.au-table td:nth-child(8){width:7%}
-    .au-table th:nth-child(9),.au-table td:nth-child(9){width:9%}
-    .au-table th:nth-child(10),.au-table td:nth-child(10){width:5%}
-    .au-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#6b7280;font-size:.8rem}
-    .au-table-card{position:relative;overflow:visible}
-    .au-link{font-weight:600;text-decoration:none}
-    .au-muted{color:#6b7280}
-    .au-desc{text-align:left}
-    .au-desc-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis;line-height:1.2;max-height:2.4em;word-break:break-word}
-    .au-actions{display:flex;gap:3px;justify-content:center;align-items:center;flex-wrap:wrap;white-space:nowrap}
-    .au-actions .btn{font-size:.52rem;padding:.1rem .2rem;line-height:1}
-    .au-actions form{margin:0}
-    .au-time{white-space:nowrap;font-variant-numeric:tabular-nums}
-    .au-badges{display:flex;justify-content:center;align-items:center;gap:3px;flex-wrap:wrap}
-    .au-badges img{height:14px;width:14px;object-fit:contain}
-    .au-confirm{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.55)}
-    .au-confirm-box{width:100%;max-width:430px;border-radius:18px;border:1px solid #000;background:#fff;color:#000;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:20px;text-align:center}
-    .au-confirm-text{font-size:.96rem;font-weight:800;line-height:1.45;margin-bottom:18px}
-    .au-confirm-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
-    .au-confirm-yes,.au-confirm-no{min-width:86px;border-radius:999px;font-weight:800;font-size:.86rem;padding:.42rem .9rem;border:1px solid #000}
-    .au-confirm-yes{background:#000;color:#fff}
-    .au-confirm-no{background:#fff;color:#000}
-    .au-confirm-yes:hover,.au-confirm-no:hover{background:#d4af37;color:#000;border-color:#d4af37}
-  </style>
-
   <div class="au-head">
     <div>
       <h1 class="au-title">Auction</h1>
@@ -273,7 +228,7 @@ empty_label =
               data-end-timestamp="<%= end_timestamp %>"
               data-created-timestamp="<%= created_timestamp %>"
             >
-              <td><%= link_to seller_name, user_path(seller_id), class: "au-link" %></td>
+              <td><span class="au-link"><%= seller_name %></span></td>
 
               <td>
                 <% if country_code.present? %>
@@ -321,14 +276,6 @@ empty_label =
                                   class: "btn btn-outline-danger btn-sm",
                                   form: { data: { auction_confirm: "true", message: "Are you sure you want to end this auction?", turbo: "false" } } %>
                   <% end %>
-
-                  <% if auction_admin_can_delete %>
-                    <%= button_to "Delete",
-                                  delete_auction_path(auction),
-                                  method: :delete,
-                                  class: "btn btn-outline-danger btn-sm",
-                                  form: { data: { auction_confirm: "true", message: "Are you sure you want to delete this auction?", turbo: "false" } } %>
-                  <% end %>
                 </div>
               </td>
             </tr>
@@ -342,7 +289,7 @@ empty_label =
     </div>
   </section>
 
-  <%# Custom confirmation overlay used before ending or deleting auctions. %>
+  <%# Custom confirmation overlay used before ending auctions. %>
   <div class="au-confirm" id="auctionConfirm" aria-hidden="true">
     <div class="au-confirm-box">
       <div class="au-confirm-text" id="auctionConfirmText">Are you sure you want to continue?</div>
@@ -355,59 +302,97 @@ empty_label =
 
   <script>
     (() => {
+      // Stores the form that is waiting for the custom confirmation popup.
       let pendingForm = null
 
+      // Turns milliseconds into readable time text for the auction countdown.
       function formatRemaining(ms) {
+        // If no time is left, show Ended.
         if (ms <= 0) return "Ended"
 
+        // Converts milliseconds into total seconds.
         const total = Math.floor(ms / 1000)
+
+        // Calculates days, hours, minutes and seconds from the total seconds.
         const days = Math.floor(total / 86400)
         const hours = Math.floor((total % 86400) / 3600)
         const minutes = Math.floor((total % 3600) / 60)
         const seconds = total % 60
 
+        // Shows days if the auction has more than 24 hours left.
         if (days > 0) return `${days}d ${hours}h ${minutes}m`
+
+        // Shows hours, minutes and seconds if the auction has more than 1 hour left.
         if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+
+        // Shows minutes and seconds when less than 1 hour remains.
         return `${minutes}m ${seconds}s`
       }
 
+      // Sets up the custom confirmation popup used before ending an auction.
       function initAuctionConfirm() {
+        // Gets the confirmation popup elements.
         const overlay = document.getElementById("auctionConfirm")
         const text = document.getElementById("auctionConfirmText")
         const yes = document.getElementById("auctionConfirmYes")
         const no = document.getElementById("auctionConfirmNo")
 
+        // Stops the function if the popup is missing or already set up.
         if (!overlay || overlay.dataset.bound === "1") return
+
+        // Marks the popup as already set up so event listeners are not duplicated.
         overlay.dataset.bound = "1"
 
+        // Watches for forms that have data-auction-confirm="true".
         document.addEventListener("submit", (event) => {
+          // Finds the confirmation form that was submitted.
           const form = event.target.closest("form[data-auction-confirm='true']")
+
+          // Stops if this is not a confirmation form or it was already confirmed.
           if (!form || form.dataset.confirmed === "true") return
 
+          // Stops the form submitting immediately.
           event.preventDefault()
+
+          // Stores the form so the Yes button can submit it later.
           pendingForm = form
+
+          // Uses the custom message from the form, or a default message.
           if (text) text.textContent = form.dataset.message || "Are you sure you want to continue?"
+
+          // Shows the confirmation popup.
           overlay.style.display = "flex"
           overlay.setAttribute("aria-hidden", "false")
         })
 
+        // Cancels the action when the user clicks No.
         no?.addEventListener("click", () => {
           pendingForm = null
           overlay.style.display = "none"
           overlay.setAttribute("aria-hidden", "true")
         })
 
+        // Confirms the action when the user clicks Yes.
         yes?.addEventListener("click", () => {
+          // Stops if there is no saved form waiting.
           if (!pendingForm) return
 
+          // Saves the form before clearing pendingForm.
           const form = pendingForm
+
+          // Clears the saved form and hides the popup.
           pendingForm = null
           overlay.style.display = "none"
           overlay.setAttribute("aria-hidden", "true")
+
+          // Marks the form as confirmed so it does not trigger the popup again.
           form.dataset.confirmed = "true"
+
+          // Submits the form.
           form.submit()
         })
 
+        // Closes the popup if the user clicks outside the confirmation box.
         overlay.addEventListener("click", (event) => {
           if (event.target !== overlay) return
 
@@ -417,15 +402,27 @@ empty_label =
         })
       }
 
+      // Sets up the auction table filters, sorting and countdown timer.
       function initAuctionTable() {
+        // Sets up the confirmation popup first.
         initAuctionConfirm()
 
+        // Gets the table body that contains the auction rows.
         const tbody = document.getElementById("au-table-body")
+
+        // Stops if the auction table does not exist.
         if (!tbody) return
 
+        // Gets all auction rows from the table.
         const rows = Array.from(tbody.querySelectorAll("tr[data-auction-row='true']"))
+
+        // Gets the empty message shown when no rows match.
         const empty = document.getElementById("au-empty-state")
+
+        // Reads which tab is active: current, ended or sold.
         const tab = document.querySelector(".au-filters")?.dataset.auctionTab || "current"
+
+        // Gets the filter and sort inputs.
         const search = document.getElementById("au-search")
         const location = document.getElementById("au-location")
         const condition = document.getElementById("au-condition")
@@ -436,37 +433,52 @@ empty_label =
         const clear = document.getElementById("au-clear-filters")
         const apply = document.getElementById("au-apply-filters")
 
+        // Makes text lowercase and trimmed so filters compare cleanly.
         const normalize = (value) => String(value || "").trim().toLowerCase()
+
+        // Converts a number input into a number, or null when blank/invalid.
         const numberOrNull = (value) => value === "" || value == null ? null : (Number.isNaN(parseInt(value, 10)) ? null : parseInt(value, 10))
 
+        // Updates the visible countdown timers in the Time Remaining column.
         function updateTimers() {
+          // Gets the current browser time in milliseconds.
           const now = Date.now()
 
+          // Updates every auction row.
           rows.forEach((row) => {
+            // Finds the timer cell in this row.
             const cell = row.querySelector(".au-time-remaining")
             if (!cell) return
 
+            // Gets the auction end time stored on the row.
             const end = parseInt(row.dataset.endTimestamp || "0", 10)
 
+            // If the row should not have a live timer, show the stored length/status text.
             if (!end || row.dataset.status !== "running" || row.dataset.paymentWaiting === "true") {
               cell.textContent = row.dataset.lengthText || "-"
               return
             }
 
+            // Works out how much time is left.
             const left = end - now
 
+            // If the timer has finished, mark it as ended on the page.
             if (left <= 0) {
               cell.textContent = row.dataset.lengthText || "Ended"
               row.dataset.status = "ended"
             } else {
+              // Otherwise, show the live countdown.
               cell.textContent = formatRemaining(left)
             }
           })
         }
 
+        // Applies the filters and sorting to the auction table.
         function applyFilters() {
+          // Updates timers before checking row visibility.
           updateTimers()
 
+          // Reads the current filter values.
           const q = normalize(search?.value)
           const loc = normalize(location?.value)
           const cond = normalize(condition?.value)
@@ -475,41 +487,70 @@ empty_label =
           const res = normalize(reserve?.value)
           const sortBy = normalize(sort?.value)
 
+          // Shows or hides each row based on the selected filters.
           rows.forEach((row) => {
+            // Combines searchable row text into one string.
             const blob = [row.dataset.seller, row.dataset.description, row.dataset.condition].join(" ")
+
+            // Reads the number of bids from the row.
             const bids = parseInt(row.dataset.bids || "0", 10)
+
+            // Starts by assuming the row should be visible.
             let visible = true
 
+            // Filters by the selected auction tab.
             if (tab === "current" && row.dataset.status !== "running") visible = false
             if (tab === "ended" && row.dataset.status !== "ended") visible = false
             if (tab === "sold" && row.dataset.status !== "sold") visible = false
+
+            // Filters by search text.
             if (q && !blob.includes(q)) visible = false
+
+            // Filters by seller location.
             if (loc && normalize(row.dataset.location) !== loc) visible = false
+
+            // Filters by auction condition.
             if (cond && normalize(row.dataset.condition) !== cond) visible = false
+
+            // Filters by minimum bid count.
             if (min !== null && bids < min) visible = false
+
+            // Filters by maximum bid count.
             if (max !== null && bids > max) visible = false
+
+            // Filters by reserve/no reserve.
             if (res && normalize(row.dataset.reserve) !== res) visible = false
 
+            // Shows or hides the row.
             row.style.display = visible ? "" : "none"
           })
 
+          // Sorts the rows based on the selected sort option.
           rows.slice().sort((a, b) => {
+            // Gets end and created timestamps from both rows.
             const aEnd = parseInt(a.dataset.endTimestamp || "0", 10)
             const bEnd = parseInt(b.dataset.endTimestamp || "0", 10)
             const aCreated = parseInt(a.dataset.createdTimestamp || "0", 10)
             const bCreated = parseInt(b.dataset.createdTimestamp || "0", 10)
 
+            // Oldest first.
             if (sortBy === "oldest") return aCreated - bCreated
+
+            // Newest first.
             if (sortBy === "newest") return bCreated - aCreated
+
+            // Ending soonest first.
             return aEnd - bEnd
           }).forEach((row) => tbody.appendChild(row))
 
+          // Shows the empty message when no rows are visible.
           if (empty) {
             const visibleRows = rows.filter((row) => row.style.display !== "none").length
             empty.style.display = visibleRows === 0 ? "flex" : "none"
           }
         }
 
+        // Clears all filters back to their default values.
         function clearFilters() {
           if (search) search.value = ""
           if (location) location.value = ""
@@ -521,17 +562,32 @@ empty_label =
           applyFilters()
         }
 
+        // Runs filters when the Apply Filters button is clicked.
         apply?.addEventListener("click", applyFilters)
+
+        // Clears filters when the Clear button is clicked.
         clear?.addEventListener("click", clearFilters)
+
+        // Runs filters while typing in search/min/max inputs.
         ;[search, minBids, maxBids].forEach((el) => el?.addEventListener("input", applyFilters))
+
+        // Runs filters when dropdown values change.
         ;[location, condition, reserve, sort].forEach((el) => el?.addEventListener("change", applyFilters))
 
+        // Clears the old countdown interval so multiple timers do not run after Turbo loads.
         if (window.auctionTimerId) clearInterval(window.auctionTimerId)
+
+        // Applies filters immediately when the page loads.
         applyFilters()
+
+        // Updates the table every second so live countdown timers keep moving.
         window.auctionTimerId = setInterval(applyFilters, 1000)
       }
 
+      // Runs the auction table setup on a normal browser page load.
       document.addEventListener("DOMContentLoaded", initAuctionTable)
+
+      // Runs the auction table setup when Turbo loads a page.
       document.addEventListener("turbo:load", initAuctionTable)
     })()
   </script>

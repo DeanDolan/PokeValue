@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_27_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_164624) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -37,19 +37,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_27_130000) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
-  end
-
-  create_table "admin_audits", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "ip"
-    t.decimal "new_value", precision: 12, scale: 2, null: false
-    t.decimal "old_value", precision: 12, scale: 2
-    t.string "sku", null: false
-    t.datetime "updated_at", null: false
-    t.text "user_agent"
-    t.integer "user_id", null: false
-    t.index ["sku"], name: "index_admin_audits_on_sku"
-    t.index ["user_id"], name: "index_admin_audits_on_user_id"
   end
 
   create_table "auction_bids", force: :cascade do |t|
@@ -80,6 +67,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_27_130000) do
     t.string "reserve_status", default: "No Reserve", null: false
     t.integer "seller_id", null: false
     t.datetime "settled_at"
+    t.integer "starting_bid_cents"
     t.string "status", default: "running", null: false
     t.datetime "updated_at", null: false
     t.text "winner_revolut_tag_encrypted"
@@ -414,7 +402,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_27_130000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
-  add_foreign_key "admin_audits", "users"
   add_foreign_key "auction_bids", "auctions"
   add_foreign_key "auction_bids", "saved_addresses"
   add_foreign_key "auction_bids", "users", column: "bidder_id"

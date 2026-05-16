@@ -22,12 +22,6 @@ class PagesController < ApplicationController
     "blister_pack_display" => "Blister Pack Display"
   }.freeze
 
-  ERAS = [
-    "Mega Evolution",
-    "Scarlet & Violet",
-    "Sword & Shield"
-  ].freeze
-
   PRODUCT_SLUG_TYPES = [
     "collection_box",
     "tin",
@@ -56,38 +50,6 @@ class PagesController < ApplicationController
     "Contents Only"
   ].freeze
 
-  OUT_OF_PRINT_NOW = [
-    "scarlet & violet base",
-    "paldea evolved",
-    "obsidian flames",
-    "151",
-    "paradox rift",
-    "paldean fates"
-  ].freeze
-
-  OUT_OF_PRINT_BY_DATE = {
-    Date.new(2027, 4, 30) => [
-      "temporal forces",
-      "twilight masquerade",
-      "shrouded fable",
-      "stellar crown",
-      "surging sparks",
-      "prismatic evolutions"
-    ],
-    Date.new(2028, 4, 30) => [
-      "journey together",
-      "destined rivals",
-      "black bolt",
-      "white flare",
-      "mega evolution base",
-      "phantasmal flames",
-      "ascended heroes"
-    ],
-    Date.new(2029, 4, 30) => [
-      "perfect order"
-    ]
-  }.freeze
-
   def auction
   end
 
@@ -97,30 +59,6 @@ class PagesController < ApplicationController
     @selected_channel = CommunityPost::CHANNELS.include?(requested_channel) ? requested_channel : CommunityPost::CHANNELS.first
     @community_post = CommunityPost.new(channel: @selected_channel)
     @community_posts = CommunityPost.includes(:user, :community_reactions, { community_comments: :user }, { images_attachments: :blob }).where(channel: @selected_channel).order(created_at: :desc)
-  end
-
-  def sets
-    @eras = ERAS
-    @era_badges = era_badges
-
-    @sets = sets_data.values.map do |set|
-      {
-        name: set["name"].to_s,
-        era: set["era"].to_s,
-        slug: set["slug"].to_s,
-        image_url: set_card_image_url(set)
-      }
-    end
-  end
-
-  def set
-    set = find_set!(params[:slug])
-    assign_set_details(set)
-    apply_set_override
-
-    @set_logo_url = set_logo_url(set)
-    @urgency_label, @urgency_class, @urgency_subtitle = urgency_for_set(@set_name, @era, @release_date)
-    @products = products_for_set(set)
   end
 
   def product
@@ -212,51 +150,9 @@ class PagesController < ApplicationController
     set
   end
 
-  # Copies the selected set values into instance variables for the view.
-  def assign_set_details(set)
-    @set_slug = set["slug"].to_s
-    @set_name = set["name"].to_s
-    @era = set["era"].to_s
-    @release_date = set["releaseDate"].to_s
-    @total_value = set["totalValue"] || set["total_value"]
-    @cards = set["cards"] || set["totalCards"] || 0
-    @secret = set["secretCards"] || set["secret_cards"] || 0
-  end
-
-  # Applies admin-edited set values when a SetOverride row exists.
-  def apply_set_override
-    return unless defined?(SetOverride)
-
-    key = SetOverride.column_names.include?("set_slug") ? :set_slug : :slug
-    override = SetOverride.find_by(key => @set_slug)
-
-    return unless override
-
-    @total_value = override.total_value if override.respond_to?(:total_value) && override.total_value.present?
-    @cards = override.cards if override.respond_to?(:cards) && override.cards.present?
-    @secret = override.secret_cards if override.respond_to?(:secret_cards) && override.secret_cards.present?
-  rescue
-    nil
-  end
-
   # Returns the list of sealed products for one set.
   def sealed_products(set)
     Array(set["products"] || set["sealed"] || [])
-  end
-
-  # Builds product cards for the set detail page.
-  def products_for_set(set)
-    sealed_products(set).map do |product|
-      type = product["type"].to_s
-      name = product["name"].to_s
-
-      {
-        type: type,
-        name: name,
-        img_url: sealed_image_url(@set_name, product),
-        link: set_product_path(slug: @set_slug, type: route_type_for_product(type, name))
-      }
-    end
   end
 
   # Finds the exact product requested by the route type.
@@ -279,15 +175,6 @@ class PagesController < ApplicationController
     raise ActiveRecord::RecordNotFound unless product
 
     product
-  end
-
-  # Uses the era badge images shown on the sets page.
-  def era_badges
-    {
-      "Mega Evolution" => asset_from_folder("sets", "megaevolution.png"),
-      "Scarlet & Violet" => asset_from_folder("sets", "scarletandviolet.png"),
-      "Sword & Shield" => asset_from_folder("sets", "swordandshield.png")
-    }
   end
 
   # Uses the set box image for the main sets grid.
@@ -378,80 +265,6 @@ class PagesController < ApplicationController
     when "booster_bundle"
       "scarletandviolet_boosterbundle.png"
     end
-  end
-
-  # Calculates the visible urgency label and colour class for a set.
-  def urgency_for_set(set_name, era, release_date)
-    today = Date.current
-    name = normalize_text(set_name)
-    era_name = normalize_text(era)
-    release = parse_date(release_date)
-
-    out_date = out_of_print_date(name, era_name, release)
-    out_now = era_name == "sword & shield" || OUT_OF_PRINT_NOW.include?(name)
-    out_now = true if out_date && out_date <= today
-
-    return [ "Out of Print", "urgency-black", nil ] if out_now
-    return [ "Unknown", "urgency-unknown", nil ] unless out_date
-
-    years, months, days = date_parts_between(today, out_date)
-    days_left = (out_date - today).to_i
-    age_days = release ? (today - release).to_i : nil
-
-    css =
-      if days_left <= 183
-        "urgency-dark-red"
-      elsif days_left <= 365
-        "urgency-red"
-      elsif age_days && age_days < 183
-        "urgency-green"
-      else
-        "urgency-orange"
-      end
-
-    [ "#{years} Years #{months} Months #{days} Days", css, "Until Out of Print" ]
-  end
-
-  # Finds a fixed out-of-print date or estimates one from the release year.
-  def out_of_print_date(name, era_name, release_date)
-    OUT_OF_PRINT_BY_DATE.each do |date, names|
-      return date if names.include?(name)
-    end
-
-    return nil unless release_date
-    return nil if era_name == "sword & shield" || OUT_OF_PRINT_NOW.include?(name)
-
-    date = Date.new(release_date.year + 3, 4, 30)
-    date <= release_date ? Date.new(release_date.year + 4, 4, 30) : date
-  end
-
-  # Splits two dates into years, months and days for the urgency tile.
-  def date_parts_between(from_date, to_date)
-    return [ 0, 0, 0 ] if to_date <= from_date
-
-    years = to_date.year - from_date.year
-    months = to_date.month - from_date.month
-    days = to_date.day - from_date.day
-
-    if days.negative?
-      months -= 1
-      previous_month = to_date.month - 1
-      previous_year = to_date.year
-
-      if previous_month.zero?
-        previous_month = 12
-        previous_year -= 1
-      end
-
-      days += Date.new(previous_year, previous_month, -1).day
-    end
-
-    if months.negative?
-      years -= 1
-      months += 12
-    end
-
-    [ years, months, days ]
   end
 
   # Formats product release dates as YYYY-MM-DD when possible.

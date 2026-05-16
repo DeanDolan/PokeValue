@@ -1,3 +1,5 @@
+<%= stylesheet_link_tag "sets", "data-turbo-track": "reload" %>
+
 <div class="container py-3">
   <div class="row g-3">
     <%# Era filter sidebar %>
@@ -43,30 +45,16 @@
                 <%= image_tag set[:image_url], alt: set[:name], class: "card-img-top sets-card-img" %>
 
                 <div class="card-body py-2 text-center">
-                  <div class="fw-semibold small text-truncate"><%= set[:name] %></div>
+                  <div class="fw-semibold small"><%= set[:name] %></div>
                 </div>
               </div>
             <% end %>
           </div>
         <% end %>
       </div>
-
-      <div id="sets-empty" class="text-center text-muted border border-2 border-dashed rounded-3 py-5 mt-3 d-none">
-        No sets match your filters.
-      </div>
     </section>
   </div>
 </div>
-
-<style>
-  .sets-card-img{aspect-ratio:4/3;object-fit:cover}
-  .era-badge{max-height:56px;object-fit:contain}
-  .era-badge.is-mega{max-height:96px}
-  .era-badge.is-sv-small{max-height:44px}
-  .era-badge.is-ss-smaller{max-height:36px}
-  #era-list .era-item{border-radius:999px!important;font-weight:800!important}
-  .border-dashed{border-style:dashed!important}
-</style>
 
 <script>
   (() => {
@@ -90,19 +78,16 @@
     const buttons = Array.from(eraList.querySelectorAll("[data-era]"))
     const cards = Array.from(grid.querySelectorAll(".set-card"))
 
-    // Restores the last selected era and search text.
-    let activeEra = localStorage.getItem("setsActiveEra") || firstEra
-    let query = localStorage.getItem("setsSearch") || ""
+    let activeEra = firstEra
 
     if (!buttons.some((button) => button.dataset.era === activeEra)) activeEra = firstEra
-    if (search) search.value = query
 
-    // Reads one theme CSS variable.
+    // Reads one design CSS variable.
     function cssVar(name) {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     }
 
-    // Applies theme colours directly so the active button stays correct in light and dark mode.
+    // Applies design colours directly so the active button stays correct.
     function paintButton(button, active) {
       const bg = active ? cssVar("--pv-active-bg") : cssVar("--pv-button-bg")
       const text = active ? cssVar("--pv-active-text") : cssVar("--pv-button-text")
@@ -140,8 +125,6 @@
 
     // Updates the era badge image.
     function syncBadge() {
-      if (!badge) return
-
       badge.src = badges[activeEra] || ""
       badge.alt = activeEra
       badge.classList.remove("is-mega", "is-sv-small", "is-ss-smaller")
@@ -177,7 +160,6 @@
     buttons.forEach((button) => {
       button.addEventListener("click", () => {
         activeEra = button.dataset.era
-        localStorage.setItem("setsActiveEra", activeEra)
         render()
       })
 
@@ -188,16 +170,9 @@
     // Handles set search input.
     if (search) {
       search.addEventListener("input", () => {
-        localStorage.setItem("setsSearch", search.value.trim())
         applyFilter()
       })
     }
-
-    // Repaints buttons after the light/dark theme changes.
-    new MutationObserver(render).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-pv-theme"]
-    })
 
     render()
   })()
