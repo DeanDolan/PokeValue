@@ -6,7 +6,7 @@ Rails.application.routes.draw do
   # Sets, set, product and forecast routes
   get "/sets", to: "sets#index", as: :sets
   get "/sets/:slug", to: "sets#show", as: :set
-  get "/sets/:slug/:type", to: "pages#product", as: :set_product
+  get "/sets/:slug/:type", to: "product#show", as: :set_product
   get "/forecast", to: "forecasts#show", defaults: { format: :json }
 
   # Portfolio routes

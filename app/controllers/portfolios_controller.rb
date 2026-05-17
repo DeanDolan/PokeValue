@@ -1,7 +1,7 @@
 class PortfoliosController < ApplicationController
   include Authentication
 
-  # Default condition options used by the portfolio condition filter
+  # Default condition options used by the portfolio condition filter.
   DEFAULT_CONDITIONS = [
     "Mint Sealed",
     "Loosely Sealed",
@@ -19,7 +19,7 @@ class PortfoliosController < ApplicationController
     "Contents Only"
   ]
 
-  # Loads the user's portfolio holdings and calculates overview totals
+  # Loads the user's portfolio holdings and calculates overview totals for the portfolio page.
   def index
     if current_user
       @holdings = current_user.holdings.includes(:product).order(
@@ -50,7 +50,7 @@ class PortfoliosController < ApplicationController
     @totals = { cost: cost, value: value, pl: pl, roi: roi }
   end
 
-  # Returns portfolio chart data as JSON for the metrics modal
+  # Returns portfolio chart data as JSON for the portfolio metrics modal.
   def metrics
     unless current_user
       render json: { error: "not_signed_in", series: [], debug: { signed_in: false } }, status: :unauthorized
@@ -123,12 +123,14 @@ class PortfoliosController < ApplicationController
 
   private
 
+  # Converts a value into BigDecimal so money calculations stay safe.
   def decimal_value(value)
     BigDecimal(value.to_s)
   rescue
     BigDecimal("0")
   end
 
+  # Finds sold portfolio summary entries for a user.
   def sold_summary_entries_for(user)
     return [] unless defined?(SummaryEntry)
     return [] unless user
@@ -138,6 +140,7 @@ class PortfoliosController < ApplicationController
     []
   end
 
+  # Finds marketplace sales where the user was the seller.
   def marketplace_sales_for(user)
     return [] unless defined?(MarketplacePurchase)
     return [] unless user
@@ -147,12 +150,14 @@ class PortfoliosController < ApplicationController
     []
   end
 
+  # Calculates the user's total realised profit/loss from sold items and marketplace sales.
   def realised_pl_total_for(user)
     realised_pl_by_date_for(user).values.sum { |value| decimal_value(value) }
   rescue
     BigDecimal("0")
   end
 
+  # Groups realised profit/loss by date for portfolio metrics.
   def realised_pl_by_date_for(user)
     out = Hash.new(0.to_d)
 

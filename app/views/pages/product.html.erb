@@ -1,6 +1,5 @@
 <%# Main display values used across the product page, buttons and forms %>
 <% product_logged_in = defined?(user_signed_in?) && user_signed_in? %>
-<% product_admin = defined?(admin_signed_in?) && admin_signed_in? %>
 <% display_product_name = @product_name.presence || @product_type_name %>
 <% display_product_img_url = @product_img_url %>
 <% display_product_value = @product_value.present? ? number_to_currency(@product_value, unit: "€") : "€0.00" %>
@@ -24,10 +23,6 @@
 <% forecast_targets = [["6m", "m6"], ["1y", "m1y"], ["3y", "m3y"], ["5y", "m5y"]] %>
 
 <div class="container py-4">
-  <div class="mb-3">
-    <%= link_to "← Back to set", set_path(slug: @set_slug), class: "btn btn-link p-0" %>
-  </div>
-
   <div class="row g-4 align-items-stretch">
     <div class="col-12 col-lg-5">
       <div class="card h-100">
@@ -69,25 +64,6 @@
               <div class="card-body text-center py-3">
                 <div class="small text-muted"><%= label %></div>
                 <div class="fw-semibold"><%= value %></div>
-
-                <%# Admin-only product value update form %>
-                <% if label == "Estimated Value" && product_admin %>
-                  <div class="mt-2">
-                    <%= form_with url: admin_product_value_path(sku: @admin_value_sku), method: :patch, local: true do %>
-                      <%= hidden_field_tag :return_to, request.fullpath %>
-                      <%= hidden_field_tag :name, display_product_name %>
-                      <%= hidden_field_tag :set_name, @set_name %>
-                      <%= hidden_field_tag :era, @era %>
-                      <%= hidden_field_tag :product_type_name, @product_type_name %>
-                      <%= hidden_field_tag :image_url, display_product_img_url %>
-
-                      <div class="input-group input-group-sm">
-                        <%= number_field_tag :value, @product_value, step: "0.01", min: 0, class: "form-control", required: true %>
-                        <button class="btn btn-outline-primary" type="submit">Update</button>
-                      </div>
-                    <% end %>
-                  </div>
-                <% end %>
               </div>
             </div>
           </div>

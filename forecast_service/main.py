@@ -1,12 +1,15 @@
-import os
-import json
-import difflib
-from typing import Optional, Dict, Any, List
+# Python FastAPI service file
+# Starts the API app, loads the Excel dataset, loads the trained CatBoost model, exposes /health and /forecast endpoints, builds monthly product value history, generates 60 months of predictions, and returns JSON to Rails.
 
-import numpy as np
-import pandas as pd
-from fastapi import FastAPI, HTTPException
-from catboost import CatBoostRegressor
+import os  # Used for file paths and environment variables
+import json  # Used to read model_meta.json
+import difflib  # Used to suggest close product-name matches when an exact product is not found
+from typing import Optional, Dict, Any, List  # Used for type hints
+
+import numpy as np  # Used for numerical calculations such as averages, standard deviation and arrays
+import pandas as pd  # Used to load, clean, filter and prepare the Excel dataset
+from fastapi import FastAPI, HTTPException  # Used to create the API app and return API errors
+from catboost import CatBoostRegressor  # Used to load the trained CatBoost forecasting model
 
 app = FastAPI(title="PokeValue Forecast Service", version="2.0.3")
 
@@ -22,6 +25,7 @@ _meta = None
 _startup_error: Optional[str] = None
 
 
+# Converts a relative file path into a full path inside the forecasting service folder.
 def resolve_path(p: str) -> str:
     if not p:
         return p
@@ -30,10 +34,12 @@ def resolve_path(p: str) -> str:
     return os.path.join(BASE_DIR, p)
 
 
+# Converts dates into the first day of their month for monthly forecasting.
 def to_month_start(s):
     return pd.to_datetime(s, errors="coerce").dt.to_period("M").dt.to_timestamp(how="start")
 
 
+# Loads and cleans the historical Excel dataset used for forecasting.
 def load_data() -> pd.DataFrame:
     path = resolve_path(EXCEL_PATH)
     if not os.path.exists(path):
@@ -78,6 +84,7 @@ def load_data() -> pd.DataFrame:
     return df
 
 
+# Loads the trained CatBoost model and its metadata file.
 def load_model():
     model_path = resolve_path(MODEL_PATH)
     meta_path = resolve_path(META_PATH)
@@ -95,6 +102,7 @@ def load_model():
     return model, meta
 
 
+# Converts date/value columns into JSON-friendly chart points.
 def to_points(dates: pd.Series, values: pd.Series) -> List[Dict[str, Any]]:
     out = []
     for d, v in zip(dates, values):
@@ -104,7 +112,8 @@ def to_points(dates: pd.Series, values: pd.Series) -> List[Dict[str, Any]]:
     return out
 
 
-def build_series_history(df_sel: pd.DataFrame) -> pd.DataFrame:
+# Builds monthly product value history from the selected product rows.
+def build_monthly_price_history(df_sel: pd.DataFrame) -> pd.DataFrame:
     if "month" not in df_sel.columns:
         df_sel = df_sel.copy()
         df_sel["month"] = to_month_start(df_sel["Date"])
@@ -115,6 +124,7 @@ def build_series_history(df_sel: pd.DataFrame) -> pd.DataFrame:
     return hist.sort_values("month").reset_index(drop=True)
 
 
+# Builds the current forecasting state using recent historical values.
 def compute_state(window: List[float]) -> Dict[str, Any]:
     y = np.array(window, dtype=float)
 
@@ -147,6 +157,7 @@ def compute_state(window: List[float]) -> Dict[str, Any]:
     }
 
 
+# Updates the forecasting state after each predicted monthly value.
 def update_state(state: Dict[str, Any], new_value: float) -> Dict[str, Any]:
     w = state["window"]
     w.append(float(new_value))
@@ -155,6 +166,7 @@ def update_state(state: Dict[str, Any], new_value: float) -> Dict[str, Any]:
     return compute_state(w)
 
 
+# Builds one prediction row using the latest forecasting state and product metadata.
 def features_from_state(
     last_known: Dict[str, Any],
     target_month: pd.Timestamp,
@@ -189,6 +201,7 @@ def features_from_state(
     }
 
 
+# Generates monthly forecast predictions using the trained CatBoost model.
 def generate_forecast(
     hist_months: List[pd.Timestamp],
     hist_values: List[float],
@@ -236,6 +249,7 @@ def generate_forecast(
     return forecasts
 
 
+# Runs when the FastAPI service starts and loads the dataset, model and metadata.
 @app.on_event("startup")
 def startup():
     global _df, _model, _meta, _startup_error
@@ -250,6 +264,7 @@ def startup():
         _meta = None
 
 
+# Health endpoint used to check whether the forecasting service is running correctly.
 @app.get("/health")
 def health():
     return {
@@ -260,6 +275,7 @@ def health():
     }
 
 
+# Forecast endpoint called by Rails to return history, forecast values and milestones as JSON.
 @app.get("/forecast")
 def forecast(
     set_name: str,
@@ -300,7 +316,7 @@ def forecast(
     era_exact = str(df2["Era"].iloc[0]) if "Era" in df2.columns else ""
     set_release_date = df2["Set Release Date"].iloc[0] if "Set Release Date" in df2.columns else pd.NaT
 
-    hist = build_series_history(df2)
+    hist = build_monthly_price_history(df2)
     if hist.empty:
         raise HTTPException(status_code=404, detail="No Product Value history found")
 
@@ -317,11 +333,13 @@ def forecast(
         months_ahead=60,
     )
 
+    # Picks a forecast value for a milestone such as 6 months, 1 year, 3 years or 5 years.
     def pick(points, months):
         if not points or months <= 0 or months > len(points):
             return None
         return points[months - 1]["value"]
 
+    # Stores the key forecast milestones returned to Rails.
     milestones = {
         "6m": pick(forecasts, 6),
         "1y": pick(forecasts, 12),
@@ -329,6 +347,7 @@ def forecast(
         "5y": pick(forecasts, 60),
     }
 
+    # Returns the final JSON response that Rails sends back to the product page.
     return {
         "set_name": set_name_exact,
         "product_name": product_name_exact,

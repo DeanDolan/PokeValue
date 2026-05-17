@@ -76,6 +76,7 @@ def normalize_text(s)
   s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
 end
 
+# Normalises product type codes so they can be matched safely.
 def normalize_type(t)
   x = t.to_s.strip.downcase
   x = x.tr("-", "_")
@@ -83,15 +84,18 @@ def normalize_type(t)
   x
 end
 
+# Converts text into a URL-safe slug.
 def slugify(s)
   normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
 end
 
+# Extracts bracketed variant text from product names.
 def extract_variant(name)
   m = name.to_s.match(/\(([^)]+)\)/)
   m ? m[1].to_s.strip : nil
 end
 
+# Detects whether a product is a Pokemon Center product.
 def infer_origin(type_key:, name:)
   t = normalize_type(type_key)
   n = normalize_text(name)
@@ -100,6 +104,7 @@ def infer_origin(type_key:, name:)
   nil
 end
 
+# Checks whether a product type needs the product name added to the route.
 def route_needs_product_slug?(base)
   [
     "collection_box",
@@ -147,6 +152,7 @@ def base_type_for_name(name)
   name.to_s
 end
 
+# Converts a release date value into a Date object when possible.
 def parse_release_date(v)
   begin
     Date.parse(v.to_s)
@@ -155,6 +161,7 @@ def parse_release_date(v)
   end
 end
 
+# Converts a value into a decimal number for money calculations.
 def to_decimal(v)
   return nil if v.nil?
   return v.to_d if v.respond_to?(:to_d)
@@ -189,6 +196,7 @@ rescue
   nil
 end
 
+# Finds the first positive value from a list of possible SKU keys.
 def first_nonzero(map, keys)
   keys.each do |k|
     v = map[k.to_s.downcase]
@@ -875,7 +883,9 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
 
 <% unless portfolio_logged_in %>
   <script>
+    // Runs the logged-out portfolio auth modal title setup without creating global variables.
     (function(){
+      // Sets the shared login/register modal title from the clicked portfolio button.
       function initPortfolioAuthModalTitles(){
         const authModal = document.getElementById("authModal")
         const authTitle = document.getElementById("authModalLabel")
@@ -1308,19 +1318,23 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
 <% end %>
 
 <script>
+  // Runs all portfolio JavaScript inside a private wrapper so variables do not leak globally.
   (function(){
     const SETS_INDEX = <%= raw(sets_index.to_json) %>
     let pendingPortfolioRemoveForm = null
 
+    // Converts filter input text into a number, or null when it is empty/invalid.
     function toNum(v){
       const n = parseFloat(v)
       return Number.isFinite(n) ? n : null
     }
 
+    // Returns only unique values from an array.
     function uniq(arr){
       return Array.from(new Set(arr))
     }
 
+    // Formats a number as euro currency text.
     function money(v){
       const n = parseFloat(v || 0)
       return "€" + (Number.isFinite(n) ? n : 0).toFixed(2)
@@ -1476,6 +1490,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       applyFilters()
     }
 
+    // Clears a select dropdown and adds its first placeholder option.
     function resetSelect(select, label){
       if(!select) return
       select.innerHTML = ""
@@ -1485,6 +1500,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       select.appendChild(option)
     }
 
+    // Adds one option to a select dropdown.
     function addOption(select, value, text, dataset){
       const option = document.createElement("option")
       option.value = value
@@ -1495,12 +1511,14 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       select.appendChild(option)
     }
 
+    // Returns the set currently selected in the Add to Portfolio modal.
     function selectedSet(){
       const setSelect = document.getElementById("portfolio_add_set")
       const slug = setSelect ? setSelect.value : ""
       return SETS_INDEX.find(s => s.slug === slug) || null
     }
 
+    // Returns the product currently selected in the Add to Portfolio modal.
     function selectedProduct(){
       const productSelect = document.getElementById("portfolio_add_product")
       const index = productSelect ? parseInt(productSelect.value || "-1", 10) : -1
@@ -1585,6 +1603,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       syncHiddenAddHoldingFields()
     }
 
+    // Returns today's date in YYYY-MM-DD format for date inputs.
     function todayIso(){
       const d = new Date()
       const y = d.getFullYear()
@@ -1593,6 +1612,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       return `${y}-${m}-${day}`
     }
 
+    // Adds or updates a hidden input before submitting a remove/sold form.
     function addHiddenInput(form, name, value){
       let input = form.querySelector(`input[name="${name}"]`)
       if(!input){
@@ -1604,11 +1624,13 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       input.value = value
     }
 
+    // Removes a hidden input from a form when it is no longer needed.
     function removeHiddenInput(form, name){
       const input = form.querySelector(`input[name="${name}"]`)
       if(input) input.remove()
     }
 
+    // Resets and hides the custom remove/sold confirmation overlay.
     function resetRemoveOverlay(){
       const overlay = document.getElementById("portfolioRemoveConfirmOverlay")
       const soldFields = document.getElementById("portfolioSoldFields")
@@ -1634,6 +1656,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       }
     }
 
+    // Submits the pending remove form either as a full remove or as a sold item.
     function submitPendingRemoveForm(mode){
       if(!pendingPortfolioRemoveForm) return
 
@@ -1821,6 +1844,7 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       })
     }
 
+    // Starts all portfolio page JavaScript features after the page loads.
     function init(){
       wireFilters()
       initAddHoldingModal()
