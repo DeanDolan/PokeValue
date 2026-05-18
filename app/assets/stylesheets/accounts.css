@@ -1,0 +1,53 @@
+    .acc-wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+    .acc-left{flex:1;min-width:320px}
+    .acc-title{font-size:1.15rem;margin:0 0 14px}
+    .acc-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-bottom:12px;overflow:hidden}
+    .acc-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .acc-meta p{margin:0 0 6px;font-size:.85rem}
+    .acc-badges img{height:20px;width:20px;object-fit:contain;display:inline-block;vertical-align:middle}
+    .acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+    .acc-tabs a{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap}
+    .acc-tabs a.active{border-color:#111827;font-weight:900}
+    .subhead{font-size:.9rem;font-weight:900;margin:0 0 10px}
+    .mp-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+    .mp-table th{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:middle;font-size:.62rem;white-space:nowrap;overflow:hidden;text-overflow:clip}
+    .mp-table td{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:top;font-size:.62rem;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.15}
+    .mp-table th{font-weight:900;color:#111827;background:#fafafa}
+    .mp-actions{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:nowrap;white-space:nowrap}
+    .mp-actions .btn{font-size:.6rem;padding:.12rem .32rem;line-height:1.05}
+    .mp-empty{color:#6b7280;font-size:.85rem;text-align:center;padding:12px 0}
+    .w-era{width:11%}
+    .w-set{width:15%}
+    .w-type{width:20%}
+    .w-cond{width:13%}
+    .w-qty{width:6%}
+    .w-total{width:11%}
+    .w-date{width:10%}
+    .w-actions{width:8%}
+    .w-status{width:10%}
+    .w-price{width:10%}
+    .w-seller{width:14%}
+    .w-au-desc{width:30%}
+    .w-au-bids{width:8%}
+    .w-au-length{width:12%}
+    .w-au-time{width:14%}
+    .w-au-date{width:10%}
+    .w-au-actions{width:12%}
+    .w-au-cond{width:10%}
+    .w-au-bid{width:12%}
+    .w-ra-title{width:26%}
+    .w-ra-kind{width:12%}
+    .w-ra-price{width:12%}
+    .w-ra-tickets{width:12%}
+    .w-ra-status{width:12%}
+    .w-ra-date{width:12%}
+    .w-ra-actions{width:14%}
+    .acc-au-desc{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.2;max-height:2.4em;text-align:left}
+    .acc-address-grid{display:grid;gap:10px}
+    .acc-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
+    .acc-address-line{font-size:.82rem;line-height:1.25}
+
+.acc-country-flag{font-size:1.05rem;line-height:1;display:inline-block;position:relative;top:2px}
+.acc-hidden{display:none}
+.acc-cell-left{text-align:left}
+.acc-watch-img{height:44px;width:auto;object-fit:contain}

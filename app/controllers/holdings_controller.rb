@@ -1,27 +1,22 @@
 class HoldingsController < ApplicationController
-  # Creates a portfolio holding from the Add to Portfolio form
+  # Creates a portfolio holding from the Add to Portfolio form.
   def create
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
 
     attrs = holding_params
 
-    # Defaults invalid or empty quantities to 1 so the holding can still be calculated safely.
     quantity = attrs[:quantity].to_i
     quantity = 1 if quantity <= 0
 
-    # Converts submitted money fields into decimal values before doing portfolio calculations.
-    cost_per_unit = decimal_value(attrs[:cost_per_unit])
-    submitted_value = decimal_value(attrs[:value])
+    cost_per_unit = money_value(attrs[:cost_per_unit])
+    submitted_value = money_value(attrs[:value])
     condition = attrs[:condition].to_s.strip
 
-    # Links the holding to an existing Product row, or creates a basic Product row if needed.
-    product = find_or_create_product_for_holding(attrs, submitted_value)
+    product = save_product_for_holding(attrs, submitted_value)
 
-    # Uses the best available product value instead of blindly trusting the hidden form value.
-    base_value = best_base_value_for_holding(attrs, product, submitted_value)
+    base_value = product_value_for_holding(attrs, product, submitted_value)
     adjusted_value = Holding.adjusted_value_for_condition(base_value, condition)
 
-    # Saves the holding with calculated cost, value, profit/loss, and ROI fields.
     holding = Holding.new(
       user_id: current_user.id,
       product_id: product&.id,
@@ -37,15 +32,13 @@ class HoldingsController < ApplicationController
       total_cost: cost_per_unit * quantity,
       total_value: adjusted_value * quantity,
       pl: (adjusted_value * quantity) - (cost_per_unit * quantity),
-      roi_pct: roi_percent(cost_per_unit * quantity, (adjusted_value * quantity) - (cost_per_unit * quantity)),
+      roi_pct: calculate_roi(cost_per_unit * quantity, (adjusted_value * quantity) - (cost_per_unit * quantity)),
       purchase_date: attrs[:purchase_date].presence || Date.current,
       image: attrs[:image_url].to_s
     )
 
     holding.save!
-
-    # Adds a history entry for the portfolio summary modal.
-    create_summary_entry_safe(holding, "ADDED")
+    create_summary_entry(holding, "ADDED")
 
     redirect_back fallback_location: portfolio_path, notice: "Added to portfolio."
   rescue ActiveRecord::RecordInvalid => e
@@ -54,54 +47,53 @@ class HoldingsController < ApplicationController
     redirect_back fallback_location: portfolio_path, alert: "Could not add product to portfolio."
   end
 
-  # Loads the edit page for one of the current user's holdings
+  # Loads the portfolio edit page for one holding.
   def edit
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
 
     @holding = holding_scope_for_current_user.find(params[:id])
+    @condition_options = condition_options
+
+    render "portfolios/edit"
   end
 
-  # Updates holding quantity, cost, condition, value and calculated totals
+  # Updates holding quantity, cost, condition, value and calculated totals.
   def update
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
 
     holding = holding_scope_for_current_user.find(params[:id])
     attrs = holding_params
 
-    # Keeps the existing quantity unless a new valid quantity is submitted.
     quantity = attrs[:quantity].presence || holding.quantity
     quantity = quantity.to_i
     quantity = 1 if quantity <= 0
 
-    # Keeps the old cost unless the user submits a new cost.
     cost_per_unit =
       if attrs[:cost_per_unit].present?
-        decimal_value(attrs[:cost_per_unit])
+        money_value(attrs[:cost_per_unit])
       else
-        decimal_value(holding.cost_per_unit)
+        money_value(holding.cost_per_unit)
       end
 
     condition = attrs[:condition].presence || holding.condition.to_s
 
-    # Uses the submitted value first, then the linked product value, then the current holding value.
     submitted_value =
       if attrs[:value].present?
-        decimal_value(attrs[:value])
+        money_value(attrs[:value])
       else
         BigDecimal("0")
       end
 
     base_value =
-      if positive_decimal?(submitted_value)
+      if positive_number?(submitted_value)
         submitted_value
       else
-        product_value = value_from_product(holding.product)
-        positive_decimal?(product_value) ? product_value : decimal_value(holding.value)
+        saved_product_value = product_value(holding.product)
+        positive_number?(saved_product_value) ? saved_product_value : money_value(holding.value)
       end
 
     adjusted_value = Holding.adjusted_value_for_condition(base_value, condition)
 
-    # Recalculates totals so the portfolio table stays accurate after editing.
     holding.update!(
       quantity: quantity,
       cost_per_unit: cost_per_unit,
@@ -111,47 +103,58 @@ class HoldingsController < ApplicationController
       total_cost: cost_per_unit * quantity,
       total_value: adjusted_value * quantity,
       pl: (adjusted_value * quantity) - (cost_per_unit * quantity),
-      roi_pct: roi_percent(cost_per_unit * quantity, (adjusted_value * quantity) - (cost_per_unit * quantity))
+      roi_pct: calculate_roi(cost_per_unit * quantity, (adjusted_value * quantity) - (cost_per_unit * quantity))
     )
 
-    redirect_back fallback_location: portfolio_path, notice: "Holding updated."
+    redirect_to portfolio_path, notice: "Holding updated."
   rescue ActiveRecord::RecordInvalid => e
     redirect_back fallback_location: portfolio_path, alert: e.record.errors.full_messages.to_sentence
   rescue
     redirect_back fallback_location: portfolio_path, alert: "Could not update holding."
   end
 
-  # Removes a holding that belongs to the current user
-  def destroy
-    return redirect_to(root_path, alert: "Please log in.") unless current_user
+  # Loads the sold form for one holding.
+  def sold
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
 
-    if params[:remove_mode].to_s == "sold_summary_entry"
-      delete_sold_summary_entry_safely(params[:id])
-      return redirect_back fallback_location: portfolio_path, notice: "Sold entry deleted."
-    end
+    @holding = holding_scope_for_current_user.find(params[:id])
+
+    render "portfolios/sold"
+  end
+
+  # Marks part or all of a holding as sold.
+  def mark_sold
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
 
     holding = holding_scope_for_current_user.find(params[:id])
+    sell_holding(holding)
 
-    if params[:remove_mode].to_s == "sold"
-      sell_holding_safely(holding)
-      redirect_back fallback_location: portfolio_path, notice: "Product marked as sold."
-    else
-      delete_holding_safely(holding)
-      redirect_back fallback_location: portfolio_path, notice: "Holding removed."
-    end
+    redirect_to portfolio_path, notice: "Product marked as sold."
+  rescue ActiveRecord::RecordNotFound
+    redirect_to portfolio_path, alert: "Holding not found."
+  rescue ActionController::BadRequest
+    redirect_to sold_holding_path(params[:id]), alert: "Could not process sale details."
+  rescue
+    redirect_to portfolio_path, alert: "Could not mark product as sold."
+  end
+
+  # Removes a holding that belongs to the current user.
+  def destroy
+    return redirect_to(portfolio_login_required_path, alert: "Please log in to view your Portfolio.") unless current_user
+
+    holding = holding_scope_for_current_user.find(params[:id])
+    delete_holding(holding)
+
+    redirect_back fallback_location: portfolio_path, notice: "Holding removed."
   rescue ActiveRecord::RecordNotFound
     redirect_back fallback_location: portfolio_path, alert: "Holding not found."
-  rescue ActiveRecord::RecordInvalid => e
-    redirect_back fallback_location: portfolio_path, alert: e.record.errors.full_messages.to_sentence
-  rescue ActionController::BadRequest
-    redirect_back fallback_location: portfolio_path, alert: "Could not process sale details."
   rescue
     redirect_back fallback_location: portfolio_path, alert: "Could not remove product."
   end
 
   private
 
-  # Allows only the holding form fields that should be saved
+  # Allows only the holding form fields that should be saved.
   def holding_params
     params.require(:holding).permit(
       :product_id,
@@ -169,18 +172,21 @@ class HoldingsController < ApplicationController
     )
   end
 
-  # Finds the logged-in user from the Rails session
+  # Finds the logged-in user from the Rails session.
   def current_user
     return @current_user if defined?(@current_user)
+
     @current_user = User.find_by(id: session[:user_id])
   end
 
+  # Finds holdings for the current user or all holdings for admin users.
   def holding_scope_for_current_user
     return Holding.all if holding_admin_user?
 
     Holding.where(user_id: current_user.id)
   end
 
+  # Checks whether the current user is an admin.
   def holding_admin_user?
     user = current_user
     return false unless user
@@ -193,9 +199,30 @@ class HoldingsController < ApplicationController
     false
   end
 
-  def sell_holding_safely(holding)
+  # Returns condition options for the edit form.
+  def condition_options
+    [
+      "Mint Sealed",
+      "Loosely Sealed",
+      "Mini Tear/Hole (<2cm)",
+      "Unsealed",
+      "Small Tear (>2cm)",
+      "Big Tear (>1 inch)",
+      "Small Imperfections",
+      "Big Imperfections",
+      "Pressure Marks",
+      "Slightly Dented",
+      "Heavy Dented",
+      "Damaged",
+      "Box Only",
+      "Contents Only"
+    ]
+  end
+
+  # Sells part or all of a holding and records a sold summary entry.
+  def sell_holding(holding)
     sold_quantity = params[:sold_quantity].to_i
-    sell_price = decimal_value(params[:sold_price])
+    sell_price = money_value(params[:sold_price])
     sale_date = sold_sale_date
 
     raise ActionController::BadRequest if sold_quantity <= 0
@@ -203,34 +230,36 @@ class HoldingsController < ApplicationController
     raise ActionController::BadRequest if sell_price <= 0
 
     ActiveRecord::Base.transaction do
-      create_sold_summary_entry_safe(holding, sold_quantity, sell_price, sale_date)
+      create_sold_summary(holding, sold_quantity, sell_price, sale_date)
 
       remaining_quantity = holding.quantity.to_i - sold_quantity
 
       if remaining_quantity <= 0
-        delete_holding_safely(holding)
+        delete_holding(holding)
       else
-        cost_per_unit = decimal_value(holding.cost_per_unit)
-        current_value = decimal_value(holding.value)
+        cost_per_unit = money_value(holding.cost_per_unit)
+        current_value = money_value(holding.value)
 
         holding.update!(
           quantity: remaining_quantity,
           total_cost: cost_per_unit * remaining_quantity,
           total_value: current_value * remaining_quantity,
           pl: (current_value * remaining_quantity) - (cost_per_unit * remaining_quantity),
-          roi_pct: roi_percent(cost_per_unit * remaining_quantity, (current_value * remaining_quantity) - (cost_per_unit * remaining_quantity))
+          roi_pct: calculate_roi(cost_per_unit * remaining_quantity, (current_value * remaining_quantity) - (cost_per_unit * remaining_quantity))
         )
       end
     end
   end
 
+  # Reads the submitted sale date or uses today's date.
   def sold_sale_date
     Date.parse(params[:sale_date].to_s)
   rescue
     Date.current
   end
 
-  def create_sold_summary_entry_safe(holding, quantity, sell_price, sale_date)
+  # Creates a sold row in the portfolio summary.
+  def create_sold_summary(holding, quantity, sell_price, sale_date)
     raise ActionController::BadRequest unless defined?(SummaryEntry)
 
     cols = SummaryEntry.column_names
@@ -255,7 +284,6 @@ class HoldingsController < ApplicationController
         ""
       end
 
-    # Only writes fields that exist on the SummaryEntry model.
     attrs[:user_id] = current_user.id if cols.include?("user_id")
     attrs[:action] = "SOLD" if cols.include?("action")
     attrs[:era] = holding.era.to_s if cols.include?("era")
@@ -273,27 +301,11 @@ class HoldingsController < ApplicationController
     SummaryEntry.create!(attrs)
   end
 
-  def delete_sold_summary_entry_safely(id)
-    raise ActiveRecord::RecordNotFound unless defined?(SummaryEntry)
-
-    scope = SummaryEntry.where(id: id)
-    scope = scope.where(user_id: current_user.id) unless holding_admin_user?
-    scope = scope.where(action: [ "SOLD", "Sold", "sold" ])
-
-    entry = scope.first
-    raise ActiveRecord::RecordNotFound unless entry
-
-    begin
-      entry.destroy!
-    rescue ActiveRecord::RecordNotDestroyed, ActiveRecord::DeleteRestrictionError, ActiveRecord::InvalidForeignKey
-      scope.delete_all
-    end
-  end
-
-  def delete_holding_safely(holding)
+  # Deletes a holding safely.
+  def delete_holding(holding)
     ActiveRecord::Base.transaction do
-      detach_holding_from_marketplace_rows(holding)
-      detach_holding_from_summary_rows(holding)
+      remove_marketplace_links(holding)
+      remove_summary_links(holding)
 
       begin
         holding.destroy!
@@ -303,7 +315,8 @@ class HoldingsController < ApplicationController
     end
   end
 
-  def detach_holding_from_marketplace_rows(holding)
+  # Removes holding references from marketplace rows before deleting the holding.
+  def remove_marketplace_links(holding)
     if defined?(MarketplaceListing) && MarketplaceListing.column_names.include?("holding_id")
       scope = MarketplaceListing.where(holding_id: holding.id)
 
@@ -335,7 +348,8 @@ class HoldingsController < ApplicationController
     end
   end
 
-  def detach_holding_from_summary_rows(holding)
+  # Removes holding references from summary rows before deleting the holding.
+  def remove_summary_links(holding)
     return unless defined?(SummaryEntry)
     return unless SummaryEntry.column_names.include?("holding_id")
 
@@ -350,6 +364,7 @@ class HoldingsController < ApplicationController
     end
   end
 
+  # Checks whether a database column can be nil.
   def nullable_column?(klass, column_name)
     column = klass.columns_hash[column_name.to_s]
     return true unless column
@@ -359,24 +374,24 @@ class HoldingsController < ApplicationController
     true
   end
 
-  # Converts form values into BigDecimal so money calculations are safer
-  def decimal_value(value)
+  # Converts form values into BigDecimal so money calculations are safer.
+  def money_value(value)
     BigDecimal(value.to_s)
   rescue
     BigDecimal("0")
   end
 
   # Checks whether a decimal value is above zero.
-  def positive_decimal?(value)
-    decimal_value(value) > 0
+  def positive_number?(value)
+    money_value(value) > 0
   rescue
     false
   end
 
-  # Calculates ROI percentage from total cost and profit/loss
-  def roi_percent(total_cost, pl)
-    total_cost = decimal_value(total_cost)
-    pl = decimal_value(pl)
+  # Calculates ROI percentage from total cost and profit/loss.
+  def calculate_roi(total_cost, pl)
+    total_cost = money_value(total_cost)
+    pl = money_value(pl)
 
     return BigDecimal("0") if total_cost <= 0
 
@@ -385,14 +400,14 @@ class HoldingsController < ApplicationController
     BigDecimal("0")
   end
 
-  # Finds an existing product or creates a basic one for the holding
-  def find_or_create_product_for_holding(attrs, base_value)
+  # Finds an existing product or creates a basic one for the holding.
+  def save_product_for_holding(attrs, base_value)
     return nil unless defined?(Product)
 
     product_from_id = Product.find_by(id: attrs[:product_id]) if attrs[:product_id].present?
-    return product_from_id if product_from_id && positive_decimal?(value_from_product(product_from_id))
+    return product_from_id if product_from_id && positive_number?(product_value(product_from_id))
 
-    product = best_existing_product_for_holding(attrs)
+    product = matching_product_for_holding(attrs)
     return product if product
 
     set_slug = attrs[:set_slug].to_s.strip
@@ -401,7 +416,6 @@ class HoldingsController < ApplicationController
 
     product_attrs = {}
 
-    # Only writes columns that exist so this works safely with different Product table versions.
     product_attrs[:sku] = sku if Product.column_names.include?("sku") && sku.present?
     product_attrs[:era] = attrs[:era].to_s if Product.column_names.include?("era")
     product_attrs[:set_name] = attrs[:set_name].to_s if Product.column_names.include?("set_name")
@@ -415,29 +429,29 @@ class HoldingsController < ApplicationController
     nil
   end
 
-  # Uses the strongest available value source for the holding.
-  def best_base_value_for_holding(attrs, product, submitted_value)
-    product_value = value_from_product(product)
-    return product_value if positive_decimal?(product_value)
+  # Gets the product value that should be used for the holding.
+  def product_value_for_holding(attrs, product, submitted_value)
+    saved_product_value = product_value(product)
+    return saved_product_value if positive_number?(saved_product_value)
 
-    existing_product = best_existing_product_for_holding(attrs)
-    existing_value = value_from_product(existing_product)
-    return existing_value if positive_decimal?(existing_value)
+    existing_product = matching_product_for_holding(attrs)
+    existing_value = product_value(existing_product)
+    return existing_value if positive_number?(existing_value)
 
-    return submitted_value if positive_decimal?(submitted_value)
+    return submitted_value if positive_number?(submitted_value)
 
     BigDecimal("0")
   rescue
     BigDecimal("0")
   end
 
-  # Finds the best existing product match using SKU and product metadata.
-  def best_existing_product_for_holding(attrs)
+  # Finds the matching product row using SKU and product metadata.
+  def matching_product_for_holding(attrs)
     return nil unless defined?(Product)
 
     products = []
 
-    sku_candidates_for(attrs).each do |sku|
+    possible_skus_for(attrs).each do |sku|
       product = Product.find_by(sku: sku) if Product.column_names.include?("sku")
       products << product if product
     end
@@ -452,13 +466,13 @@ class HoldingsController < ApplicationController
       products << product if product
     end
 
-    products.compact.uniq.max_by { |product| value_from_product(product).to_f }
+    products.compact.uniq.max_by { |product| product_value(product).to_f }
   rescue
     nil
   end
 
   # Builds possible SKU formats so portfolio values still match product-page/admin values.
-  def sku_candidates_for(attrs)
+  def possible_skus_for(attrs)
     set_slug = attrs[:set_slug].to_s.strip
     type_code = attrs[:type_code].to_s.strip
     base_type = type_code.split("--").first.to_s
@@ -474,7 +488,7 @@ class HoldingsController < ApplicationController
   end
 
   # Reads the product value safely from whichever value column exists.
-  def value_from_product(product)
+  def product_value(product)
     return BigDecimal("0") unless product
 
     normal_value_columns = [
@@ -498,14 +512,14 @@ class HoldingsController < ApplicationController
     normal_value_columns.each do |column|
       next unless product.has_attribute?(column)
 
-      value = decimal_value(product[column])
+      value = money_value(product[column])
       return value if value > 0
     end
 
     cents_value_columns.each do |column|
       next unless product.has_attribute?(column)
 
-      value = decimal_value(product[column]) / 100
+      value = money_value(product[column]) / 100
       return value if value > 0
     end
 
@@ -514,14 +528,13 @@ class HoldingsController < ApplicationController
     BigDecimal("0")
   end
 
-  # Stores a summary row so the portfolio can show added items in the history modal
-  def create_summary_entry_safe(holding, action)
+  # Stores a summary row so the portfolio can show added items in the history modal.
+  def create_summary_entry(holding, action)
     return unless defined?(SummaryEntry)
 
     cols = SummaryEntry.column_names
     attrs = {}
 
-    # Only writes fields that exist on the SummaryEntry model.
     attrs[:user_id] = current_user.id if cols.include?("user_id")
     attrs[:action] = action if cols.include?("action")
     attrs[:era] = holding.era.to_s if cols.include?("era")

@@ -1,649 +1,125 @@
+<%= stylesheet_link_tag "portfolios", "data-turbo-track": "reload" %>
+
 <%
-require "json"
-require "date"
-
-# Loads the sets catalogue so the portfolio page can build product dropdowns and image links
-sets_data =
-  begin
-    raw = File.read(Rails.root.join("config", "sets.json"), encoding: "bom|utf-8")
-    JSON.parse(raw)
-  rescue
-    {}
-  end
-
-# Converts short product type codes into user-friendly names
-type_map = {
-  "etb"                      => "Elite Trainer Box",
-  "pc_etb"                   => "Pokemon Center Elite Trainer Box",
-  "booster_box"              => "Booster Box",
-  "half_booster_box"         => "Half Booster Box",
-  "booster_pack"             => "Booster Pack",
-  "booster_bundle"           => "Booster Bundle",
-  "booster_bundle_display"   => "Booster Bundle Display",
-  "enhanced_booster_box"     => "Enhanced Booster Box",
-  "ultra_premium_collection" => "Ultra Premium Collection",
-  "upc"                      => "Ultra Premium Collection",
-  "spc"                      => "Super Premium Collection",
-  "collection_box"           => "Collection Box",
-  "tin"                      => "Tin",
-  "mini_tin"                 => "Mini Tin",
-  "mini_tin_display"         => "Mini Tin Display",
-  "blister_pack"             => "Blister Pack",
-  "blister_pack_display"     => "Blister Pack Display"
-}
-inv_type_map  = type_map.invert
-images_sealed = Rails.root.join("app", "assets", "images", "sealed")
-
-# Checks whether a user is logged in so portfolio action buttons can either open their real modals or show the login pop-up
 portfolio_logged_in = current_user.present?
+holdings = @holdings || []
+summary_entries = @summary_entries || []
+conditions_ordered = (@conditions || []).map(&:to_s).uniq
+sets_ordered = holdings.map { |holding| holding.set_name.to_s }.reject(&:blank?).uniq.sort
 
-# Uses controller-provided condition options where available
-conditions_from_controller =
-  if defined?(@conditions) && @conditions.is_a?(Array) && @conditions.any?
-    @conditions.map(&:to_s)
-  else
-    []
-  end
+holding_product_href = lambda do |holding|
+  product = holding.product
+  next nil unless product
 
-condition_order = [
-  "Mint Sealed",
-  "Loosely Sealed",
-  "Mini Tear/Hole (<2cm)",
-  "Unsealed",
-  "Small Tear (>2cm)",
-  "Big Tear (>1 inch)",
-  "Small Imperfections",
-  "Big Imperfections",
-  "Pressure Marks",
-  "Slightly Dented",
-  "Heavy Dented",
-  "Damaged",
-  "Box Only",
-  "Contents Only"
-].freeze
+  set_slug = product.respond_to?(:set_slug) ? product.set_slug.to_s : ""
+  type_code = product.respond_to?(:type_code) ? product.type_code.to_s : ""
 
-conditions_ordered = (condition_order + (conditions_from_controller - condition_order).sort).uniq
+  next nil if set_slug.blank? || type_code.blank?
 
-portfolio_type_options =
-  if defined?(@types) && @types.is_a?(Array) && @types.any?
-    @types.map(&:to_s)
-  else
-    type_map.values.uniq
-  end
-
-# Normalises text for matching sets, products and product variants
-def normalize_text(s)
-  s.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
-end
-
-# Normalises product type codes so they can be matched safely.
-def normalize_type(t)
-  x = t.to_s.strip.downcase
-  x = x.tr("-", "_")
-  x = x.gsub(/\s+/, "_")
-  x
-end
-
-# Converts text into a URL-safe slug.
-def slugify(s)
-  normalize_text(s).gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
-end
-
-# Extracts bracketed variant text from product names.
-def extract_variant(name)
-  m = name.to_s.match(/\(([^)]+)\)/)
-  m ? m[1].to_s.strip : nil
-end
-
-# Detects whether a product is a Pokemon Center product.
-def infer_origin(type_key:, name:)
-  t = normalize_type(type_key)
-  n = normalize_text(name)
-  return "Pokemon Center" if t == "pc_etb"
-  return "Pokemon Center" if n.include?("pokemon center")
-  nil
-end
-
-# Checks whether a product type needs the product name added to the route.
-def route_needs_product_slug?(base)
-  [
-    "collection_box",
-    "tin",
-    "mini_tin",
-    "mini_tin_display",
-    "booster_pack",
-    "blister_pack",
-    "blister_pack_display",
-    "half_booster_box"
-  ].include?(base.to_s)
-end
-
-# Builds the product route type used by /sets/:slug/:type
-def build_route_type_for_product(type_key:, name:)
-  base = normalize_type(type_key)
-  variant = extract_variant(name)
-  origin  = infer_origin(type_key: type_key, name: name)
-  out = base.dup
-  out << "--v-#{slugify(variant)}" if variant.present?
-  out << "--o-#{slugify(origin)}"  if origin.present?
-  out << "--p-#{slugify(name)}" if route_needs_product_slug?(base) && name.to_s.present?
-  out
-end
-
-# Infers a general product type from a human-readable product name
-def base_type_for_name(name)
-  n = normalize_text(name)
-  return "Pokemon Center Elite Trainer Box" if n.include?("pokemon center elite trainer box") || (n.include?("pokemon center") && n.include?("elite trainer box"))
-  return "Elite Trainer Box" if n.include?("elite trainer box")
-  return "Enhanced Booster Box" if n.include?("enhanced booster box")
-  return "Half Booster Box" if n.include?("half booster box")
-  return "Booster Pack" if n.include?("booster pack")
-  return "Booster Box" if n.include?("booster box")
-  return "Booster Bundle Display" if n.include?("booster bundle display")
-  return "Booster Bundle" if n.include?("booster bundle")
-  return "Mini Tin Display" if n.include?("mini tin display")
-  return "Mini Tin" if n.include?("mini tin")
-  return "Ultra Premium Collection" if n.include?("ultra premium collection")
-  return "Super Premium Collection" if n.include?("super premium collection") || n.include?("special premium collection")
-  return "Collection Box" if n.include?("collection") || n.include?(" ex box") || n.include?(" poster collection") || n.include?(" pin collection")
-  return "Blister Pack Display" if n.include?("blister display") || n.include?("collection display")
-  return "Blister Pack" if n.include?("blister") || n.include?("tech sticker")
-  return "Tin" if n.include?(" tin")
-  name.to_s
-end
-
-# Converts a release date value into a Date object when possible.
-def parse_release_date(v)
-  begin
-    Date.parse(v.to_s)
-  rescue
-    nil
-  end
-end
-
-# Converts a value into a decimal number for money calculations.
-def to_decimal(v)
-  return nil if v.nil?
-  return v.to_d if v.respond_to?(:to_d)
-  BigDecimal(v.to_s)
+  set_product_path(slug: set_slug, type: type_code)
 rescue
   nil
 end
 
-# Builds a SKU-to-value lookup from ProductValue or Product records
-def build_value_map_for(klass)
-  return nil unless klass
-  cols = klass.column_names
-  return nil unless cols.include?("sku")
+holding_image_path = lambda do |holding|
+  holding.image.present? ? holding.image : "pokevaluelogo.png"
+end
 
-  candidates = %w[value product_value estimated_value value_eur value_cents product_value_cents estimated_value_cents]
-  val_col = (candidates & cols).first
-  return nil unless val_col
+summary_image_path = lambda do |entry|
+  entry.respond_to?(:image_url) && entry.image_url.present? ? entry.image_url : "pokevaluelogo.png"
+end
 
-  col = klass.columns_hash[val_col] rescue nil
-  cents = val_col.to_s.end_with?("_cents") || (col && col.type == :integer)
+summary_entry_type = lambda do |entry|
+  action = entry.action.to_s.upcase
+  action == "SOLD" ? "Sold" : "Added"
+end
 
-  raw = klass.where.not(sku: nil).pluck(:sku, val_col.to_sym)
-  out = {}
-  raw.each do |sku, v|
-    d = to_decimal(v)
-    next if d.nil?
-    d = d / 100 if cents
-    out[sku.to_s.downcase] = d.to_f
-  end
-  out
+summary_quantity = lambda do |entry|
+  quantity = entry.quantity.to_i
+  quantity.positive? ? quantity : 1
+end
+
+summary_cost_per_unit = lambda do |entry|
+  BigDecimal(entry.cost_per_unit.to_s)
 rescue
-  nil
+  BigDecimal("0")
 end
 
-# Finds the first positive value from a list of possible SKU keys.
-def first_nonzero(map, keys)
-  keys.each do |k|
-    v = map[k.to_s.downcase]
-    return v if v && v.to_f > 0
-  end
-  nil
+summary_value_per_unit = lambda do |entry|
+  BigDecimal(entry.value.to_s)
+rescue
+  BigDecimal("0")
 end
 
-value_by_sku =
-  begin
-    m = nil
-    m = build_value_map_for(ProductValue) if defined?(ProductValue)
-    m = build_value_map_for(Product) if m.nil?
-    m || {}
-  rescue
-    {}
-  end
-
-# Finds image and product-page URL metadata for a holding row
-meta_for = lambda do |set_name, human_product_name, fallback_image = nil|
-  s = sets_data.values.find { |x| x["name"].to_s == set_name.to_s }
-  next nil unless s
-
-  sealed = Array(s["products"] || s["sealed"])
-  want_name = human_product_name.to_s
-  want_image = fallback_image.to_s
-  want_image_base = File.basename(want_image) rescue ""
-
-  prod = sealed.find { |p| normalize_text(p["name"] || p[:name]) == normalize_text(want_name) }
-
-  if prod.nil? && want_image_base.present?
-    prod = sealed.find do |p|
-      img_base = File.basename((p["img"] || p[:img]).to_s) rescue ""
-      img_base.present? && normalize_text(img_base) == normalize_text(want_image_base)
-    end
-  end
-
-  if prod.nil?
-    base = base_type_for_name(want_name)
-    type_code = inv_type_map[base] || base.to_s.downcase.gsub(/\s+/, "_")
-    matching = sealed.select { |p| normalize_type(p["type"] || p[:type]) == normalize_type(type_code) } if type_code.present?
-
-    if matching.present? && matching.length == 1
-      prod = matching.first
-    end
-  end
-
-  next nil unless prod
-
-  type_code = (prod["type"] || prod[:type]).to_s
-  prod_name = (prod["name"] || prod[:name]).to_s
-
-  img_base = File.basename((prod["img"] || prod[:img]).to_s) rescue nil
-  img_url =
-    if img_base.present? && File.exist?(images_sealed.join(img_base))
-      asset_path("sealed/#{img_base}")
-    elsif want_image.present?
-      want_image
-    else
-      asset_path("pokevaluelogo.png")
-    end
-
-  route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
-  href = set_product_path(slug: s["slug"], type: route_type)
-  { img_url: img_url, href: href, product_name: prod_name, route_type: route_type }
+summary_total_cost = lambda do |entry|
+  summary_cost_per_unit.call(entry) * summary_quantity.call(entry)
 end
 
-# Creates a front-end catalogue used by the Add to Portfolio modal
-sets_index =
-  sets_data.values.map do |s|
-    slug = (s["slug"] || s[:slug]).to_s
-    name = (s["name"] || s[:name]).to_s
-    era  = (s["era"]  || s[:era]).to_s
-    release_raw = (s["releaseDate"] || s["release_date"] || s["release"]).to_s
-    release_date = parse_release_date(release_raw)
-    release_iso = release_date ? release_date.strftime("%Y-%m-%d") : ""
-
-    sealed_entries =
-      Array(s["products"] || s["sealed"]).map do |p|
-        type_code = (p["type"] || p[:type]).to_s
-        prod_name = (p["name"] || p[:name]).to_s
-
-        img_base = File.basename((p["img"] || p[:img]).to_s) rescue nil
-        img_url =
-          if img_base.present? && File.exist?(images_sealed.join(img_base))
-            asset_path("sealed/#{img_base}")
-          else
-            asset_path("pokevaluelogo.png")
-          end
-
-        route_type = build_route_type_for_product(type_key: type_code, name: prod_name)
-
-        sku_a = "#{slug}:#{type_code}".downcase
-        sku_b = "#{slug}:#{route_type}".downcase
-        sku_c = "#{slug}--#{type_code}".downcase
-        sku_d = "#{slug}--#{route_type}".downcase
-
-        val = first_nonzero(value_by_sku, [sku_b, sku_a, sku_d, sku_c])
-
-        if val.nil?
-          json_val = (p["value"] || p[:value])
-          json_val = json_val.to_f if json_val.present? rescue json_val
-          val = json_val if json_val.present? && json_val.to_f > 0
-        end
-
-        {
-          type_code: type_code,
-          type_human: (type_map[normalize_type(type_code)] || base_type_for_name(prod_name)),
-          name: prod_name,
-          variant: extract_variant(prod_name),
-          route_type: route_type,
-          img_url: img_url,
-          value: (val if val.present?)
-        }
-      end
-
-    { slug: slug, name: name, era: era, release_raw: release_raw, release_iso: release_iso, sealed: sealed_entries }
-  end
-
-# Orders eras by the newest set release date
-era_release =
-  sets_index.group_by { |x| x[:era].to_s }.transform_values do |arr|
-    arr.map { |x| parse_release_date(x[:release_iso]) }.compact.max
-  end
-
-ordered_eras =
-  era_release.keys.sort_by do |e|
-    d = era_release[e]
-    d ? -d.jd : 0
-  end
-
-# Loads manual sold summary rows created from the portfolio Remove/Sold flow
-sold_summary_entries =
-  if defined?(SummaryEntry) && current_user
-    SummaryEntry.where(user_id: current_user.id, action: ["SOLD", "Sold", "sold"]).order(created_at: :desc).limit(500).to_a
-  else
-    []
-  end
-
-# Calculates realised profit/loss from manual sold summary rows
-manual_sales_total_eur =
-  sold_summary_entries.sum do |entry|
-    qty = entry.quantity.to_i
-    cost_u = (to_decimal(entry.cost_per_unit) || BigDecimal("0")).to_f
-    sell_u = (to_decimal(entry.value) || BigDecimal("0")).to_f
-    (sell_u - cost_u) * qty
-  end
-
-# Calculates realised profit/loss from completed marketplace purchases
-marketplace_sales_total_cents =
-  if defined?(MarketplacePurchase) && current_user
-    MarketplacePurchase.where(seller_id: current_user.id).sum(:realised_pl_cents).to_i
-  else
-    0
-  end
-
-sales_total_eur = (marketplace_sales_total_cents / 100.0) + manual_sales_total_eur
-
-# Builds realised P/L chart data for the metrics modal
-sales_series =
-  begin
-    labels_hash = Hash.new(0.0)
-
-    if defined?(MarketplacePurchase) && current_user
-      raw = MarketplacePurchase.where(seller_id: current_user.id).group("DATE(created_at)").sum(:realised_pl_cents)
-      raw.each do |date, cents|
-        labels_hash[date.to_s] += cents.to_i / 100.0
-      end
-    end
-
-    sold_summary_entries.each do |entry|
-      date = (entry.purchase_date || entry.created_at&.to_date || Date.current).to_s
-      qty = entry.quantity.to_i
-      cost_u = (to_decimal(entry.cost_per_unit) || BigDecimal("0")).to_f
-      sell_u = (to_decimal(entry.value) || BigDecimal("0")).to_f
-      labels_hash[date] += (sell_u - cost_u) * qty
-    end
-
-    dates = labels_hash.keys.sort
-    running = 0.0
-    labels = []
-    values = []
-
-    dates.each do |d|
-      running += labels_hash[d].to_f
-      labels << d
-      values << running.round(2)
-    end
-
-    { series: { realised_pl: { labels: labels, values: values } } }
-  rescue
-    { series: { realised_pl: { labels: [], values: [] } } }
-  end
-
-# Loads sold rows for the portfolio summary modal
-sales_rows =
-  if defined?(MarketplacePurchase) && current_user
-    MarketplacePurchase.where(seller_id: current_user.id).order(created_at: :desc).limit(500).to_a
-  else
-    []
-  end
-
-summary_rows = []
-
-@holdings.each do |holding|
-  summary_rows << {
-    kind: "added",
-    record: holding,
-    created_at: holding.created_at
-  }
+summary_total_value = lambda do |entry|
+  summary_value_per_unit.call(entry) * summary_quantity.call(entry)
 end
 
-sold_summary_entries.each do |entry|
-  summary_rows << {
-    kind: "manual_sold",
-    record: entry,
-    created_at: entry.created_at
-  }
+summary_pl = lambda do |entry|
+  summary_total_value.call(entry) - summary_total_cost.call(entry)
 end
 
-sales_rows.each do |purchase|
-  summary_rows << {
-    kind: "marketplace_sold",
-    record: purchase,
-    created_at: purchase.created_at
-  }
-end
+summary_roi = lambda do |entry|
+  total_cost = summary_total_cost.call(entry)
+  return BigDecimal("0") if total_cost.zero?
 
-summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.reverse
+  ((summary_pl.call(entry) / total_cost) * 100).round(2)
+rescue
+  BigDecimal("0")
+end
 %>
-
-<script>
-  window.__REALIZED_PL_METRICS__ = <%= raw(sales_series.to_json) %>;
-</script>
 
 <div>
   <h4 class="mb-3">Portfolio Overview</h4>
 
-  <style>
-    .filters-row{display:flex;flex-wrap:nowrap;gap:.25rem}
-    .filter-col{flex:1 1 0;min-width:150px}
-    .filter-col .form-label{width:100%;text-align:center;font-size:.7rem}
-    .filter-col .form-control,.filter-col .form-select{text-align:center;font-size:.7rem;padding:.25rem .35rem}
-    .card .card-title{font-size:.8rem}
-    .card .fs-4{font-size:1.1rem}
-    .table.holdings-table{width:100%;font-size:.7rem;border-collapse:collapse}
-    .table.holdings-table thead th,.table.holdings-table tbody td{vertical-align:middle;text-align:center;padding:.25rem .3rem;line-height:1.2;word-wrap:break-word}
-    .table.holdings-table thead th{font-size:.75rem;font-weight:700;white-space:nowrap}
-    .table.holdings-table tbody td{font-size:.7rem}
-    .col-product{width:40px}
-    .col-ts{width:110px}
-    .col-entry{width:85px}
-    .col-era{width:70px}
-    .col-set{width:120px}
-    .col-type{width:120px}
-    .col-condition{width:110px}
-    .col-date{width:90px}
-    .col-qty{width:70px}
-    .col-money{width:70px}
-    .col-pl{width:70px}
-    .col-roi{width:70px}
-    .col-actions{width:120px}
-    .table-bordered>:not(caption)>*{border-width:1px 0}
-    .table-bordered>:not(caption)>*>*{border-width:0 1px}
-    .holdings-actions .btn{padding:.18rem .3rem;font-size:.65rem;line-height:1;white-space:nowrap}
-    .product-thumb{height:38px;width:auto;object-fit:contain}
-    @media (min-width: 768px){.table-responsive{overflow-x:visible}}
-    details.summary-edit > summary{list-style:none}
-    details.summary-edit > summary::-webkit-details-marker{display:none}
-    .portfolio-remove-confirm-overlay{
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      display:none;
-      align-items:center;
-      justify-content:center;
-      padding:16px;
-      background:rgba(15,23,42,.55)
-    }
-    .portfolio-remove-confirm-box{
-      width:100%;
-      max-width:470px;
-      border-radius:18px;
-      border:1px solid #000000;
-      background:#ffffff;
-      color:#000000;
-      box-shadow:0 24px 70px rgba(0,0,0,.32);
-      padding:20px;
-      text-align:center
-    }
-    .portfolio-remove-confirm-text{
-      color:#000000;
-      font-size:.96rem;
-      font-weight:800;
-      line-height:1.45;
-      margin-bottom:18px
-    }
-    .portfolio-remove-confirm-actions{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:12px;
-      flex-wrap:wrap
-    }
-    .portfolio-sold-fields{
-      display:none;
-      text-align:left;
-      margin-top:14px
-    }
-    .portfolio-sold-fields .form-label{
-      font-size:.75rem;
-      font-weight:700;
-      margin-bottom:.25rem
-    }
-    .portfolio-sold-fields .form-control{
-      font-size:.8rem;
-      text-align:center
-    }
-    .portfolio-remove-confirm-remove,
-    .portfolio-remove-confirm-sold,
-    .portfolio-remove-confirm-yes,
-    .portfolio-remove-confirm-no{
-      min-width:86px;
-      border-radius:999px;
-      font-weight:800;
-      font-size:.86rem;
-      padding:.42rem .9rem;
-      border:1px solid #000000 !important;
-      transition:background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease !important
-    }
-    .portfolio-remove-confirm-remove,
-    .portfolio-remove-confirm-yes{
-      background:#000000 !important;
-      color:#ffffff !important
-    }
-    .portfolio-remove-confirm-sold,
-    .portfolio-remove-confirm-no{
-      background:#ffffff !important;
-      color:#000000 !important
-    }
-    .portfolio-remove-confirm-remove:hover,
-    .portfolio-remove-confirm-remove:focus,
-    .portfolio-remove-confirm-remove:active,
-    .portfolio-remove-confirm-sold:hover,
-    .portfolio-remove-confirm-sold:focus,
-    .portfolio-remove-confirm-sold:active,
-    .portfolio-remove-confirm-yes:hover,
-    .portfolio-remove-confirm-yes:focus,
-    .portfolio-remove-confirm-yes:active,
-    .portfolio-remove-confirm-no:hover,
-    .portfolio-remove-confirm-no:focus,
-    .portfolio-remove-confirm-no:active{
-      background:#d4af37 !important;
-      color:#000000 !important;
-      border-color:#d4af37 !important;
-      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
-    }
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-box,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-box,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-box,
-    html[data-theme="dark"] .portfolio-remove-confirm-box,
-    body[data-theme="dark"] .portfolio-remove-confirm-box,
-    html.dark .portfolio-remove-confirm-box,
-    body.dark .portfolio-remove-confirm-box,
-    html.dark-mode .portfolio-remove-confirm-box,
-    body.dark-mode .portfolio-remove-confirm-box,
-    body:has(.navbar-dark) .portfolio-remove-confirm-box{
-      background:#000000 !important;
-      color:#d4af37 !important;
-      border-color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-text,
-    html[data-bs-theme="dark"] .portfolio-remove-confirm-text,
-    body[data-bs-theme="dark"] .portfolio-remove-confirm-text,
-    html[data-theme="dark"] .portfolio-remove-confirm-text,
-    body[data-theme="dark"] .portfolio-remove-confirm-text,
-    html.dark .portfolio-remove-confirm-text,
-    body.dark .portfolio-remove-confirm-text,
-    html.dark-mode .portfolio-remove-confirm-text,
-    body.dark-mode .portfolio-remove-confirm-text,
-    body:has(.navbar-dark) .portfolio-remove-confirm-text{
-      color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-remove,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-sold,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no{
-      background:#000000 !important;
-      color:#d4af37 !important;
-      border-color:#d4af37 !important
-    }
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-remove:hover,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-remove:focus,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-remove:active,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-sold:hover,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-sold:focus,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-sold:active,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes:hover,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes:focus,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-yes:active,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:hover,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:focus,
-    :root[data-pv-theme="dark"] .portfolio-remove-confirm-no:active{
-      background:#d4af37 !important;
-      color:#000000 !important;
-      border-color:#d4af37 !important;
-      box-shadow:0 0 0 .16rem rgba(212,175,55,.25) !important
-    }
-  </style>
-
-  <%# Portfolio summary cards %>
   <div class="row g-3 mb-3">
     <div class="col-12 col-md-6 col-lg">
-      <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">Total Cost</h6>
-        <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:cost]) : "€0.00" %></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-md-6 col-lg">
-      <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">Total Value</h6>
-        <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:value]) : "€0.00" %></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-md-6 col-lg">
-      <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">Unrealised P/L</h6>
-        <div class="fs-4 text-secondary"><%= @totals ? eur(@totals[:pl]) : "€0.00" %></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-md-6 col-lg">
-      <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">ROI (%)</h6>
-        <div class="fs-4 text-secondary">
-          <% if @totals %>
-            <%= sprintf("%.2f%%", @totals[:roi].to_f) %>
-          <% else %>
-            0.00%
-          <% end %>
+      <div class="card h-100">
+        <div class="card-body py-2">
+          <h6 class="card-title mb-1">Total Cost</h6>
+          <div class="fs-4 text-secondary"><%= number_to_currency(@totals[:cost], unit: "€") %></div>
         </div>
-      </div></div>
+      </div>
     </div>
+
     <div class="col-12 col-md-6 col-lg">
-      <div class="card h-100"><div class="card-body py-2">
-        <h6 class="card-title mb-1">Realised P/L</h6>
-        <div class="fs-4 text-secondary"><%= eur(sales_total_eur) %></div>
-      </div></div>
+      <div class="card h-100">
+        <div class="card-body py-2">
+          <h6 class="card-title mb-1">Total Value</h6>
+          <div class="fs-4 text-secondary"><%= number_to_currency(@totals[:value], unit: "€") %></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg">
+      <div class="card h-100">
+        <div class="card-body py-2">
+          <h6 class="card-title mb-1">Unrealised P/L</h6>
+          <div class="fs-4 text-secondary"><%= number_to_currency(@totals[:pl], unit: "€") %></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg">
+      <div class="card h-100">
+        <div class="card-body py-2">
+          <h6 class="card-title mb-1">ROI (%)</h6>
+          <div class="fs-4 text-secondary"><%= "#{number_with_precision(@totals[:roi], precision: 2)}%" %></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg">
+      <div class="card h-100">
+        <div class="card-body py-2">
+          <h6 class="card-title mb-1">Realised P/L</h6>
+          <div class="fs-4 text-secondary"><%= number_to_currency(@realised_pl_total, unit: "€") %></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -652,217 +128,203 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#summaryModal">View Summary</button>
       <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#metricsModal">View Metrics</button>
     <% else %>
-      <%# Logged-out users see the login pop-up before they can view portfolio summary data %>
-      <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Log in to view summary">View Summary</button>
-
-      <%# Logged-out users see the login pop-up before they can view portfolio metrics %>
-      <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Log in to view metrics">View Metrics</button>
+      <%= link_to "View Summary", portfolio_login_required_path, class: "btn btn-outline-secondary btn-sm" %>
+      <%= link_to "View Metrics", portfolio_login_required_path, class: "btn btn-outline-primary btn-sm" %>
     <% end %>
   </div>
 
   <h4 class="mb-3">Holdings</h4>
 
-  <%# Holdings table filters %>
-  <div class="filters-row mb-2">
-    <div class="filter-col">
-      <label class="form-label mb-1">Search</label>
-      <input type="search" class="form-control text-center" id="filter-q" placeholder="Search holdings...">
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">Era</label>
-      <select class="form-select text-center" id="filter-era">
-        <option value="">All</option>
-        <% ordered_eras.each do |e| %>
-          <option value="<%= e %>"><%= e %></option>
-        <% end %>
-      </select>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">Set</label>
-      <select class="form-select text-center" id="filter-set">
-        <option value="">All</option>
-      </select>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">Product Type</label>
-      <select class="form-select text-center" id="filter-type">
-        <option value="">All</option>
-        <% portfolio_type_options.each do |t| %>
-          <option value="<%= t %>"><%= t %></option>
-        <% end %>
-      </select>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">Condition</label>
-      <select class="form-select text-center" id="filter-condition">
-        <option value="">All</option>
-        <% conditions_ordered.each do |c| %>
-          <option value="<%= c %>"><%= c %></option>
-        <% end %>
-      </select>
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end mb-2">
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-search">Search</label>
+          <input id="portfolio-filter-search" class="form-control form-control-sm" type="text" placeholder="Search..." oninput="applyFilters()">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-era">Era</label>
+          <select id="portfolio-filter-era" class="form-select form-select-sm" onchange="applyFilters()">
+            <option value="">All Eras</option>
+            <% (@eras || []).each do |era| %>
+              <option value="<%= era %>"><%= era %></option>
+            <% end %>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-set">Set</label>
+          <select id="portfolio-filter-set" class="form-select form-select-sm" onchange="applyFilters()">
+            <option value="">All Sets</option>
+            <% sets_ordered.each do |set_name| %>
+              <option value="<%= set_name %>"><%= set_name %></option>
+            <% end %>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-3">
+          <label class="form-label small mb-1" for="portfolio-filter-type">Product Type</label>
+          <select id="portfolio-filter-type" class="form-select form-select-sm" onchange="applyFilters()">
+            <option value="">All Product Types</option>
+            <% (@types || []).each do |type| %>
+              <option value="<%= type %>"><%= type %></option>
+            <% end %>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-condition">Condition</label>
+          <select id="portfolio-filter-condition" class="form-select form-select-sm" onchange="applyFilters()">
+            <option value="">All Conditions</option>
+            <% conditions_ordered.each do |condition| %>
+              <option value="<%= condition %>"><%= condition %></option>
+            <% end %>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-1">
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100" onclick="document.querySelectorAll('[id^=portfolio-filter-]').forEach((input) => input.value = ''); applyFilters();">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1">Cost Range</label>
+          <div class="d-flex gap-1">
+            <input id="portfolio-filter-cost-min" class="form-control form-control-sm" type="number" step="0.01" placeholder="Min" oninput="applyFilters()">
+            <input id="portfolio-filter-cost-max" class="form-control form-control-sm" type="number" step="0.01" placeholder="Max" oninput="applyFilters()">
+          </div>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1">Value Range</label>
+          <div class="d-flex gap-1">
+            <input id="portfolio-filter-value-min" class="form-control form-control-sm" type="number" step="0.01" placeholder="Min" oninput="applyFilters()">
+            <input id="portfolio-filter-value-max" class="form-control form-control-sm" type="number" step="0.01" placeholder="Max" oninput="applyFilters()">
+          </div>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1">P/L Range</label>
+          <div class="d-flex gap-1">
+            <input id="portfolio-filter-pl-min" class="form-control form-control-sm" type="number" step="0.01" placeholder="Min" oninput="applyFilters()">
+            <input id="portfolio-filter-pl-max" class="form-control form-control-sm" type="number" step="0.01" placeholder="Max" oninput="applyFilters()">
+          </div>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1">ROI% Range</label>
+          <div class="d-flex gap-1">
+            <input id="portfolio-filter-roi-min" class="form-control form-control-sm" type="number" step="0.01" placeholder="Min" oninput="applyFilters()">
+            <input id="portfolio-filter-roi-max" class="form-control form-control-sm" type="number" step="0.01" placeholder="Max" oninput="applyFilters()">
+          </div>
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-date-from">From</label>
+          <input id="portfolio-filter-date-from" class="form-control form-control-sm" type="date" onchange="applyFilters()">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label small mb-1" for="portfolio-filter-date-to">To</label>
+          <input id="portfolio-filter-date-to" class="form-control form-control-sm" type="date" onchange="applyFilters()">
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="filters-row mb-3">
-    <div class="filter-col">
-      <label class="form-label mb-1">Cost Range</label>
-      <div class="d-flex gap-2">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-cost-min" placeholder="min">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-cost-max" placeholder="max">
-      </div>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">Value Range</label>
-      <div class="d-flex gap-2">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-value-min" placeholder="min">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-value-max" placeholder="max">
-      </div>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">P/L Range</label>
-      <div class="d-flex gap-2">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-pl-min" placeholder="min">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-pl-max" placeholder="max">
-      </div>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">ROI %</label>
-      <div class="d-flex gap-2">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-roi-min" placeholder="min">
-        <input type="number" step="0.01" class="form-control text-center" id="filter-roi-max" placeholder="max">
-      </div>
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">From</label>
-      <input type="date" class="form-control text-center" id="filter-date-start">
-    </div>
-    <div class="filter-col">
-      <label class="form-label mb-1">To</label>
-      <input type="date" class="form-control text-center" id="filter-date-end">
-    </div>
-  </div>
-
-  <%# Main holdings table %>
   <div class="card">
     <div class="card-body p-0">
       <div class="table-responsive">
-        <table class="table table-bordered holdings-table mb-0">
+        <table class="table table-bordered mb-0 align-middle text-center">
           <thead class="table-light">
             <tr>
-              <th class="col-product">Product</th>
-              <th class="col-era">Era</th>
-              <th class="col-set">Set</th>
-              <th class="col-type">Product Type</th>
-              <th class="col-condition">Condition</th>
-              <th class="col-date">Purchase Date</th>
-              <th class="col-qty">Quantity</th>
-              <th class="col-money">Cost</th>
-              <th class="col-money">Total Cost</th>
-              <th class="col-money">Value</th>
-              <th class="col-money">Total Value</th>
-              <th class="col-pl">P/L</th>
-              <th class="col-roi">ROI %</th>
-              <th class="col-actions">Actions</th>
+              <th>Product</th>
+              <th>Era</th>
+              <th>Set</th>
+              <th>Product Type</th>
+              <th>Condition</th>
+              <th>Purchase Date</th>
+              <th>Quantity</th>
+              <th>Cost</th>
+              <th>Total Cost</th>
+              <th>Value</th>
+              <th>Total Value</th>
+              <th>P/L</th>
+              <th>ROI %</th>
+              <th class="portfolio-actions-col">Actions</th>
             </tr>
           </thead>
-          <tbody id="holdings-body">
-            <% if @holdings.any? %>
-              <% @holdings.each do |h| %>
-                <% meta = meta_for.call(h.set_name, h.product_type, h.image) %>
-                <% base_type = base_type_for_name(meta ? meta[:product_name] : h.product_type) %>
-                <tr
-                  data-era="<%= h.era %>"
-                  data-set="<%= h.set_name %>"
-                  data-type="<%= h.product_type %>"
-                  data-type-base="<%= base_type %>"
-                  data-condition="<%= h.condition %>"
-                  data-date="<%= (h.purchase_date || h.created_at&.to_date)&.strftime("%Y-%m-%d") %>"
-                  data-cost="<%= h.cost_per_unit.to_f %>"
-                  data-total-cost="<%= h.total_cost.to_f %>"
-                  data-value="<%= h.value.to_f %>"
-                  data-total-value="<%= h.total_value.to_f %>"
-                  data-pl="<%= h.pl.to_f %>"
-                  data-roi="<%= h.roi_pct.to_f %>"
-                  data-search="<%= [h.era, h.set_name, h.product_type, meta && meta[:product_name], h.condition].join(" ").downcase %>">
+
+          <tbody>
+            <% if holdings.any? %>
+              <% holdings.each do |holding| %>
+                <% view_path = holding_product_href.call(holding) %>
+                <% holding_date = holding.purchase_date || holding.created_at&.to_date %>
+
+                <tr data-portfolio-row="true"
+                    data-era="<%= holding.era.to_s.downcase %>"
+                    data-set-name="<%= holding.set_name.to_s.downcase %>"
+                    data-type="<%= holding.product_type.to_s.downcase %>"
+                    data-condition="<%= holding.condition.to_s.downcase %>"
+                    data-cost="<%= holding.cost_per_unit.to_f %>"
+                    data-value="<%= holding.value.to_f %>"
+                    data-pl="<%= holding.pl.to_f %>"
+                    data-roi="<%= holding.roi_pct.to_f %>"
+                    data-date="<%= holding_date&.strftime("%Y-%m-%d") %>"
+                    data-search="<%= [holding.era, holding.set_name, holding.product_type, holding.condition].join(' ').downcase %>">
                   <td>
-                    <% if meta %>
-                      <%= link_to meta[:href] do %>
-                        <%= image_tag meta[:img_url], alt: h.product_type, class: "product-thumb" %>
-                      <% end %>
-                    <% elsif h.image.present? %>
-                      <%= image_tag h.image, alt: h.product_type, class: "product-thumb" %>
-                    <% else %>
-                      <%= image_tag "pokevaluelogo.png", alt: h.product_type, class: "product-thumb" %>
-                    <% end %>
+                    <%= image_tag holding_image_path.call(holding), alt: holding.product_type, class: "portfolio-product-thumb" %>
                   </td>
-                  <td><%= h.era %></td>
-                  <td><%= h.set_name %></td>
-                  <td><%= meta ? meta[:product_name] : h.product_type %></td>
-                  <td><%= h.condition %></td>
-                  <td><%= (h.purchase_date || h.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
-                  <td><%= h.quantity %></td>
-                  <td><%= number_to_currency(h.cost_per_unit, unit: "€") %></td>
-                  <td><%= number_to_currency(h.total_cost, unit: "€") %></td>
-                  <td><%= number_to_currency(h.value, unit: "€") %></td>
-                  <td><%= number_to_currency(h.total_value, unit: "€") %></td>
-                  <td class="text-nowrap"><%= number_to_currency(h.pl, unit: "€") %></td>
-                  <td><%= "#{number_with_precision(h.roi_pct, precision: 2)}%" %></td>
-                  <td>
-                    <div class="holdings-actions d-inline-flex flex-nowrap">
-                      <% if meta %>
-                        <%= link_to "View", meta[:href], class: "btn btn-sm btn-outline-primary me-1" %>
+
+                  <td><%= holding.era %></td>
+                  <td><%= holding.set_name %></td>
+                  <td><%= holding.product_type %></td>
+                  <td><%= holding.condition %></td>
+                  <td><%= holding_date&.strftime("%d/%m/%Y") || "—" %></td>
+                  <td><%= holding.quantity %></td>
+                  <td><%= number_to_currency(holding.cost_per_unit, unit: "€") %></td>
+                  <td><%= number_to_currency(holding.total_cost, unit: "€") %></td>
+                  <td><%= number_to_currency(holding.value, unit: "€") %></td>
+                  <td><%= number_to_currency(holding.total_value, unit: "€") %></td>
+                  <td><%= number_to_currency(holding.pl, unit: "€") %></td>
+                  <td><%= "#{number_with_precision(holding.roi_pct, precision: 2)}%" %></td>
+
+                  <td class="portfolio-actions-col">
+                    <div class="portfolio-actions">
+                      <% if view_path.present? %>
+                        <%= link_to "View", view_path, class: "btn btn-outline-primary" %>
                       <% else %>
-                        <span class="btn btn-sm btn-outline-secondary disabled me-1">View</span>
+                        <span class="btn btn-outline-secondary disabled">View</span>
                       <% end %>
 
-                      <details class="summary-edit me-1">
-                        <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
-                        <div class="border rounded p-2 mt-2 bg-white" style="min-width:240px;">
-                          <%= form_with model: h, url: holding_path(h), method: :patch, local: true do |f| %>
-                            <div class="mb-2">
-                              <%= f.number_field :quantity, min: 1, step: 1, class: "form-control form-control-sm" %>
-                            </div>
-                            <div class="mb-2">
-                              <%= f.number_field :cost_per_unit, min: 0, step: "0.01", class: "form-control form-control-sm" %>
-                            </div>
-                            <div class="mb-2">
-                              <%= f.date_field :purchase_date, class: "form-control form-control-sm" %>
-                            </div>
-                            <div class="mb-2">
-                              <%= f.select :condition, options_for_select(conditions_ordered, h.condition), {}, class: "form-select form-select-sm" %>
-                            </div>
-                            <div class="d-flex gap-2">
-                              <%= f.submit "Save", class: "btn btn-sm btn-primary" %>
-                              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('details').removeAttribute('open')">Cancel</button>
-                            </div>
-                          <% end %>
-                        </div>
-                      </details>
+                      <%= link_to "Edit", edit_holding_path(holding), class: "btn btn-outline-secondary" %>
 
                       <%= button_to "Remove",
-                                    holding_path(h),
+                                    holding_path(holding),
                                     method: :delete,
-                                    form: {
-                                      data: {
-                                        portfolio_remove_form: "true",
-                                        remove_quantity_max: h.quantity.to_i,
-                                        remove_cost_per_unit: h.cost_per_unit.to_f,
-                                        remove_product_name: (meta ? meta[:product_name] : h.product_type),
-                                        custom_confirm_message: "Choose whether to remove this product from your portfolio or mark it as sold.",
-                                        turbo: "false"
-                                      }
-                                    },
-                                    class: "btn btn-sm btn-outline-danger" %>
+                                    class: "btn btn-outline-danger",
+                                    form: { class: "d-inline m-0 p-0" } %>
+
+                      <%= link_to "Sold", sold_holding_path(holding), class: "btn btn-outline-success" %>
                     </div>
                   </td>
                 </tr>
               <% end %>
-              <tr id="holdings-empty" class="d-none">
-                <td colspan="14" class="text-center text-muted py-4">No matches.</td>
+
+              <tr id="portfolio-no-filter-results" class="d-none">
+                <td colspan="14" class="text-center text-muted py-4">
+                  No holdings match the selected filters.
+                </td>
               </tr>
             <% else %>
               <tr>
-                <td colspan="14" class="text-center text-muted py-4">No products within holdings.</td>
+                <td colspan="14" class="text-center text-muted py-4">
+                  No products within holdings.
+                </td>
               </tr>
             <% end %>
           </tbody>
@@ -870,82 +332,9 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
       </div>
     </div>
   </div>
-
-  <div class="mt-3 d-flex justify-content-end">
-    <% if portfolio_logged_in %>
-      <button class="btn btn-success btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#addHoldingModal">Add to Portfolio</button>
-    <% else %>
-      <%# Logged-out users see the login pop-up before they can add products to their portfolio %>
-      <button class="btn btn-success btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#authModal" data-auth-title="Log in to add to portfolio">Add to Portfolio</button>
-    <% end %>
-  </div>
 </div>
 
-<% unless portfolio_logged_in %>
-  <script>
-    // Runs the logged-out portfolio auth modal title setup without creating global variables.
-    (function(){
-      // Sets the shared login/register modal title from the clicked portfolio button.
-      function initPortfolioAuthModalTitles(){
-        const authModal = document.getElementById("authModal")
-        const authTitle = document.getElementById("authModalLabel")
-
-        if(!authModal || !authTitle) return
-        if(authModal.dataset.portfolioAuthTitleBound === "1") return
-        authModal.dataset.portfolioAuthTitleBound = "1"
-
-        // Changes the shared login modal title depending on which portfolio button opened it
-        authModal.addEventListener("show.bs.modal", function(event){
-          const button = event.relatedTarget
-          const title = button ? button.getAttribute("data-auth-title") : ""
-          authTitle.textContent = title || "Welcome"
-        })
-      }
-
-      document.addEventListener("DOMContentLoaded", initPortfolioAuthModalTitles)
-      document.addEventListener("turbo:load", initPortfolioAuthModalTitles)
-    })()
-  </script>
-<% end %>
-
 <% if portfolio_logged_in %>
-  <div class="portfolio-remove-confirm-overlay" id="portfolioRemoveConfirmOverlay" aria-hidden="true">
-    <div class="portfolio-remove-confirm-box">
-      <div class="portfolio-remove-confirm-text" id="portfolioRemoveConfirmText">
-        Choose whether to remove this product from your portfolio or mark it as sold.
-      </div>
-
-      <div class="portfolio-remove-confirm-actions" id="portfolioRemoveChoiceActions">
-        <button type="button" class="portfolio-remove-confirm-remove" id="portfolioRemoveConfirmRemove">Remove</button>
-        <button type="button" class="portfolio-remove-confirm-sold" id="portfolioRemoveConfirmSold">Sold</button>
-        <button type="button" class="portfolio-remove-confirm-no" id="portfolioRemoveConfirmNo">Cancel</button>
-      </div>
-
-      <div class="portfolio-sold-fields" id="portfolioSoldFields">
-        <div class="mb-2">
-          <label class="form-label" for="portfolioSoldQuantity">Quantity</label>
-          <input type="number" min="1" step="1" class="form-control" id="portfolioSoldQuantity">
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label" for="portfolioSoldPrice">Sale Price / Unit (€)</label>
-          <input type="number" min="0" step="0.01" class="form-control" id="portfolioSoldPrice">
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label" for="portfolioSoldDate">Sale Date</label>
-          <input type="date" class="form-control" id="portfolioSoldDate">
-        </div>
-
-        <div class="portfolio-remove-confirm-actions">
-          <button type="button" class="portfolio-remove-confirm-yes" id="portfolioSoldSubmit">Save Sold</button>
-          <button type="button" class="portfolio-remove-confirm-no" id="portfolioSoldBack">Back</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <%# Summary modal showing added and sold portfolio activity %>
   <div class="modal fade" id="summaryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
@@ -956,212 +345,55 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
 
         <div class="modal-body">
           <div class="table-responsive">
-            <table class="table table-bordered holdings-table mb-0">
+            <table class="table table-bordered text-center align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th class="col-ts">Timestamp</th>
-                  <th class="col-product">Product</th>
-                  <th class="col-era">Era</th>
-                  <th class="col-set">Set</th>
-                  <th class="col-type">Product Type</th>
-                  <th class="col-condition">Condition</th>
-                  <th class="col-qty">Quantity</th>
-                  <th class="col-money">Cost</th>
-                  <th class="col-money">Total Cost</th>
-                  <th class="col-money">Value</th>
-                  <th class="col-money">Total Value</th>
-                  <th class="col-money">Sale Price</th>
-                  <th class="col-pl">P/L</th>
-                  <th class="col-roi">ROI %</th>
-                  <th class="col-entry">Entry Type</th>
-                  <th class="col-actions">Actions</th>
+                  <th>Entry Type</th>
+                  <th>Product</th>
+                  <th>Era</th>
+                  <th>Set</th>
+                  <th>Product Type</th>
+                  <th>Condition</th>
+                  <th>Quantity</th>
+                  <th>Total Cost</th>
+                  <th>Total Value</th>
+                  <th>P/L</th>
+                  <th>ROI %</th>
+                  <th>Date</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
+
               <tbody>
-                <tr class="table-light fw-semibold">
-                  <td colspan="8" class="text-start">Totals</td>
-                  <td><%= @totals ? eur(@totals[:cost]) : "€0.00" %></td>
-                  <td></td>
-                  <td><%= @totals ? eur(@totals[:value]) : "€0.00" %></td>
-                  <td></td>
-                  <td><%= @totals ? eur(@totals[:pl]) : "€0.00" %></td>
-                  <td>
-                    <% if @totals %>
-                      <%= sprintf("%.2f%%", @totals[:roi].to_f) %>
-                    <% else %>
-                      0.00%
-                    <% end %>
-                  </td>
-                  <td></td>
-                  <td></td>
-                </tr>
-
-                <% if summary_rows.any? %>
-                  <% summary_rows.each do |row| %>
-                    <% if row[:kind] == "added" %>
-                      <% h = row[:record] %>
-                      <% meta = meta_for.call(h.set_name, h.product_type, h.image) %>
-                      <tr>
-                        <td class="text-nowrap"><%= h.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
-                        <td>
-                          <% if meta %>
-                            <%= link_to meta[:href] do %>
-                              <%= image_tag meta[:img_url], alt: h.product_type, class: "product-thumb" %>
-                            <% end %>
-                          <% elsif h.image.present? %>
-                            <%= image_tag h.image, alt: h.product_type, class: "product-thumb" %>
-                          <% else %>
-                            <%= image_tag "pokevaluelogo.png", alt: h.product_type, class: "product-thumb" %>
-                          <% end %>
-                        </td>
-                        <td><%= h.era %></td>
-                        <td><%= h.set_name %></td>
-                        <td><%= meta ? meta[:product_name] : h.product_type %></td>
-                        <td><%= h.condition %></td>
-                        <td><%= h.quantity %></td>
-                        <td><%= number_to_currency(h.cost_per_unit, unit: "€") %></td>
-                        <td><%= number_to_currency(h.total_cost, unit: "€") %></td>
-                        <td><%= number_to_currency(h.value, unit: "€") %></td>
-                        <td><%= number_to_currency(h.total_value, unit: "€") %></td>
-                        <td>—</td>
-                        <td class="text-nowrap"><%= number_to_currency(h.pl, unit: "€") %></td>
-                        <td><%= "#{number_with_precision(h.roi_pct, precision: 2)}%" %></td>
-                        <td><span class="badge text-bg-success">Added</span></td>
-                        <td>
-                          <div class="holdings-actions d-inline-flex flex-nowrap">
-                            <%= button_to "Delete",
-                                          holding_path(h),
-                                          method: :delete,
-                                          form: {
-                                            data: {
-                                              portfolio_remove_form: "true",
-                                              remove_quantity_max: h.quantity.to_i,
-                                              remove_cost_per_unit: h.cost_per_unit.to_f,
-                                              remove_product_name: (meta ? meta[:product_name] : h.product_type),
-                                              custom_confirm_message: "Choose whether to remove this product from your portfolio or mark it as sold.",
-                                              turbo: "false"
-                                            }
-                                          },
-                                          class: "btn btn-sm btn-outline-danger" %>
-                          </div>
-                        </td>
-                      </tr>
-                    <% elsif row[:kind] == "manual_sold" %>
-                      <% entry = row[:record] %>
-                      <% meta = meta_for.call(entry.set_name, entry.product_type, entry.image_url) %>
-                      <% qty = entry.quantity.to_i %>
-                      <% cost_u = (to_decimal(entry.cost_per_unit) || BigDecimal("0")).to_f %>
-                      <% cost_t = cost_u * qty %>
-                      <% sell_u = (to_decimal(entry.value) || BigDecimal("0")).to_f %>
-                      <% sell_t = sell_u * qty %>
-                      <% pl = sell_t - cost_t %>
-                      <% roi = cost_t > 0 ? (pl / cost_t) * 100.0 : 0.0 %>
-
-                      <tr>
-                        <td class="text-nowrap"><%= entry.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
-                        <td>
-                          <% if meta %>
-                            <%= link_to meta[:href] do %>
-                              <%= image_tag meta[:img_url], alt: entry.product_type, class: "product-thumb" %>
-                            <% end %>
-                          <% elsif entry.image_url.present? %>
-                            <%= image_tag entry.image_url, alt: entry.product_type, class: "product-thumb" %>
-                          <% else %>
-                            <%= image_tag "pokevaluelogo.png", alt: entry.product_type, class: "product-thumb" %>
-                          <% end %>
-                        </td>
-                        <td><%= entry.era.to_s %></td>
-                        <td><%= entry.set_name.to_s %></td>
-                        <td><%= meta ? meta[:product_name] : entry.product_type.to_s %></td>
-                        <td><%= entry.condition.to_s %></td>
-                        <td><%= qty %></td>
-                        <td><%= number_to_currency(cost_u, unit: "€") %></td>
-                        <td><%= number_to_currency(cost_t, unit: "€") %></td>
-                        <td>—</td>
-                        <td>—</td>
-                        <td><%= number_to_currency(sell_u, unit: "€") %></td>
-                        <td class="text-nowrap"><%= number_to_currency(pl, unit: "€") %></td>
-                        <td><%= "#{number_with_precision(roi, precision: 2)}%" %></td>
-                        <td><span class="badge text-bg-danger">Sold</span></td>
-                        <td>
-                          <div class="holdings-actions d-inline-flex flex-nowrap">
-                            <%= button_to "Delete",
-                                          holding_path(entry.id),
-                                          method: :delete,
-                                          params: { remove_mode: "sold_summary_entry" },
-                                          form: {
-                                            data: {
-                                              portfolio_remove_form: "true",
-                                              sold_entry_delete: "true",
-                                              custom_confirm_message: "Are you sure you want to delete this sold entry? This will update Realised P/L.",
-                                              turbo: "false"
-                                            }
-                                          },
-                                          class: "btn btn-sm btn-outline-danger" %>
-                          </div>
-                        </td>
-                      </tr>
-                    <% elsif row[:kind] == "marketplace_sold" %>
-                      <% p = row[:record] %>
-                      <% set_name = p.set_name.presence || "" %>
-                      <% prod_name = p.product_name.presence || "" %>
-                      <% meta = meta_for.call(set_name, prod_name) if set_name.present? && prod_name.present? %>
-
-                      <% cost_u = p.seller_cost_per_unit_cents.present? ? (p.seller_cost_per_unit_cents.to_i / 100.0) : 0.0 %>
-                      <% cost_t = cost_u * p.quantity.to_i %>
-                      <% sell_u = p.unit_price_cents.to_i / 100.0 %>
-                      <% sell_t = p.total_price_cents.to_i / 100.0 %>
-                      <% pl = p.realised_pl_cents.to_i / 100.0 %>
-                      <% roi = cost_t > 0 ? (pl / cost_t) * 100.0 : 0.0 %>
-
-                      <tr>
-                        <td class="text-nowrap"><%= p.created_at&.strftime("%d/%m/%Y %H:%M") || "—" %></td>
-                        <td>
-                          <% if meta %>
-                            <%= link_to meta[:href] do %>
-                              <%= image_tag meta[:img_url], alt: prod_name, class: "product-thumb" %>
-                            <% end %>
-                          <% else %>
-                            <%= image_tag "pokevaluelogo.png", alt: prod_name, class: "product-thumb" %>
-                          <% end %>
-                        </td>
-                        <td><%= p.era.to_s %></td>
-                        <td><%= p.set_name.to_s %></td>
-                        <td><%= meta ? meta[:product_name] : prod_name %></td>
-                        <td><%= p.condition.to_s %></td>
-                        <td><%= p.quantity.to_i %></td>
-                        <td><%= number_to_currency(cost_u, unit: "€") %></td>
-                        <td><%= number_to_currency(cost_t, unit: "€") %></td>
-                        <td>—</td>
-                        <td>—</td>
-                        <td><%= number_to_currency(sell_u, unit: "€") %></td>
-                        <td class="text-nowrap"><%= number_to_currency(pl, unit: "€") %></td>
-                        <td><%= "#{number_with_precision(roi, precision: 2)}%" %></td>
-                        <td><span class="badge text-bg-danger">Sold</span></td>
-                        <td>
-                          <div class="holdings-actions d-inline-flex flex-nowrap">
-                            <%= button_to "Delete",
-                                          sold_summary_entry_path(p),
-                                          method: :delete,
-                                          form: {
-                                            data: {
-                                              portfolio_remove_form: "true",
-                                              sold_entry_delete: "true",
-                                              custom_confirm_message: "Are you sure you want to delete this sold summary row?",
-                                              turbo: "false"
-                                            }
-                                          },
-                                          class: "btn btn-sm btn-outline-danger" %>
-                          </div>
-                        </td>
-                      </tr>
-                    <% end %>
+                <% if summary_entries.any? %>
+                  <% summary_entries.each do |entry| %>
+                    <tr>
+                      <td><%= summary_entry_type.call(entry) %></td>
+                      <td>
+                        <%= image_tag summary_image_path.call(entry), alt: entry.product_type, class: "portfolio-product-thumb" %>
+                      </td>
+                      <td><%= entry.era %></td>
+                      <td><%= entry.set_name %></td>
+                      <td><%= entry.product_type %></td>
+                      <td><%= entry.condition %></td>
+                      <td><%= summary_quantity.call(entry) %></td>
+                      <td><%= number_to_currency(summary_total_cost.call(entry), unit: "€") %></td>
+                      <td><%= number_to_currency(summary_total_value.call(entry), unit: "€") %></td>
+                      <td><%= number_to_currency(summary_pl.call(entry), unit: "€") %></td>
+                      <td><%= "#{number_with_precision(summary_roi.call(entry), precision: 2)}%" %></td>
+                      <td><%= (entry.purchase_date || entry.created_at&.to_date)&.strftime("%d/%m/%Y") || "—" %></td>
+                      <td>
+                        <%= button_to "Remove",
+                                      summary_entry_path(entry),
+                                      method: :delete,
+                                      class: "btn btn-outline-danger btn-sm",
+                                      form: { class: "d-inline m-0 p-0" } %>
+                      </td>
+                    </tr>
                   <% end %>
-                <% end %>
-
-                <% if summary_rows.blank? %>
+                <% else %>
                   <tr>
-                    <td colspan="16" class="text-center text-muted py-4">No summary entries yet.</td>
+                    <td colspan="13" class="text-center text-muted py-4">No summary entries yet.</td>
                   </tr>
                 <% end %>
               </tbody>
@@ -1172,7 +404,6 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
     </div>
   </div>
 
-  <%# Metrics modal controlled by the Stimulus metrics controller %>
   <div class="modal fade" id="metricsModal" tabindex="-1" aria-hidden="true" data-controller="metrics" data-action="shown.bs.modal->metrics#onShown" data-metrics-endpoint-value="<%= portfolio_metrics_path(format: :json) %>">
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
@@ -1228,89 +459,8 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
                   <canvas data-key="realised_pl"></canvas>
                 </div>
               </div>
-
             </div>
           </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <%# Add to Portfolio modal that posts a new holding to HoldingsController#create %>
-  <div class="modal fade" id="addHoldingModal" tabindex="-1" aria-labelledby="addHoldingModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="addHoldingModalLabel">Add to Portfolio</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-
-        <div class="modal-body">
-          <%= form_with url: holdings_path, scope: :holding, method: :post, local: true do %>
-            <%= hidden_field_tag "holding[set_slug]", "", id: "portfolio_holding_set_slug" %>
-            <%= hidden_field_tag "holding[type_code]", "", id: "portfolio_holding_type_code" %>
-            <%= hidden_field_tag "holding[image_url]", "", id: "portfolio_holding_image_url" %>
-            <%= hidden_field_tag "holding[era]", "", id: "portfolio_holding_era" %>
-            <%= hidden_field_tag "holding[set_name]", "", id: "portfolio_holding_set_name" %>
-            <%= hidden_field_tag "holding[product_type]", "", id: "portfolio_holding_product_type" %>
-            <%= hidden_field_tag "holding[value]", "", id: "portfolio_holding_value" %>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_add_era">Era</label>
-              <select class="form-select" id="portfolio_add_era" required>
-                <option value="">Select era</option>
-              </select>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_add_set">Set</label>
-              <select class="form-select" id="portfolio_add_set" required disabled>
-                <option value="">Select set</option>
-              </select>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_add_product">Product</label>
-              <select class="form-select" id="portfolio_add_product" required disabled>
-                <option value="">Select product</option>
-              </select>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label">Estimated value / unit (€)</label>
-              <input type="text" class="form-control" id="portfolio_add_estimated_value_display" value="€0.00" disabled>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_holding_quantity">Quantity</label>
-              <%= number_field_tag "holding[quantity]", 1, min: 1, class: "form-control", id: "portfolio_holding_quantity", required: true %>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_holding_cost_per_unit">Cost per unit (€)</label>
-              <%= number_field_tag "holding[cost_per_unit]", 0, step: "0.01", min: 0, class: "form-control", id: "portfolio_holding_cost_per_unit", required: true %>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_holding_purchase_date">Purchase date</label>
-              <%= date_field_tag "holding[purchase_date]", Date.today, class: "form-control", id: "portfolio_holding_purchase_date" %>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label" for="portfolio_holding_condition">Condition</label>
-              <%= select_tag "holding[condition]",
-                             options_for_select(conditions_ordered),
-                             include_blank: "Select condition",
-                             class: "form-select",
-                             id: "portfolio_holding_condition" %>
-            </div>
-
-            <div class="d-flex justify-content-end gap-2">
-              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-success">Save to Portfolio</button>
-            </div>
-          <% end %>
         </div>
       </div>
     </div>
@@ -1318,540 +468,84 @@ summary_rows = summary_rows.sort_by { |row| row[:created_at] || Time.at(0) }.rev
 <% end %>
 
 <script>
-  // Runs all portfolio JavaScript inside a private wrapper so variables do not leak globally.
-  (function(){
-    const SETS_INDEX = <%= raw(sets_index.to_json) %>
-    let pendingPortfolioRemoveForm = null
+  // Filters the portfolio holdings table.
+  function applyFilters() {
+    const search = document.getElementById("portfolio-filter-search").value.toLowerCase().trim()
+    const era = document.getElementById("portfolio-filter-era").value.toLowerCase().trim()
+    const setName = document.getElementById("portfolio-filter-set").value.toLowerCase().trim()
+    const type = document.getElementById("portfolio-filter-type").value.toLowerCase().trim()
+    const condition = document.getElementById("portfolio-filter-condition").value.toLowerCase().trim()
 
-    // Converts filter input text into a number, or null when it is empty/invalid.
-    function toNum(v){
-      const n = parseFloat(v)
-      return Number.isFinite(n) ? n : null
+    const costMin = parseFloat(document.getElementById("portfolio-filter-cost-min").value)
+    const costMax = parseFloat(document.getElementById("portfolio-filter-cost-max").value)
+    const valueMin = parseFloat(document.getElementById("portfolio-filter-value-min").value)
+    const valueMax = parseFloat(document.getElementById("portfolio-filter-value-max").value)
+    const plMin = parseFloat(document.getElementById("portfolio-filter-pl-min").value)
+    const plMax = parseFloat(document.getElementById("portfolio-filter-pl-max").value)
+    const roiMin = parseFloat(document.getElementById("portfolio-filter-roi-min").value)
+    const roiMax = parseFloat(document.getElementById("portfolio-filter-roi-max").value)
+
+    const dateFrom = document.getElementById("portfolio-filter-date-from").value
+    const dateTo = document.getElementById("portfolio-filter-date-to").value
+
+    const rows = document.querySelectorAll("[data-portfolio-row='true']")
+    const noResults = document.getElementById("portfolio-no-filter-results")
+    let visibleCount = 0
+
+    rows.forEach((row) => {
+      const rowSearch = row.dataset.search || ""
+      const rowEra = row.dataset.era || ""
+      const rowSetName = row.dataset.setName || ""
+      const rowType = row.dataset.type || ""
+      const rowCondition = row.dataset.condition || ""
+      const rowCost = parseFloat(row.dataset.cost || "0")
+      const rowValue = parseFloat(row.dataset.value || "0")
+      const rowPl = parseFloat(row.dataset.pl || "0")
+      const rowRoi = parseFloat(row.dataset.roi || "0")
+      const rowDate = row.dataset.date || ""
+
+      const matchesSearch = search === "" || rowSearch.includes(search)
+      const matchesEra = era === "" || rowEra === era
+      const matchesSet = setName === "" || rowSetName === setName
+      const matchesType = type === "" || rowType === type
+      const matchesCondition = condition === "" || rowCondition === condition
+
+      const matchesCostMin = Number.isNaN(costMin) || rowCost >= costMin
+      const matchesCostMax = Number.isNaN(costMax) || rowCost <= costMax
+      const matchesValueMin = Number.isNaN(valueMin) || rowValue >= valueMin
+      const matchesValueMax = Number.isNaN(valueMax) || rowValue <= valueMax
+      const matchesPlMin = Number.isNaN(plMin) || rowPl >= plMin
+      const matchesPlMax = Number.isNaN(plMax) || rowPl <= plMax
+      const matchesRoiMin = Number.isNaN(roiMin) || rowRoi >= roiMin
+      const matchesRoiMax = Number.isNaN(roiMax) || rowRoi <= roiMax
+
+      const matchesDateFrom = dateFrom === "" || rowDate >= dateFrom
+      const matchesDateTo = dateTo === "" || rowDate <= dateTo
+
+      const show =
+        matchesSearch &&
+        matchesEra &&
+        matchesSet &&
+        matchesType &&
+        matchesCondition &&
+        matchesCostMin &&
+        matchesCostMax &&
+        matchesValueMin &&
+        matchesValueMax &&
+        matchesPlMin &&
+        matchesPlMax &&
+        matchesRoiMin &&
+        matchesRoiMax &&
+        matchesDateFrom &&
+        matchesDateTo
+
+      row.classList.toggle("d-none", !show)
+
+      if (show) visibleCount += 1
+    })
+
+    if (noResults) {
+      noResults.classList.toggle("d-none", visibleCount > 0)
     }
-
-    // Returns only unique values from an array.
-    function uniq(arr){
-      return Array.from(new Set(arr))
-    }
-
-    // Formats a number as euro currency text.
-    function money(v){
-      const n = parseFloat(v || 0)
-      return "€" + (Number.isFinite(n) ? n : 0).toFixed(2)
-    }
-
-    // Applies all holdings table filters to the current rows
-    function applyFilters(){
-      const body = document.getElementById("holdings-body")
-      if(!body) return
-
-      const rows = Array.from(body.querySelectorAll("tr")).filter(r => r.id !== "holdings-empty")
-      const emptyRow = document.getElementById("holdings-empty")
-
-      const q = (document.getElementById("filter-q")?.value || "").trim().toLowerCase()
-      const era = document.getElementById("filter-era")?.value || ""
-      const setName = document.getElementById("filter-set")?.value || ""
-      const typeBase = document.getElementById("filter-type")?.value || ""
-      const condition = document.getElementById("filter-condition")?.value || ""
-
-      const costMin = toNum(document.getElementById("filter-cost-min")?.value)
-      const costMax = toNum(document.getElementById("filter-cost-max")?.value)
-      const valueMin = toNum(document.getElementById("filter-value-min")?.value)
-      const valueMax = toNum(document.getElementById("filter-value-max")?.value)
-      const plMin = toNum(document.getElementById("filter-pl-min")?.value)
-      const plMax = toNum(document.getElementById("filter-pl-max")?.value)
-      const roiMin = toNum(document.getElementById("filter-roi-min")?.value)
-      const roiMax = toNum(document.getElementById("filter-roi-max")?.value)
-
-      const dStart = document.getElementById("filter-date-start")?.value || ""
-      const dEnd = document.getElementById("filter-date-end")?.value || ""
-
-      let shown = 0
-
-      rows.forEach(tr => {
-        const ds = tr.dataset || {}
-        if(!ds.search) return
-
-        const matchesQ = q ? (ds.search || "").includes(q) : true
-        const matchesEra = era ? (ds.era === era) : true
-        const matchesSet = setName ? (ds.set === setName) : true
-        const matchesType = typeBase ? ((ds.typeBase || ds.type) === typeBase) : true
-        const matchesCondition = condition ? (ds.condition === condition) : true
-
-        const cost = toNum(ds.cost)
-        const value = toNum(ds.value)
-        const pl = toNum(ds.pl)
-        const roi = toNum(ds.roi)
-        const date = (ds.date || "")
-
-        const matchesCostMin = costMin != null ? (cost != null && cost >= costMin) : true
-        const matchesCostMax = costMax != null ? (cost != null && cost <= costMax) : true
-        const matchesValueMin = valueMin != null ? (value != null && value >= valueMin) : true
-        const matchesValueMax = valueMax != null ? (value != null && value <= valueMax) : true
-        const matchesPlMin = plMin != null ? (pl != null && pl >= plMin) : true
-        const matchesPlMax = plMax != null ? (pl != null && pl <= plMax) : true
-        const matchesRoiMin = roiMin != null ? (roi != null && roi >= roiMin) : true
-        const matchesRoiMax = roiMax != null ? (roi != null && roi <= roiMax) : true
-
-        const matchesDateStart = dStart ? (date && date >= dStart) : true
-        const matchesDateEnd = dEnd ? (date && date <= dEnd) : true
-
-        const ok =
-          matchesQ &&
-          matchesEra &&
-          matchesSet &&
-          matchesType &&
-          matchesCondition &&
-          matchesCostMin &&
-          matchesCostMax &&
-          matchesValueMin &&
-          matchesValueMax &&
-          matchesPlMin &&
-          matchesPlMax &&
-          matchesRoiMin &&
-          matchesRoiMax &&
-          matchesDateStart &&
-          matchesDateEnd
-
-        tr.classList.toggle("d-none", !ok)
-        if(ok) shown += 1
-      })
-
-      if(emptyRow){
-        emptyRow.classList.toggle("d-none", shown !== 0)
-      }
-    }
-
-    // Rebuilds the Set dropdown after an Era filter is selected
-    function rebuildSetFilterOptions(){
-      const eraSel = document.getElementById("filter-era")
-      const setSel = document.getElementById("filter-set")
-      const body = document.getElementById("holdings-body")
-      if(!eraSel || !setSel || !body) return
-
-      const selectedEra = eraSel.value || ""
-      const allRows = Array.from(body.querySelectorAll("tr")).filter(r => r.dataset && r.dataset.set && r.dataset.era)
-
-      let sets = allRows.map(r => ({ era: r.dataset.era, set: r.dataset.set }))
-      if(selectedEra){
-        sets = sets.filter(x => x.era === selectedEra)
-      }
-
-      const names = uniq(sets.map(x => x.set)).sort((a,b)=>a.localeCompare(b))
-      const prev = setSel.value || ""
-
-      setSel.innerHTML = ""
-      const optAll = document.createElement("option")
-      optAll.value = ""
-      optAll.textContent = "All"
-      setSel.appendChild(optAll)
-
-      names.forEach(n => {
-        const opt = document.createElement("option")
-        opt.value = n
-        opt.textContent = n
-        setSel.appendChild(opt)
-      })
-
-      if(prev && names.includes(prev)){
-        setSel.value = prev
-      }else{
-        setSel.value = ""
-      }
-    }
-
-    // Connects all filter fields to the table filtering logic
-    function wireFilters(){
-      const ids = [
-        "filter-q","filter-era","filter-set","filter-type","filter-condition",
-        "filter-cost-min","filter-cost-max","filter-value-min","filter-value-max",
-        "filter-pl-min","filter-pl-max","filter-roi-min","filter-roi-max",
-        "filter-date-start","filter-date-end"
-      ]
-
-      ids.forEach(id => {
-        const el = document.getElementById(id)
-        if(!el) return
-        el.addEventListener("input", () => {
-          if(id === "filter-era"){
-            rebuildSetFilterOptions()
-          }
-          applyFilters()
-        })
-        el.addEventListener("change", () => {
-          if(id === "filter-era"){
-            rebuildSetFilterOptions()
-          }
-          applyFilters()
-        })
-      })
-
-      rebuildSetFilterOptions()
-      applyFilters()
-    }
-
-    // Clears a select dropdown and adds its first placeholder option.
-    function resetSelect(select, label){
-      if(!select) return
-      select.innerHTML = ""
-      const option = document.createElement("option")
-      option.value = ""
-      option.textContent = label
-      select.appendChild(option)
-    }
-
-    // Adds one option to a select dropdown.
-    function addOption(select, value, text, dataset){
-      const option = document.createElement("option")
-      option.value = value
-      option.textContent = text
-      if(dataset){
-        Object.keys(dataset).forEach(key => option.dataset[key] = dataset[key])
-      }
-      select.appendChild(option)
-    }
-
-    // Returns the set currently selected in the Add to Portfolio modal.
-    function selectedSet(){
-      const setSelect = document.getElementById("portfolio_add_set")
-      const slug = setSelect ? setSelect.value : ""
-      return SETS_INDEX.find(s => s.slug === slug) || null
-    }
-
-    // Returns the product currently selected in the Add to Portfolio modal.
-    function selectedProduct(){
-      const productSelect = document.getElementById("portfolio_add_product")
-      const index = productSelect ? parseInt(productSelect.value || "-1", 10) : -1
-      const set = selectedSet()
-      if(!set || index < 0) return null
-      return set.sealed[index] || null
-    }
-
-    // Copies selected set and product values into the hidden Rails form fields
-    function syncHiddenAddHoldingFields(){
-      const set = selectedSet()
-      const product = selectedProduct()
-
-      const setSlugInput = document.getElementById("portfolio_holding_set_slug")
-      const typeCodeInput = document.getElementById("portfolio_holding_type_code")
-      const imageInput = document.getElementById("portfolio_holding_image_url")
-      const eraInput = document.getElementById("portfolio_holding_era")
-      const setNameInput = document.getElementById("portfolio_holding_set_name")
-      const productTypeInput = document.getElementById("portfolio_holding_product_type")
-      const valueInput = document.getElementById("portfolio_holding_value")
-      const costInput = document.getElementById("portfolio_holding_cost_per_unit")
-      const valueDisplay = document.getElementById("portfolio_add_estimated_value_display")
-
-      const value = product && product.value ? parseFloat(product.value) : 0
-
-      if(setSlugInput) setSlugInput.value = set ? set.slug : ""
-      if(typeCodeInput) typeCodeInput.value = product ? product.route_type : ""
-      if(imageInput) imageInput.value = product ? product.img_url : ""
-      if(eraInput) eraInput.value = set ? set.era : ""
-      if(setNameInput) setNameInput.value = set ? set.name : ""
-      if(productTypeInput) productTypeInput.value = product ? product.name : ""
-      if(valueInput) valueInput.value = value.toFixed(2)
-      if(costInput && product) costInput.value = value.toFixed(2)
-      if(valueDisplay) valueDisplay.value = money(value)
-    }
-
-    // Builds the Add to Portfolio modal dropdown flow
-    function initAddHoldingModal(){
-      const eraSelect = document.getElementById("portfolio_add_era")
-      const setSelect = document.getElementById("portfolio_add_set")
-      const productSelect = document.getElementById("portfolio_add_product")
-
-      if(!eraSelect || !setSelect || !productSelect) return
-      if(eraSelect.dataset.bound === "1") return
-      eraSelect.dataset.bound = "1"
-
-      resetSelect(eraSelect, "Select era")
-      resetSelect(setSelect, "Select set")
-      resetSelect(productSelect, "Select product")
-
-      const eras = uniq(SETS_INDEX.map(s => s.era).filter(Boolean)).sort((a,b) => a.localeCompare(b))
-      eras.forEach(era => addOption(eraSelect, era, era))
-
-      eraSelect.addEventListener("change", function(){
-        resetSelect(setSelect, "Select set")
-        resetSelect(productSelect, "Select product")
-        setSelect.disabled = !eraSelect.value
-        productSelect.disabled = true
-
-        SETS_INDEX.filter(s => s.era === eraSelect.value)
-          .sort((a,b) => a.name.localeCompare(b.name))
-          .forEach(s => addOption(setSelect, s.slug, s.name))
-
-        syncHiddenAddHoldingFields()
-      })
-
-      setSelect.addEventListener("change", function(){
-        resetSelect(productSelect, "Select product")
-        const set = selectedSet()
-        productSelect.disabled = !set
-
-        if(set){
-          set.sealed.forEach((product, index) => {
-            addOption(productSelect, String(index), product.name)
-          })
-        }
-
-        syncHiddenAddHoldingFields()
-      })
-
-      productSelect.addEventListener("change", syncHiddenAddHoldingFields)
-      syncHiddenAddHoldingFields()
-    }
-
-    // Returns today's date in YYYY-MM-DD format for date inputs.
-    function todayIso(){
-      const d = new Date()
-      const y = d.getFullYear()
-      const m = String(d.getMonth() + 1).padStart(2, "0")
-      const day = String(d.getDate()).padStart(2, "0")
-      return `${y}-${m}-${day}`
-    }
-
-    // Adds or updates a hidden input before submitting a remove/sold form.
-    function addHiddenInput(form, name, value){
-      let input = form.querySelector(`input[name="${name}"]`)
-      if(!input){
-        input = document.createElement("input")
-        input.type = "hidden"
-        input.name = name
-        form.appendChild(input)
-      }
-      input.value = value
-    }
-
-    // Removes a hidden input from a form when it is no longer needed.
-    function removeHiddenInput(form, name){
-      const input = form.querySelector(`input[name="${name}"]`)
-      if(input) input.remove()
-    }
-
-    // Resets and hides the custom remove/sold confirmation overlay.
-    function resetRemoveOverlay(){
-      const overlay = document.getElementById("portfolioRemoveConfirmOverlay")
-      const soldFields = document.getElementById("portfolioSoldFields")
-      const choiceActions = document.getElementById("portfolioRemoveChoiceActions")
-      const soldQuantity = document.getElementById("portfolioSoldQuantity")
-      const soldPrice = document.getElementById("portfolioSoldPrice")
-      const soldDate = document.getElementById("portfolioSoldDate")
-      const text = document.getElementById("portfolioRemoveConfirmText")
-
-      if(soldFields) soldFields.style.display = "none"
-      if(choiceActions) choiceActions.style.display = "flex"
-      if(soldQuantity) soldQuantity.value = ""
-      if(soldPrice) soldPrice.value = ""
-      if(soldDate) soldDate.value = todayIso()
-      if(text) text.textContent = "Choose whether to remove this product from your portfolio or mark it as sold."
-
-      const oldActions = document.getElementById("portfolioDeleteEntryActions")
-      if(oldActions) oldActions.remove()
-
-      if(overlay){
-        overlay.style.display = "none"
-        overlay.setAttribute("aria-hidden", "true")
-      }
-    }
-
-    // Submits the pending remove form either as a full remove or as a sold item.
-    function submitPendingRemoveForm(mode){
-      if(!pendingPortfolioRemoveForm) return
-
-      const form = pendingPortfolioRemoveForm
-
-      if(mode === "sold"){
-        const soldQuantity = document.getElementById("portfolioSoldQuantity")
-        const soldPrice = document.getElementById("portfolioSoldPrice")
-        const soldDate = document.getElementById("portfolioSoldDate")
-
-        const qty = parseInt(soldQuantity ? soldQuantity.value : "0", 10)
-        const price = parseFloat(soldPrice ? soldPrice.value : "0")
-        const maxQty = parseInt(form.dataset.removeQuantityMax || "0", 10)
-
-        if(!Number.isFinite(qty) || qty <= 0 || (maxQty > 0 && qty > maxQty)){
-          alert(maxQty > 0 ? `Quantity must be between 1 and ${maxQty}.` : "Quantity must be at least 1.")
-          return
-        }
-
-        if(!Number.isFinite(price) || price <= 0){
-          alert("Sale price must be above 0.")
-          return
-        }
-
-        addHiddenInput(form, "remove_mode", "sold")
-        addHiddenInput(form, "sold_quantity", String(qty))
-        addHiddenInput(form, "sold_price", String(price))
-        addHiddenInput(form, "sale_date", soldDate && soldDate.value ? soldDate.value : todayIso())
-      }else{
-        removeHiddenInput(form, "remove_mode")
-        removeHiddenInput(form, "sold_quantity")
-        removeHiddenInput(form, "sold_price")
-        removeHiddenInput(form, "sale_date")
-      }
-
-      pendingPortfolioRemoveForm = null
-      resetRemoveOverlay()
-      form.dataset.confirmedRemove = "true"
-      form.submit()
-    }
-
-    // Opens the custom Remove confirmation instead of the browser confirmation box
-    function initPortfolioRemoveConfirm(){
-      const overlay = document.getElementById("portfolioRemoveConfirmOverlay")
-      const text = document.getElementById("portfolioRemoveConfirmText")
-      const removeButton = document.getElementById("portfolioRemoveConfirmRemove")
-      const soldButton = document.getElementById("portfolioRemoveConfirmSold")
-      const noButton = document.getElementById("portfolioRemoveConfirmNo")
-      const soldFields = document.getElementById("portfolioSoldFields")
-      const choiceActions = document.getElementById("portfolioRemoveChoiceActions")
-      const soldSubmit = document.getElementById("portfolioSoldSubmit")
-      const soldBack = document.getElementById("portfolioSoldBack")
-      const soldQuantity = document.getElementById("portfolioSoldQuantity")
-      const soldPrice = document.getElementById("portfolioSoldPrice")
-      const soldDate = document.getElementById("portfolioSoldDate")
-
-      if(!overlay || !removeButton || !soldButton || !noButton) return
-      if(overlay.dataset.bound === "1") return
-      overlay.dataset.bound = "1"
-
-      document.addEventListener("submit", function(event){
-        const form = event.target.closest("form[data-portfolio-remove-form='true']")
-        if(!form) return
-        if(form.dataset.confirmedRemove === "true") return
-
-        event.preventDefault()
-        pendingPortfolioRemoveForm = form
-
-        if(form.dataset.soldEntryDelete === "true"){
-          if(text){
-            text.textContent = form.dataset.customConfirmMessage || "Are you sure you want to delete this sold entry?"
-          }
-
-          if(choiceActions) choiceActions.style.display = "none"
-          if(soldFields) soldFields.style.display = "none"
-
-          const confirmActions = document.createElement("div")
-          confirmActions.className = "portfolio-remove-confirm-actions"
-          confirmActions.id = "portfolioDeleteEntryActions"
-
-          const yes = document.createElement("button")
-          yes.type = "button"
-          yes.className = "portfolio-remove-confirm-yes"
-          yes.textContent = "Delete"
-
-          const no = document.createElement("button")
-          no.type = "button"
-          no.className = "portfolio-remove-confirm-no"
-          no.textContent = "Cancel"
-
-          confirmActions.appendChild(yes)
-          confirmActions.appendChild(no)
-
-          const oldActions = document.getElementById("portfolioDeleteEntryActions")
-          if(oldActions) oldActions.remove()
-
-          overlay.querySelector(".portfolio-remove-confirm-box").appendChild(confirmActions)
-
-          yes.addEventListener("click", function(){
-            const formToSubmit = pendingPortfolioRemoveForm
-            pendingPortfolioRemoveForm = null
-            resetRemoveOverlay()
-            formToSubmit.dataset.confirmedRemove = "true"
-            formToSubmit.submit()
-          })
-
-          no.addEventListener("click", function(){
-            pendingPortfolioRemoveForm = null
-            resetRemoveOverlay()
-          })
-
-          overlay.style.display = "flex"
-          overlay.setAttribute("aria-hidden", "false")
-          return
-        }
-
-        const maxQty = parseInt(form.dataset.removeQuantityMax || "1", 10)
-        const productName = form.dataset.removeProductName || "this product"
-
-        if(text){
-          text.textContent = form.dataset.customConfirmMessage || `Choose whether to remove ${productName} from your portfolio or mark it as sold.`
-        }
-
-        if(soldQuantity){
-          soldQuantity.max = String(maxQty > 0 ? maxQty : 1)
-          soldQuantity.value = String(maxQty > 0 ? maxQty : 1)
-        }
-
-        if(soldPrice){
-          soldPrice.value = ""
-        }
-
-        if(soldDate){
-          soldDate.value = todayIso()
-        }
-
-        if(choiceActions) choiceActions.style.display = "flex"
-        if(soldFields) soldFields.style.display = "none"
-
-        const oldActions = document.getElementById("portfolioDeleteEntryActions")
-        if(oldActions) oldActions.remove()
-
-        overlay.style.display = "flex"
-        overlay.setAttribute("aria-hidden", "false")
-      })
-
-      removeButton.addEventListener("click", function(){
-        if(confirm("Are you sure you want to remove this product from your portfolio completely?")){
-          submitPendingRemoveForm("remove")
-        }
-      })
-
-      soldButton.addEventListener("click", function(){
-        if(text) text.textContent = "Enter sale details that will update the summary table."
-        if(choiceActions) choiceActions.style.display = "none"
-        if(soldFields) soldFields.style.display = "block"
-        if(soldQuantity) soldQuantity.focus()
-      })
-
-      noButton.addEventListener("click", function(){
-        pendingPortfolioRemoveForm = null
-        resetRemoveOverlay()
-      })
-
-      if(soldBack){
-        soldBack.addEventListener("click", function(){
-          if(text && pendingPortfolioRemoveForm){
-            text.textContent = pendingPortfolioRemoveForm.dataset.customConfirmMessage || "Choose whether to remove this product from your portfolio or mark it as sold."
-          }
-          if(soldFields) soldFields.style.display = "none"
-          if(choiceActions) choiceActions.style.display = "flex"
-        })
-      }
-
-      if(soldSubmit){
-        soldSubmit.addEventListener("click", function(){
-          submitPendingRemoveForm("sold")
-        })
-      }
-
-      overlay.addEventListener("click", function(event){
-        if(event.target !== overlay) return
-        pendingPortfolioRemoveForm = null
-        resetRemoveOverlay()
-      })
-    }
-
-    // Starts all portfolio page JavaScript features after the page loads.
-    function init(){
-      wireFilters()
-      initAddHoldingModal()
-      initPortfolioRemoveConfirm()
-    }
-
-    document.addEventListener("turbo:load", init)
-    document.addEventListener("DOMContentLoaded", init)
-  })()
+  }
 </script>

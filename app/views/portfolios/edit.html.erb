@@ -1,0 +1,51 @@
+<%= stylesheet_link_tag "portfolios", "data-turbo-track": "reload" %>
+
+<div class="container py-3">
+  <h4 class="mb-3">Edit Holding</h4>
+
+  <div class="card">
+    <div class="card-body">
+      <%= form_with model: @holding, local: true do |form| %>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <%= form.label :product_type, "Product Type", class: "form-label" %>
+            <%= form.text_field :product_type, class: "form-control" %>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <%= form.label :condition, "Condition", class: "form-label" %>
+            <%= form.select :condition,
+                            options_for_select(@condition_options, @holding.condition),
+                            {},
+                            class: "form-select" %>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <%= form.label :quantity, "Quantity", class: "form-label" %>
+            <%= form.number_field :quantity, min: 1, step: 1, class: "form-control" %>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <%= form.label :cost_per_unit, "Cost Per Unit (€)", class: "form-label" %>
+            <%= form.number_field :cost_per_unit, min: 0, step: "0.01", class: "form-control" %>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <%= form.label :value, "Estimated Value (€)", class: "form-label" %>
+            <%= form.number_field :value, min: 0, step: "0.01", class: "form-control" %>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <%= form.label :purchase_date, "Purchase Date", class: "form-label" %>
+            <%= form.date_field :purchase_date, class: "form-control" %>
+          </div>
+
+          <div class="col-12 d-flex justify-content-end gap-2">
+            <%= link_to "Back", portfolio_path, class: "btn btn-outline-secondary btn-sm" %>
+            <%= form.submit "Update Holding", class: "btn btn-primary btn-sm" %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

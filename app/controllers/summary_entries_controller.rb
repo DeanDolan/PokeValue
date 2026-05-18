@@ -1,28 +1,34 @@
 class SummaryEntriesController < ApplicationController
-  # Deletes an added-item row from the portfolio summary modal
+  # Deletes one portfolio summary row.
   def destroy
-    unless defined?(user_signed_in?) && user_signed_in? && current_user
-      redirect_to login_path and return
+    unless current_user
+      redirect_to portfolio_login_required_path, alert: "Please log in to view your Portfolio."
+      return
     end
 
     entry = SummaryEntry.where(user_id: current_user.id).find(params[:id])
-    entry.destroy
+    entry.destroy!
 
-    redirect_back fallback_location: portfolio_path
+    redirect_back fallback_location: portfolio_path, notice: "Summary entry removed."
+  rescue ActiveRecord::RecordNotFound
+    redirect_back fallback_location: portfolio_path, alert: "Summary entry not found."
+  rescue
+    redirect_back fallback_location: portfolio_path, alert: "Could not remove summary entry."
   end
 
-  # Deletes a sold-item row from the portfolio summary modal
+  # Deletes one sold summary row.
   def destroy_sold
-    unless defined?(user_signed_in?) && user_signed_in? && current_user
-      redirect_to login_path and return
+    unless current_user
+      redirect_to portfolio_login_required_path, alert: "Please log in to view your Portfolio."
+      return
     end
 
     if defined?(MarketplacePurchase)
       purchase = MarketplacePurchase.where(seller_id: current_user.id).find_by(id: params[:id])
 
       if purchase
-        purchase.destroy
-        redirect_back fallback_location: portfolio_path
+        purchase.destroy!
+        redirect_back fallback_location: portfolio_path, notice: "Sold summary entry removed."
         return
       end
     end
@@ -31,12 +37,14 @@ class SummaryEntriesController < ApplicationController
       entry = SummaryEntry.where(user_id: current_user.id, action: [ "SOLD", "Sold", "sold" ]).find_by(id: params[:id])
 
       if entry
-        entry.destroy
-        redirect_back fallback_location: portfolio_path
+        entry.destroy!
+        redirect_back fallback_location: portfolio_path, notice: "Sold summary entry removed."
         return
       end
     end
 
     redirect_back fallback_location: portfolio_path, alert: "Sold summary row not found."
+  rescue
+    redirect_back fallback_location: portfolio_path, alert: "Could not remove sold summary row."
   end
 end

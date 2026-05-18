@@ -1,9 +1,13 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
+  // Connects the status message and chart panels to this controller.
   static targets = ["status", "panel"]
+
+  // Stores the Rails JSON endpoint used to load portfolio metrics.
   static values = { endpoint: String }
 
+  // Sets up the metrics controller before the modal opens.
   connect() {
     this.loaded = false
     this.series = []
@@ -19,222 +23,174 @@ export default class extends Controller {
     this.charts = {}
     this.activeKey = "cost"
     this.Chart = null
-
-    if (this.hasStatusTarget) {
-      this.statusTarget.textContent = `metrics controller connected | endpoint: ${this.endpointValue || "(missing)"}`
-    }
   }
 
-  // Runs when the Bootstrap metrics modal is opened
+  // Loads Chart.js and portfolio metric data when the metrics modal opens.
   async onShown() {
     if (!this.endpointValue) {
-      if (this.hasStatusTarget) this.statusTarget.textContent = "ERROR: metrics endpoint missing (data-metrics-endpoint-value)"
+      if (this.hasStatusTarget) this.statusTarget.textContent = "ERROR: metrics endpoint missing."
       return
+    }
+
+    if (!this.Chart) {
+      try {
+        const chartModule = await import("chart.js/auto")
+        this.Chart = chartModule.default || chartModule.Chart || window.Chart
+      } catch (_) {
+        try {
+          const chartModule = await import("chart.js")
+          const Chart = chartModule.default || chartModule.Chart
+          const registerables = chartModule.registerables
+
+          if (Chart && registerables && Chart.register) {
+            Chart.register(...registerables)
+          }
+
+          this.Chart = Chart || window.Chart
+        } catch (error) {
+          if (this.hasStatusTarget) this.statusTarget.textContent = `ERROR: Chart.js failed to load. ${error?.message || error}`
+          return
+        }
+      }
     }
 
     if (!this.loaded) {
-      await this.loadEverything()
+      const loaded = await this.loadData()
+      if (!loaded) return
       this.loaded = true
     }
 
-    this.show("cost")
+    this.buildChart("cost")
   }
 
-  // Loads Chart.js and then loads the portfolio metrics JSON
-  async loadEverything() {
-    const chartLoad = await this.loadChartLib()
-    if (!chartLoad.ok) {
-      if (this.hasStatusTarget) this.statusTarget.textContent = chartLoad.msg
-      return
-    }
-
-    const dataLoad = await this.loadData()
-    if (!dataLoad.ok) {
-      if (this.hasStatusTarget) this.statusTarget.textContent = dataLoad.msg
-      return
-    }
-
-    if (this.hasStatusTarget) {
-      const dbg = dataLoad.debug ? ` | debug: ${JSON.stringify(dataLoad.debug)}` : ""
-      this.statusTarget.textContent = `OK | points: ${this.series.length}${dbg}`
-    }
-  }
-
-  // Dynamically imports Chart.js so the chart only loads when needed
-  async loadChartLib() {
-    if (window.Chart) {
-      this.Chart = window.Chart
-      return { ok: true }
-    }
-
-    try {
-      const m = await import("chart.js/auto")
-      this.Chart = m.default || m.Chart || window.Chart
-      if (this.Chart) return { ok: true }
-    } catch (_) {}
-
-    try {
-      const m = await import("chart.js")
-      const Chart = m.default || m.Chart
-      const registerables = m.registerables
-      if (Chart && registerables && Chart.register) Chart.register(...registerables)
-      this.Chart = Chart || window.Chart
-      if (this.Chart) return { ok: true }
-    } catch (e) {
-      return {
-        ok: false,
-        msg:
-          "ERROR: Chart.js failed to load. Fix importmap pin.\n" +
-          "Fast fix: run `bin/importmap pin chart.js/auto` and restart server.\n" +
-          `Details: ${e?.message || e}`
-      }
-    }
-
-    return {
-      ok: false,
-      msg: "ERROR: Chart.js not available (no window.Chart and imports failed)."
-    }
-  }
-
-  // Fetches portfolio metric data from the Rails JSON endpoint
+  // Fetches the portfolio metrics JSON from Rails.
   async loadData() {
-    let res
+    let response
+
     try {
-      const url = this.endpointValue
-      res = await fetch(url, { headers: { Accept: "application/json" } })
-    } catch (e) {
-      return { ok: false, msg: `ERROR: fetch failed: ${e?.message || e}` }
+      response = await fetch(this.endpointValue, { headers: { Accept: "application/json" } })
+    } catch (error) {
+      if (this.hasStatusTarget) this.statusTarget.textContent = `ERROR: fetch failed. ${error?.message || error}`
+      return false
     }
 
-    const ct = res.headers.get("content-type") || "(none)"
-    if (!res.ok) {
-      const body = await this.readTextSafe(res)
-      return {
-        ok: false,
-        msg:
-          `ERROR: /portfolio/metrics HTTP ${res.status} (${res.statusText}) | content-type: ${ct}\n` +
-          `Body (first 300): ${body}`
+    if (!response.ok) {
+      let body = ""
+
+      try {
+        body = await response.text()
+      } catch (_) {
+        body = "(unable to read response body)"
       }
+
+      if (this.hasStatusTarget) {
+        this.statusTarget.textContent = `ERROR: /portfolio/metrics HTTP ${response.status}. ${body.slice(0, 300).replace(/\s+/g, " ")}`
+      }
+
+      return false
     }
 
     let json
+
     try {
-      json = await res.json()
+      json = await response.json()
     } catch (_) {
-      const body = await this.readTextSafe(res)
-      return {
-        ok: false,
-        msg:
-          `ERROR: response was not JSON | content-type: ${ct}\n` +
-          `Body (first 300): ${body}`
-      }
+      if (this.hasStatusTarget) this.statusTarget.textContent = "ERROR: metrics response was not JSON."
+      return false
     }
 
-    const series = Array.isArray(json.series) ? json.series : []
-    if (!series.length) {
-      return {
-        ok: false,
-        msg: `ERROR: JSON loaded but series is empty. content-type: ${ct}`,
-        debug: json.debug
-      }
+    this.series = Array.isArray(json.series) ? json.series : []
+
+    if (!this.series.length) {
+      if (this.hasStatusTarget) this.statusTarget.textContent = "ERROR: metrics data is empty."
+      return false
     }
 
-    this.series = series
-    this.labels = series.map(p => this.ddmmyyyy(p.date))
+    this.labels = this.series.map((point) => {
+      const date = new Date(String(point.date) + "T00:00:00")
+      const day = String(date.getDate()).padStart(2, "0")
+      const month = String(date.getMonth() + 1).padStart(2, "0")
+      const year = date.getFullYear()
 
-    const pick = (p, keys) => {
-      for (const k of keys) {
-        if (p && Object.prototype.hasOwnProperty.call(p, k) && p[k] != null) return p[k]
-      }
-      return null
+      return `${day}/${month}/${year}`
+    })
+
+    this.dataByKey = {
+      cost: this.series.map((point) => point.total_cost ?? point.cost ?? 0),
+      value: this.series.map((point) => point.total_value ?? point.value ?? 0),
+      pl: this.series.map((point) => point.pl ?? point.unrealised_pl ?? point.unrealized_pl ?? 0),
+      roi: this.series.map((point) => point.roi ?? point.roi_pct ?? point.roi_percent ?? 0),
+      realised_pl: this.series.map((point) => point.realised_pl ?? point.realized_pl ?? 0)
     }
 
-    const cost = series.map(p => pick(p, ["total_cost", "cost", "cost_total"]))
-    const value = series.map(p => pick(p, ["total_value", "value", "value_total"]))
-    const pl = series.map(p => pick(p, ["pl", "unrealised_pl", "unrealized_pl"]))
-    const roi = series.map(p => pick(p, ["roi", "roi_pct", "roi_percent"]))
-    const realised = series.map(p => pick(p, ["realised_pl", "realized_pl", "realised", "realized"]))
+    if (this.hasStatusTarget) {
+      this.statusTarget.textContent = ""
+    }
 
-    this.dataByKey = { cost, value, pl, roi, realised_pl: realised }
-
-    return { ok: true, debug: json.debug }
+    return true
   }
 
-  // Safely reads a short part of a failed response for debugging
-  async readTextSafe(res) {
-    try {
-      const t = await res.text()
-      return (t || "").slice(0, 300).replace(/\s+/g, " ")
-    } catch (_) {
-      return "(unable to read body)"
-    }
-  }
-
-  // Handles metric tab button clicks
+  // Handles metric button clicks.
   select(event) {
     const key = event.currentTarget.getAttribute("data-metrics-key-param")
     if (!key) return
-    this.show(key)
+
+    this.buildChart(key)
   }
 
-  // Shows the selected chart panel and highlights the active button
-  show(key) {
+  // Shows the selected metric panel and builds its chart.
+  buildChart(key) {
     this.activeKey = key
 
-    this.panelTargets.forEach(p => {
-      p.classList.toggle("d-none", p.dataset.key !== key)
+    this.panelTargets.forEach((panel) => {
+      panel.classList.toggle("d-none", panel.dataset.key !== key)
     })
 
-    const btns = this.element.querySelectorAll("[data-metrics-key-param]")
-    btns.forEach(b => {
-      const isOn = b.getAttribute("data-metrics-key-param") === key
-      b.classList.toggle("btn-primary", isOn)
-      b.classList.toggle("btn-outline-primary", !isOn)
+    this.element.querySelectorAll("[data-metrics-key-param]").forEach((button) => {
+      const active = button.getAttribute("data-metrics-key-param") === key
+      button.classList.toggle("btn-primary", active)
+      button.classList.toggle("btn-outline-primary", !active)
     })
 
-    if (!this.series.length || !this.Chart) return
-    if (!this.charts[key]) this.buildChart(key)
-    if (this.charts[key]) this.charts[key].resize()
-  }
+    if (!this.Chart || !this.series.length) return
 
-  // Builds one Chart.js line chart for the selected metric
-  buildChart(key) {
     const canvas = this.element.querySelector(`canvas[data-key="${key}"]`)
     if (!canvas) return
 
-    const data = this.dataByKey[key]
-    if (!data) return
-
     if (this.charts[key]) {
-      try { this.charts[key].destroy() } catch (_) {}
-      delete this.charts[key]
-    }
-
-    const dataset = {
-      label: this.labelByKey[key] || key,
-      data,
-      tension: 0.25,
-      pointRadius: 2
+      this.charts[key].resize()
+      return
     }
 
     this.charts[key] = new this.Chart(canvas.getContext("2d"), {
       type: "line",
-      data: { labels: this.labels, datasets: [dataset] },
+      data: {
+        labels: this.labels,
+        datasets: [
+          {
+            label: this.labelByKey[key] || key,
+            data: this.dataByKey[key] || [],
+            tension: 0.25,
+            pointRadius: 2
+          }
+        ]
+      },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: true } },
-        scales: { x: { ticks: { maxTicksLimit: 10 } } }
+        plugins: {
+          legend: {
+            display: true
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 10
+            }
+          }
+        }
       }
     })
-  }
-
-  // Converts an ISO date into dd/mm/yyyy for chart labels
-  ddmmyyyy(iso) {
-    const d = new Date(String(iso) + "T00:00:00")
-    const dd = String(d.getDate()).padStart(2, "0")
-    const mm = String(d.getMonth() + 1).padStart(2, "0")
-    const yyyy = d.getFullYear()
-    return `${dd}/${mm}/${yyyy}`
   }
 }

@@ -1,3 +1,5 @@
+<%= stylesheet_link_tag "accounts", "data-turbo-track": "reload" %>
+
 <%
 require "json"
 
@@ -18,6 +20,7 @@ sets_data =
     {}
   end
 
+# Stores readable product type names for account tables
 type_map = {
   "etb"                      => "Elite Trainer Box",
   "pc_etb"                   => "Pokemon Center Elite Trainer Box",
@@ -131,10 +134,16 @@ listing_status_label = lambda do |l|
   titleize.call(down)
 end
 
+# Stores the sealed product image folder path
 images_sealed = Rails.root.join("app", "assets", "images", "sealed")
+
+# Stores the admin badge asset path
 admin_badge_asset = "badges/adminbadge.png"
 
+# Loads the account user object
 u = @user
+
+# Checks whether the account page belongs to the logged-in user
 is_self = defined?(@is_self) ? !!@is_self : false
 
 # Keeps the selected marketplace, auction and raffle account tabs safe
@@ -147,6 +156,8 @@ auction_tab = "current" unless %w[current ended sold won].include?(auction_tab)
 raffle_tab = params[:raffle_tab].to_s.presence || (defined?(@raffle_tab) && @raffle_tab.present? ? @raffle_tab.to_s : "current")
 raffle_tab = "current" unless %w[current ended won].include?(raffle_tab)
 
+# Create Watchlist
+# Loads Watchlist
 # Loads watchlist items only for the account owner
 items =
   if is_self && defined?(@watchlist_items) && @watchlist_items
@@ -207,9 +218,12 @@ meta_for = lambda do |item|
   { sku: sku, href: href, img_url: img_url, label: label }
 end
 
+# Loads Admin Badge
 is_admin =
   u && ((u.respond_to?(:admin?) && u.admin?) || (u.respond_to?(:admin) && !!u.admin))
 
+# Create Marketplace Listings
+# Loads Marketplace Listings
 # Loads the user's current marketplace listings
 current_listings =
   if defined?(@current_listings)
@@ -224,6 +238,7 @@ current_listings =
     []
   end
 
+# Loads Sold Marketplace Listings
 # Loads sold listings for the public seller account view
 sold_listings =
   if defined?(MarketplaceListing) && u
@@ -249,6 +264,7 @@ if defined?(MarketplaceOffer) && sold_listings.any?
   end
 end
 
+# Calculates Sold Marketplace Total
 sold_total_cents_for = lambda do |listing|
   offer = sold_offer_map[listing.id] rescue nil
   if offer && offer.respond_to?(:offer_cents) && offer.offer_cents.to_i > 0
@@ -262,11 +278,13 @@ sold_total_cents_for = lambda do |listing|
   end
 end
 
+# Calculates Sold Marketplace Quantity
 sold_qty_for = lambda do |listing|
   q = listing.respond_to?(:quantity) ? listing.quantity.to_i : 0
   q > 0 ? q : 1
 end
 
+# Loads Bought Marketplace Listings
 # Loads purchases made by the logged-in user
 bought_purchases =
   if is_self
@@ -306,11 +324,13 @@ end
 purchase_listing_ids.concat(sold_listings.map(&:id))
 purchase_listing_ids.uniq!
 
+# Builds Marketplace Listing Lookup
 listing_map = {}
 if defined?(MarketplaceListing) && purchase_listing_ids.any?
   listing_map = MarketplaceListing.where(id: purchase_listing_ids).index_by(&:id)
 end
 
+# Finds Marketplace Listing For Purchase
 purchase_listing_for = lambda do |p|
   if p.respond_to?(:marketplace_listing_id) && p.marketplace_listing_id.present?
     listing_map[p.marketplace_listing_id.to_i]
@@ -323,23 +343,27 @@ purchase_listing_for = lambda do |p|
   end
 end
 
+# Finds Purchase Set Slug
 purchase_slug = lambda do |p, l|
   (p.respond_to?(:set_slug) ? p.set_slug.to_s : "").presence ||
     (l && l.respond_to?(:set_slug) ? l.set_slug.to_s : "").presence || ""
 end
 
+# Finds Purchase Set Name
 purchase_set = lambda do |p, l|
   (p.respond_to?(:set_name) ? p.set_name.to_s : "").presence ||
     (l && l.respond_to?(:set_name) ? l.set_name.to_s : "").presence ||
     set_name_for.call(purchase_slug.call(p, l))
 end
 
+# Finds Purchase Product Type
 purchase_type = lambda do |p, l|
   t = product_type_display.call(p)
   return t if t.present? && t != "-"
   l ? product_type_display.call(l) : "-"
 end
 
+# Finds Purchase Condition
 purchase_condition = lambda do |p, l|
   (p.respond_to?(:condition) ? p.condition.to_s : "").presence ||
     (l && l.respond_to?(:condition) ? l.condition.to_s : "").presence || "-"
@@ -388,6 +412,7 @@ auction_status_key = lambda do |auction|
   end
 end
 
+# Loads Auction Length Label
 auction_length_label_for = lambda do |auction|
   label =
     if auction.respond_to?(:auction_length_label) && auction.auction_length_label.present?
@@ -416,6 +441,7 @@ auction_length_label_for = lambda do |auction|
   }[seconds.to_i] || "-"
 end
 
+# Loads Auction Time Remaining
 auction_remaining_text = lambda do |auction|
   end_time = auction.respond_to?(:ends_at) ? auction.ends_at : nil
   status_key = auction_status_key.call(auction)
@@ -442,6 +468,8 @@ auction_remaining_text = lambda do |auction|
   end
 end
 
+# Create Auctions
+# Loads Auctions
 user_auctions =
   if defined?(Auction) && u
     Auction.where(seller_id: u.id).order(created_at: :desc).to_a
@@ -449,10 +477,16 @@ user_auctions =
     []
   end
 
+# Loads Current Auctions
 current_auctions = user_auctions.select { |a| auction_status_key.call(a) == "running" }
+
+# Loads Ended Auctions
 ended_auctions = user_auctions.select { |a| auction_status_key.call(a) == "ended" }
+
+# Loads Sold Auctions
 sold_auctions = user_auctions.select { |a| auction_status_key.call(a) == "sold" }
 
+# Loads Won Auctions
 # Shows auctions won by the current user on their own account only
 won_auctions =
   if is_self && defined?(Auction) && u
@@ -472,6 +506,7 @@ won_auctions =
     []
   end
 
+# Loads Selected Auction Tab
 selected_auctions =
   if auction_tab == "ended"
     ended_auctions
@@ -496,6 +531,8 @@ raffle_status_key = lambda do |raffle|
   end
 end
 
+# Create Raffles
+# Loads Raffles
 user_raffles =
   if defined?(Raffle) && u
     Raffle.where(host_id: u.id).order(created_at: :desc).to_a
@@ -503,9 +540,13 @@ user_raffles =
     []
   end
 
+# Loads Current Raffles
 current_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "current" }
+
+# Loads Ended Raffles
 ended_raffles = user_raffles.select { |r| raffle_status_key.call(r) == "ended" }
 
+# Loads Won Raffles
 # Shows raffles won by the current user on their own account only
 won_raffles =
   if is_self && defined?(Raffle) && u
@@ -523,6 +564,7 @@ won_raffles =
     []
   end
 
+# Loads Selected Raffle Tab
 selected_raffles =
   if raffle_tab == "ended"
     ended_raffles
@@ -532,16 +574,19 @@ selected_raffles =
     current_raffles
   end
 
+# Loads Raffle Type Label
 raffle_kind_label = lambda do |raffle|
   v = raffle.respond_to?(:raffle_kind) ? raffle.raffle_kind.to_s : ""
   v.present? ? titleize.call(v) : "-"
 end
 
+# Loads Raffle Status Label
 raffle_status_label = lambda do |raffle|
   s = raffle.respond_to?(:status) ? raffle.status.to_s : ""
   s.present? ? titleize.call(s) : "Active"
 end
 
+# Loads Sold Raffle Tickets Count
 raffle_tickets_sold = lambda do |raffle|
   if defined?(RaffleTicket)
     begin
@@ -559,6 +604,7 @@ raffle_tickets_sold = lambda do |raffle|
   end
 end
 
+# Loads Saved Addresses
 # Loads saved delivery addresses for the account owner
 saved_addresses =
   if is_self && defined?(SavedAddress) && u
@@ -567,6 +613,7 @@ saved_addresses =
     []
   end
 
+# Loads EU Country Options
 eu_countries = [
   ["Austria", "🇦🇹"],
   ["Belgium", "🇧🇪"],
@@ -599,56 +646,7 @@ eu_countries = [
 %>
 
 <div class="container py-4">
-  <style>
-    .acc-wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
-    .acc-left{flex:1;min-width:320px}
-    .acc-title{font-size:1.15rem;margin:0 0 14px}
-    .acc-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;box-shadow:0 10px 25px rgba(15,23,42,.08);margin-bottom:12px;overflow:hidden}
-    .acc-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    .acc-meta p{margin:0 0 6px;font-size:.85rem}
-    .acc-badges img{height:20px;width:20px;object-fit:contain;display:inline-block;vertical-align:middle}
-    .acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
-    .acc-tabs a{font-size:.72rem;padding:.28rem .55rem;border-radius:999px;border:1px solid #e5e7eb;text-decoration:none;color:#111827;white-space:nowrap}
-    .acc-tabs a.active{border-color:#111827;font-weight:900}
-    .subhead{font-size:.9rem;font-weight:900;margin:0 0 10px}
-    .mp-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
-    .mp-table th{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:middle;font-size:.62rem;white-space:nowrap;overflow:hidden;text-overflow:clip}
-    .mp-table td{border-bottom:1px solid #eef2f7;padding:6px 6px;text-align:center;vertical-align:top;font-size:.62rem;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.15}
-    .mp-table th{font-weight:900;color:#111827;background:#fafafa}
-    .mp-actions{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:nowrap;white-space:nowrap}
-    .mp-actions .btn{font-size:.6rem;padding:.12rem .32rem;line-height:1.05}
-    .mp-empty{color:#6b7280;font-size:.85rem;text-align:center;padding:12px 0}
-    .w-era{width:11%}
-    .w-set{width:15%}
-    .w-type{width:20%}
-    .w-cond{width:13%}
-    .w-qty{width:6%}
-    .w-total{width:11%}
-    .w-date{width:10%}
-    .w-actions{width:8%}
-    .w-status{width:10%}
-    .w-price{width:10%}
-    .w-seller{width:14%}
-    .w-au-desc{width:30%}
-    .w-au-bids{width:8%}
-    .w-au-length{width:12%}
-    .w-au-time{width:14%}
-    .w-au-date{width:10%}
-    .w-au-actions{width:12%}
-    .w-au-cond{width:10%}
-    .w-au-bid{width:12%}
-    .w-ra-title{width:26%}
-    .w-ra-kind{width:12%}
-    .w-ra-price{width:12%}
-    .w-ra-tickets{width:12%}
-    .w-ra-status{width:12%}
-    .w-ra-date{width:12%}
-    .w-ra-actions{width:14%}
-    .acc-au-desc{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.2;max-height:2.4em;text-align:left}
-    .acc-address-grid{display:grid;gap:10px}
-    .acc-address-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px}
-    .acc-address-line{font-size:.82rem;line-height:1.25}
-  </style>
+
 
   <div id="account-work-area" class="acc-wrap">
     <div class="acc-left">
@@ -661,7 +659,7 @@ eu_countries = [
 
             <p>
               Country:
-              <span style="font-size:1.05rem;line-height:1;display:inline-block;position:relative;top:2px;" title="<%= (defined?(country_name) && u&.respond_to?(:country_code)) ? country_name(u.country_code) : "" %>">
+              <span class="acc-country-flag" title="<%= (defined?(country_name) && u&.respond_to?(:country_code)) ? country_name(u.country_code) : "" %>">
                 <%= (defined?(flag_emoji) && u&.respond_to?(:country_code)) ? flag_emoji(u.country_code) : (u&.respond_to?(:country_code) ? u.country_code.to_s : "") %>
               </span>
             </p>
@@ -679,6 +677,7 @@ eu_countries = [
       </div>
 
       <% if is_self %>
+        <%# Loads Saved Address Section %>
         <div class="acc-card">
           <div class="subhead">Addresses</div>
 
@@ -704,7 +703,7 @@ eu_countries = [
                     </div>
                   </div>
 
-                  <div id="<%= edit_wrap_id %>" style="display:none;" class="mt-3">
+                  <div id="<%= edit_wrap_id %>" class="mt-3 acc-hidden">
                     <%= form_with url: saved_addresses_path, method: :post, local: true, data: { preserve_scroll: true } do %>
                       <%= hidden_field_tag "saved_address[id]", address.id %>
 
@@ -762,7 +761,7 @@ eu_countries = [
               </button>
             </div>
 
-            <div id="acc-add-address-wrap" style="display:none;">
+            <div id="acc-add-address-wrap" class="acc-hidden">
               <%= form_with model: SavedAddress.new, url: saved_addresses_path, method: :post, local: true, data: { preserve_scroll: true } do |f| %>
                 <div class="row g-2">
                   <div class="col-12">
@@ -807,6 +806,8 @@ eu_countries = [
         </div>
       <% end %>
 
+      <%# Create Marketplace Listings %>
+      <%# Loads Marketplace Listings Section %>
       <div class="acc-card">
         <div class="subhead">Marketplace Listings</div>
 
@@ -966,6 +967,8 @@ eu_countries = [
         <% end %>
       </div>
 
+      <%# Create Auctions %>
+      <%# Loads Auctions Section %>
       <div class="acc-card">
         <div class="subhead">Auctions</div>
 
@@ -1059,7 +1062,7 @@ eu_countries = [
 
                   <% if auction_tab == "sold" && auction_item.winning_bidder.present? && defined?(current_user) && current_user && current_user.id.to_i == auction_item.seller_id.to_i %>
                     <tr>
-                      <td colspan="7" style="text-align:left;">
+                      <td colspan="7" class="acc-cell-left">
                         <strong>Winning Bidder:</strong> <%= auction_item.winning_bidder.username.to_s.presence || "User ##{auction_item.winning_bidder.id}" %>
                         ·
                         <strong>Send To:</strong> <%= auction_item.winning_address_text.to_s.presence || "-" %>
@@ -1077,6 +1080,8 @@ eu_countries = [
         <% end %>
       </div>
 
+      <%# Create Raffles %>
+      <%# Loads Raffles Section %>
       <div class="acc-card">
         <div class="subhead">Raffles</div>
 
@@ -1143,7 +1148,7 @@ eu_countries = [
 
                   <% if raffle_tab != "current" && raffle_item.respond_to?(:winner_user_id) && raffle_item.winner_user_id.present? && defined?(current_user) && current_user && current_user.id.to_i == raffle_item.host_id.to_i %>
                     <tr>
-                      <td colspan="<%= raffle_tab == "won" && is_self ? 8 : 7 %>" style="text-align:left;">
+                      <td colspan="<%= raffle_tab == "won" && is_self ? 8 : 7 %>" class="acc-cell-left">
                         <strong>Winner:</strong>
                         <% winner = defined?(User) ? User.find_by(id: raffle_item.winner_user_id) : nil %>
                         <%= winner&.username.to_s.presence || raffle_item.winner_name.to_s.presence || "User ##{raffle_item.winner_user_id}" %>
@@ -1162,6 +1167,8 @@ eu_countries = [
       </div>
 
       <% if is_self %>
+        <%# Create Watchlist %>
+        <%# Loads Watchlist Section %>
         <div class="acc-card">
           <div class="subhead">Watchlist</div>
 
@@ -1172,7 +1179,7 @@ eu_countries = [
                 <div class="list-group-item">
                   <div class="d-flex align-items-center gap-3">
                     <%= link_to m[:href], class: "d-inline-flex align-items-center text-decoration-none" do %>
-                      <%= image_tag m[:img_url], alt: m[:label], style: "height:44px;width:auto;object-fit:contain;" %>
+                      <%= image_tag m[:img_url], alt: m[:label], class: "acc-watch-img" %>
                     <% end %>
 
                     <div class="flex-grow-1">
@@ -1196,65 +1203,3 @@ eu_countries = [
   </div>
 </div>
 
-<script>
-  (function () {
-    const key = "pokevalue_account_scroll_y";
-
-    function saveScroll() {
-      try {
-        sessionStorage.setItem(key, String(window.scrollY || window.pageYOffset || 0));
-      } catch (e) {}
-    }
-
-    function restoreScroll() {
-      let raw = null;
-
-      try {
-        raw = sessionStorage.getItem(key);
-      } catch (e) {}
-
-      if (raw === null) return;
-
-      const y = parseInt(raw, 10);
-
-      try {
-        sessionStorage.removeItem(key);
-      } catch (e) {}
-
-      if (Number.isNaN(y)) return;
-
-      requestAnimationFrame(function () {
-        window.scrollTo(0, y);
-        setTimeout(function () { window.scrollTo(0, y); }, 25);
-        setTimeout(function () { window.scrollTo(0, y); }, 75);
-        setTimeout(function () { window.scrollTo(0, y); }, 150);
-        setTimeout(function () { window.scrollTo(0, y); }, 300);
-      });
-    }
-
-    document.addEventListener("click", function (event) {
-      const clickable = event.target.closest("a, button, input[type='submit']");
-      if (!clickable) return;
-
-      const opensModal = clickable.hasAttribute("data-bs-toggle");
-      const closesModal = clickable.hasAttribute("data-bs-dismiss");
-      const inlineButton = clickable.getAttribute("type") === "button" && clickable.getAttribute("onclick");
-
-      if (opensModal || closesModal || inlineButton) return;
-
-      saveScroll();
-    }, true);
-
-    document.addEventListener("submit", function () {
-      saveScroll();
-    }, true);
-
-    window.addEventListener("beforeunload", saveScroll);
-    window.addEventListener("pageshow", restoreScroll);
-
-    document.addEventListener("turbo:before-visit", saveScroll);
-    document.addEventListener("turbo:submit-start", saveScroll);
-    document.addEventListener("turbo:load", restoreScroll);
-    document.addEventListener("DOMContentLoaded", restoreScroll);
-  })();
-</script>

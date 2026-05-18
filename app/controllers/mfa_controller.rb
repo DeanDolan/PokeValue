@@ -45,7 +45,7 @@ class MfaController < ApplicationController
   def setup
     @user = mfa_user
     return redirect_to(portfolio_path, alert: "Log in first.", status: :see_other) unless @user
-    @user.ensure_mfa_secret!
+    @user.create_secret!
     @secret = @user.mfa_secret
   end
 

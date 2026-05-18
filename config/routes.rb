@@ -11,6 +11,7 @@ Rails.application.routes.draw do
 
   # Portfolio routes
   get "/portfolio", to: "portfolios#index", as: :portfolio
+  get "/portfolio/login_required", to: "portfolios#login_required", as: :portfolio_login_required
   get "/portfolio/metrics", to: "portfolios#metrics", as: :portfolio_metrics, defaults: { format: :json }
 
   # Summary routes
@@ -21,21 +22,11 @@ Rails.application.routes.draw do
   namespace :admin do
     resources :product_values, param: :sku, only: [ :update ]
 
-    resources :products, only: [ :index ] do
-      collection do
-        patch :update_values
-      end
-    end
+    get "/products", to: "products#index", as: :products
+    patch "/products/update_product_values", to: "products#update_product_values", as: :update_product_values
 
-    resources :sets, param: :slug, only: [ :index ] do
-      collection do
-        patch :update_values
-      end
-
-      member do
-        patch :update
-      end
-    end
+    get "/sets", to: "sets#index", as: :sets
+    patch "/sets/update_set_values", to: "sets#update_set_values", as: :update_set_values
 
     resources :raffles, only: [ :index, :destroy ]
   end
@@ -53,7 +44,13 @@ Rails.application.routes.draw do
   post "/watchlist/:sku", to: "watchlists#create", as: :watchlist
   delete "/watchlist/:sku", to: "watchlists#destroy", as: :remove_watchlist
   resources :saved_addresses, only: [ :create, :destroy ]
-  resources :holdings, only: [ :create, :edit, :update, :destroy ]
+
+  resources :holdings, only: [ :create, :edit, :update, :destroy ] do
+    member do
+      get :sold
+      post :mark_sold
+    end
+  end
 
   # Marketplace routes
   get "/marketplace", to: "marketplace_listings#index", as: :marketplace

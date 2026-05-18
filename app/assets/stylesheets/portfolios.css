@@ -1,0 +1,42 @@
+.portfolio-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.portfolio-actions form,
+.portfolio-actions .button_to {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.portfolio-actions .btn,
+.portfolio-actions button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: .52rem;
+  line-height: 1;
+  padding: .12rem .22rem;
+  white-space: nowrap;
+  min-width: auto;
+  height: 20px;
+  margin: 0 !important;
+  vertical-align: middle;
+}
+
+.portfolio-actions-col {
+  white-space: nowrap;
+  min-width: 118px;
+}
+
+.portfolio-product-thumb {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+}

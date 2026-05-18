@@ -19,7 +19,7 @@ class PortfoliosController < ApplicationController
     "Contents Only"
   ]
 
-  # Loads the user's portfolio holdings and calculates overview totals for the portfolio page.
+  # Loads the user's portfolio holdings, summary entries and overview totals.
   def index
     if current_user
       @holdings = current_user.holdings.includes(:product).order(
@@ -27,19 +27,21 @@ class PortfoliosController < ApplicationController
         created_at: :desc
       ).to_a
 
-      Product.apply_live_values_to_holdings!(@holdings)
+      Product.update_all_holding_totals(@holdings) if Product.respond_to?(:update_all_holding_totals)
 
-      cost = @holdings.sum { |h| decimal_value(h.total_cost) }
-      value = @holdings.sum { |h| decimal_value(h.total_value) }
+      cost = @holdings.sum { |h| money_value(h.total_cost) }
+      value = @holdings.sum { |h| money_value(h.total_value) }
       pl = value - cost
       roi = cost.zero? ? 0 : (pl / cost * 100)
 
       @eras = @holdings.map(&:era).compact.uniq.sort
       @types = @holdings.map(&:product_type).compact.uniq.sort
       @conditions = (@holdings.map(&:condition).compact.uniq + DEFAULT_CONDITIONS).uniq
+      @summary_entries = summary_entries_for(current_user)
       @realised_pl_total = realised_pl_total_for(current_user)
     else
       @holdings = []
+      @summary_entries = []
       cost = value = pl = roi = 0
       @eras = []
       @types = []
@@ -48,6 +50,11 @@ class PortfoliosController < ApplicationController
     end
 
     @totals = { cost: cost, value: value, pl: pl, roi: roi }
+  end
+
+  # Sends logged-out users back with the portfolio login flash message.
+  def login_required
+    redirect_to root_path, alert: "Please log in to view your Portfolio."
   end
 
   # Returns portfolio chart data as JSON for the portfolio metrics modal.
@@ -60,7 +67,7 @@ class PortfoliosController < ApplicationController
     response.headers["Cache-Control"] = "no-store"
 
     holdings = current_user.holdings.includes(:product).to_a
-    Product.apply_live_values_to_holdings!(holdings)
+    Product.update_all_holding_totals(holdings) if Product.respond_to?(:update_all_holding_totals)
 
     holding_days = Hash.new { |h, k| h[k] = { cost: 0.to_d, value: 0.to_d } }
 
@@ -68,8 +75,8 @@ class PortfoliosController < ApplicationController
       date = holding.purchase_date || holding.created_at&.to_date
       next unless date
 
-      holding_days[date][:cost] += decimal_value(holding.total_cost)
-      holding_days[date][:value] += decimal_value(holding.total_value)
+      holding_days[date][:cost] += money_value(holding.total_cost)
+      holding_days[date][:value] += money_value(holding.total_value)
     end
 
     realised_days = realised_pl_by_date_for(current_user)
@@ -86,7 +93,7 @@ class PortfoliosController < ApplicationController
 
       cum_cost += day_holdings[:cost]
       cum_value += day_holdings[:value]
-      cum_realised += decimal_value(day_realised)
+      cum_realised += money_value(day_realised)
 
       pl = cum_value - cum_cost
       roi = cum_cost.zero? ? 0.to_d : (pl / cum_cost * 100)
@@ -113,7 +120,7 @@ class PortfoliosController < ApplicationController
       debug: {
         signed_in: true,
         holdings_count: holdings.size,
-        sold_summary_entries_count: sold_summary_entries_for(current_user).size,
+        summary_entries_count: summary_entries_for(current_user).size,
         marketplace_sales_count: marketplace_sales_for(current_user).size,
         date_points: series.size,
         realised_pl_total: cum_realised.to_f
@@ -124,10 +131,20 @@ class PortfoliosController < ApplicationController
   private
 
   # Converts a value into BigDecimal so money calculations stay safe.
-  def decimal_value(value)
+  def money_value(value)
     BigDecimal(value.to_s)
   rescue
     BigDecimal("0")
+  end
+
+  # Finds all portfolio summary entries for a user.
+  def summary_entries_for(user)
+    return [] unless defined?(SummaryEntry)
+    return [] unless user
+
+    SummaryEntry.where(user_id: user.id).order(created_at: :desc).to_a
+  rescue
+    []
   end
 
   # Finds sold portfolio summary entries for a user.
@@ -152,7 +169,7 @@ class PortfoliosController < ApplicationController
 
   # Calculates the user's total realised profit/loss from sold items and marketplace sales.
   def realised_pl_total_for(user)
-    realised_pl_by_date_for(user).values.sum { |value| decimal_value(value) }
+    realised_pl_by_date_for(user).values.sum { |value| money_value(value) }
   rescue
     BigDecimal("0")
   end
@@ -163,7 +180,7 @@ class PortfoliosController < ApplicationController
 
     marketplace_sales_for(user).each do |purchase|
       date = purchase.created_at&.to_date || Date.current
-      out[date] += decimal_value(purchase.realised_pl_cents) / 100
+      out[date] += money_value(purchase.realised_pl_cents) / 100
     end
 
     sold_summary_entries_for(user).each do |entry|
@@ -171,8 +188,8 @@ class PortfoliosController < ApplicationController
       quantity = entry.quantity.to_i
       quantity = 1 if quantity <= 0
 
-      cost_per_unit = decimal_value(entry.cost_per_unit)
-      sell_price = decimal_value(entry.value)
+      cost_per_unit = money_value(entry.cost_per_unit)
+      sell_price = money_value(entry.value)
 
       out[date] += (sell_price - cost_per_unit) * quantity
     end

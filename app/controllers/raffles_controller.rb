@@ -1,7 +1,11 @@
 class RafflesController < ApplicationController
+  # Requires users to be logged in before using raffle actions that change data.
   before_action :require_login, only: [ :new, :create, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :destroy ]
+
+  # Finds the selected raffle before actions that need one raffle record.
   before_action :set_raffle, only: [ :show, :purchase_tickets, :return_tickets, :toggle_paid, :verify_payment, :run_raffle, :destroy ]
 
+  # Shows raffle lists split into active raffles, mini raffles, completed raffles and incompleted raffles.
   def index
     @raffle_filters = {
       q: params[:q].to_s.strip,
@@ -15,7 +19,7 @@ class RafflesController < ApplicationController
     @admin_can_manage_raffles = raffle_admin_user?
 
     @raffles = apply_raffle_filters(
-      Raffle.includes(:host, :winner_user, :main_raffle, :raffle_tickets, photos_attachments: :blob).newest_first
+      Raffle.includes(:host, :winner_user, :main_raffle, :raffle_tickets).newest_first
     )
 
     @active_raffles = @raffles.select { |r| r.raffle_kind == "raffle" && r.status == "active" }
@@ -24,6 +28,7 @@ class RafflesController < ApplicationController
     @incompleted_raffles = @raffles.select { |r| r.status == "incompleted" }
   end
 
+  # Opens the new raffle form with default raffle values.
   def new
     @raffle = Raffle.new(
       raffle_kind: "raffle",
@@ -35,6 +40,7 @@ class RafflesController < ApplicationController
     @running_main_raffles = Raffle.includes(:host).running_main_raffles.order(created_at: :desc)
   end
 
+  # Creates a new raffle or mini raffle.
   def create
     host_revolut_tag = current_user.revolut_tag.to_s.strip
 
@@ -65,6 +71,7 @@ class RafflesController < ApplicationController
     end
   end
 
+  # Shows one raffle with tickets, available numbers, participant rows and winner details.
   def show
     @admin_can_manage_raffles = raffle_admin_user?
     @tickets = @raffle.raffle_tickets.includes(:user).ordered
@@ -76,6 +83,7 @@ class RafflesController < ApplicationController
     @paid_amount_cents = @tickets.select(&:paid?).sum(&:amount_paid_cents)
   end
 
+  # Lets a user buy, randomly select, buy all, or assign raffle tickets.
   def purchase_tickets
     return redirect_to raffle_path(@raffle), alert: "This raffle is no longer active." unless @raffle.active?
 
@@ -150,6 +158,7 @@ class RafflesController < ApplicationController
     redirect_to raffle_path(@raffle), alert: "Ticket assignment failed: #{e.message}"
   end
 
+  # Lets a user or host return selected tickets from an active raffle.
   def return_tickets
     return redirect_to raffle_path(@raffle), alert: "Tickets cannot be returned for this raffle." unless @raffle.active?
 
@@ -177,6 +186,7 @@ class RafflesController < ApplicationController
     redirect_to raffle_path(@raffle), notice: "Selected tickets were returned."
   end
 
+  # Lets a participant mark their raffle tickets as paid or unpaid.
   def toggle_paid
     return redirect_to raffle_path(@raffle), alert: "This raffle is no longer active." unless @raffle.active?
 
@@ -213,6 +223,7 @@ class RafflesController < ApplicationController
     end
   end
 
+  # Lets the raffle host verify or unverify a participant's payment.
   def verify_payment
     return redirect_to raffle_path(@raffle), alert: "Only the host can verify payments." unless current_user.id == @raffle.host_id.to_i
 
@@ -236,6 +247,7 @@ class RafflesController < ApplicationController
     redirect_to raffle_path(@raffle), notice: (new_verified ? "Payment verified." : "Payment unverified.")
   end
 
+  # Runs the raffle draw and returns the winning ticket.
   def run_raffle
     unless @raffle.can_be_run_by?(current_user)
       return respond_to do |format|
@@ -265,6 +277,7 @@ class RafflesController < ApplicationController
     end
   end
 
+  # Deletes a raffle for admins or moves a host's raffle to incompleted.
   def destroy
     redirect_target = raffle_return_path
 
@@ -285,6 +298,7 @@ class RafflesController < ApplicationController
 
   private
 
+  # Applies search, price, ticket count and ticket status filters to raffle rows.
   def apply_raffle_filters(scope)
     rows = scope.to_a
 
@@ -333,22 +347,27 @@ class RafflesController < ApplicationController
     rows
   end
 
+  # Allows only safe raffle form fields.
   def raffle_params
     params.require(:raffle).permit(:title, :raffle_kind, :main_raffle_id, :total_tickets)
   end
 
+  # Reads the submitted ticket price from supported form parameter names.
   def ticket_price_param
     params[:ticket_price_eur].presence || params.dig(:raffle, :ticket_price_eur).presence || params.dig(:raffle, :ticket_price).presence
   end
 
+  # Finds the raffle used by show and member actions.
   def set_raffle
-    @raffle = Raffle.includes(:host, :winner_user, :main_raffle, :raffle_tickets, photos_attachments: :blob).find(params[:id])
+    @raffle = Raffle.includes(:host, :winner_user, :main_raffle, :raffle_tickets).find(params[:id])
   end
 
+  # Blocks protected raffle actions unless a user is logged in.
   def require_login
     redirect_to login_path unless current_user
   end
 
+  # Checks whether the current user can manage raffles as an admin.
   def raffle_admin_user?
     ok = false
 
@@ -370,6 +389,7 @@ class RafflesController < ApplicationController
     false
   end
 
+  # Returns a safe path after deleting or ending a raffle.
   def raffle_return_path
     return_to = params[:return_to].to_s
 
@@ -382,6 +402,7 @@ class RafflesController < ApplicationController
     raffles_path
   end
 
+  # Moves a raffle into the incompleted state and clears winner fields.
   def move_raffle_to_incompleted!(raffle)
     attrs = {
       status: "incompleted",
@@ -397,12 +418,14 @@ class RafflesController < ApplicationController
     raffle.update_columns(attrs)
   end
 
+  # Converts euro input into integer cents.
   def money_to_cents(value)
     return 0 if value.blank?
 
     (value.to_s.tr(",", ".").to_f * 100).round
   end
 
+  # Builds grouped participant rows for the raffle show page.
   def build_participant_rows(tickets)
     grouped = tickets.group_by { |ticket| [ ticket.user_id, ticket.display_name ] }
 

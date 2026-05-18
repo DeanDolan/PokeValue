@@ -1,14 +1,14 @@
 class Product < ApplicationRecord
-  # Keeps product records connected to portfolio holdings
+  # Keeps product records connected to portfolio holdings.
   has_many :holdings, dependent: :nullify
 
-  # Each product needs a unique SKU so it can be found across the app
+  # Each product needs a unique SKU so it can be found across the app.
   validates :sku, presence: true, uniqueness: true
 
-  # Each product needs a display name for pages, listings and portfolio views
+  # Each product needs a display name for pages, listings and portfolio views.
   validates :name, presence: true
 
-  # Gets the set part from a product SKU
+  # Gets the set part from a product SKU.
   def set_slug
     s = sku.to_s
     return s.split(":", 2).first if s.include?(":")
@@ -17,7 +17,7 @@ class Product < ApplicationRecord
     s
   end
 
-  # Gets the product type part from a product SKU
+  # Gets the product type part from a product SKU.
   def type_code
     s = sku.to_s
     return s.split(":", 2).last if s.include?(":")
@@ -26,16 +26,17 @@ class Product < ApplicationRecord
     ""
   end
 
-  # Normalises text for matching products across pages, holdings and admin rows
+  # Normalises text for matching products across pages, holdings and admin rows.
   def self.normalize_text(value)
     value.to_s.unicode_normalize(:nfkc).downcase.strip.gsub(/\s+/, " ")
   end
 
-  # Normalises type codes so route types and database product types can be compared safely
+  # Normalises type codes so route types and database product types can be compared safely.
   def self.normalize_type(value)
     value.to_s.strip.downcase.tr("-", "_").gsub(/\s+/, "_")
   end
 
+  # Checks whether a route type needs the product name included in the URL.
   def self.route_needs_product_slug?(value)
     [
       "collection_box",
@@ -49,12 +50,14 @@ class Product < ApplicationRecord
     ].include?(normalize_type(value))
   end
 
+  # Gets the image filename from an image path.
   def self.image_file_key(value)
     value.to_s.split("?").first.split("/").last.to_s.downcase.strip
   rescue
     ""
   end
 
+  # Checks whether two image paths point to the same image file.
   def self.same_image_file?(a, b)
     aa = a.to_s
     bb = b.to_s
@@ -68,15 +71,15 @@ class Product < ApplicationRecord
     false
   end
 
-  # Creates the same admin value SKU used by product pages and the admin products table
+  # Creates the same admin value SKU used by product pages and the admin products table.
   def self.value_override_sku(set_slug:, route_type:)
     a = set_slug.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
     b = route_type.to_s.strip.gsub(/[^a-zA-Z0-9\-_]+/, "-").gsub(/\A-+|-+\z/, "")
     "#{a}--#{b}"
   end
 
-  # Finds a product override row using the same SKU patterns used across the application
-  def self.find_value_override(set_slug:, route_type:, type_code: nil)
+  # Finds an admin product value using the same SKU patterns used across the application.
+  def self.find_admin_value(set_slug:, route_type:, type_code: nil)
     candidates = []
     candidates << value_override_sku(set_slug: set_slug, route_type: route_type)
     candidates << "#{set_slug}:#{route_type}"
@@ -89,9 +92,9 @@ class Product < ApplicationRecord
     where(sku: candidates.map(&:to_s)).order(updated_at: :desc).first
   end
 
-  # Returns the current estimated value for a product, falling back only when no admin value exists
-  def self.current_estimated_value(set_slug:, route_type:, type_code: nil, fallback: nil)
-    product = find_value_override(set_slug: set_slug, route_type: route_type, type_code: type_code)
+  # Returns the estimated value for a product, falling back only when no admin value exists.
+  def self.estimated_value(set_slug:, route_type:, type_code: nil, fallback: nil)
+    product = find_admin_value(set_slug: set_slug, route_type: route_type, type_code: type_code)
     value = product&.value
 
     return BigDecimal(value.to_s) if value.present? && BigDecimal(value.to_s) >= 0
@@ -103,8 +106,8 @@ class Product < ApplicationRecord
     BigDecimal("0")
   end
 
-  # Finds the best matching Product row for a holding
-  def self.find_for_holding(holding)
+  # Finds the matching Product row for a holding.
+  def self.find_holding_product(holding)
     linked_product = holding.product if holding.respond_to?(:product) && holding.product.present?
 
     if linked_product.present?
@@ -154,9 +157,9 @@ class Product < ApplicationRecord
     nil
   end
 
-  # Calculates the live portfolio value for a holding using the latest admin estimated value
-  def self.current_value_for_holding(holding)
-    product = find_for_holding(holding)
+  # Calculates the portfolio value for a holding using the latest admin estimated value.
+  def self.holding_value(holding)
+    product = find_holding_product(holding)
     base_value = product&.value || holding.value || 0
 
     if defined?(Holding)
@@ -168,12 +171,12 @@ class Product < ApplicationRecord
     BigDecimal("0")
   end
 
-  # Recalculates one holding from the latest product estimated value
-  def self.recalculate_holding_amounts(holding)
+  # Calculates one holding's value, total value, profit/loss and ROI.
+  def self.calculate_holding_totals(holding)
     quantity = holding.quantity.to_i
     quantity = 0 if quantity.negative?
 
-    value = current_value_for_holding(holding)
+    value = holding_value(holding)
     cost_per_unit = BigDecimal(holding.cost_per_unit.to_s)
     total_cost = (cost_per_unit * quantity).round(2)
     total_value = (value * quantity).round(2)
@@ -197,9 +200,9 @@ class Product < ApplicationRecord
     }
   end
 
-  # Updates one holding in memory so portfolio tables immediately show live values
-  def self.apply_live_values_to_holding!(holding)
-    attrs = recalculate_holding_amounts(holding)
+  # Updates one holding in memory so portfolio tables immediately show live values.
+  def self.update_holding_totals(holding)
+    attrs = calculate_holding_totals(holding)
 
     holding.value = attrs[:value]
     holding.total_cost = attrs[:total_cost]
@@ -210,15 +213,8 @@ class Product < ApplicationRecord
     holding
   end
 
-  # Updates one holding in the database after an admin changes a product value
-  def self.persist_live_values_to_holding!(holding)
-    attrs = recalculate_holding_amounts(holding)
-    attrs[:updated_at] = Time.current if holding.has_attribute?(:updated_at)
-    holding.update_columns(attrs)
-  end
-
-  # Finds and updates holdings affected by a product value change
-  def self.refresh_holdings_for_product!(product)
+  # Finds holdings connected to a product and saves their recalculated values.
+  def self.update_holdings!(product)
     return unless defined?(Holding)
     return if product.blank?
 
@@ -254,14 +250,16 @@ class Product < ApplicationRecord
     end
 
     Holding.where(id: ids.uniq).find_each do |holding|
-      persist_live_values_to_holding!(holding)
+      attrs = calculate_holding_totals(holding)
+      attrs[:updated_at] = Time.current if holding.has_attribute?(:updated_at)
+      holding.update_columns(attrs)
     end
   end
 
-  # Updates a list of holdings in memory for portfolio display and metrics
-  def self.apply_live_values_to_holdings!(holdings)
+  # Updates a list of holdings in memory for portfolio display and metrics.
+  def self.update_all_holding_totals(holdings)
     Array(holdings).each do |holding|
-      apply_live_values_to_holding!(holding)
+      update_holding_totals(holding)
     end
   end
 end

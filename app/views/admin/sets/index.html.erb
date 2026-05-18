@@ -4,8 +4,8 @@
 <% groups = @groups || [] %>
 
 <div class="container py-3">
-  <%# Sends all edited set totals, card counts and secret-card counts to the admin controller. %>
-  <%= form_with url: update_values_admin_sets_path, method: :patch, local: true do %>
+  <%# Sends edited set totals to the admin controller. %>
+  <%= form_with url: admin_update_set_values_path, method: :patch, local: true do %>
     <% groups.each do |era, rows| %>
       <% next if rows.blank? %>
 
@@ -20,7 +20,6 @@
                 <th class="col-img">Set</th>
                 <th class="col-name">Name</th>
                 <th class="col-release">Release Date</th>
-                <th class="col-cs">Cards/Secret</th>
                 <th class="col-total">Total Set Value</th>
               </tr>
             </thead>
@@ -40,27 +39,6 @@
                   </td>
 
                   <td><%= set[:release_date].presence || set[:release_raw].presence || "—" %></td>
-
-                  <td>
-                    <%# First input is total cards. Second input is secret cards. %>
-                    <div class="d-flex justify-content-center gap-2">
-                      <input class="form-control form-control-sm text-center"
-                             style="max-width:90px"
-                             type="number"
-                             min="0"
-                             step="1"
-                             name="cards[<%= set[:slug] %>]"
-                             value="<%= set[:cards] %>">
-
-                      <input class="form-control form-control-sm text-center"
-                             style="max-width:90px"
-                             type="number"
-                             min="0"
-                             step="1"
-                             name="secret_cards[<%= set[:slug] %>]"
-                             value="<%= set[:secret_cards] %>">
-                    </div>
-                  </td>
 
                   <td>
                     <%# Updates the visible total set value shown on set pages. %>
